@@ -2,7 +2,7 @@
 status: current
 mode: greenfield-bootstrap
 updated_at: "2026-07-02"
-reflects_commit: "PENDING (no commits yet — set on first commit)"
+reflects_commit: "9e82025"
 ---
 
 # Architecture map — ПЛАН (claude-workspace)
