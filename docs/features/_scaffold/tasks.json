@@ -1,0 +1,59 @@
+{
+  "slug": "_scaffold",
+  "tasks": [
+    {
+      "id": "S1",
+      "title": "Створити структуру проєкту Vite + React + TypeScript + PWA-маніфест",
+      "layer": "scaffold",
+      "deps": [],
+      "acs": [],
+      "dod": "`npm run build` проходить успішно (порожній застосунок); сторінка відкривається і показує порожній layout",
+      "files_hint": ["package.json", "vite.config.ts", "index.html", "src/app/main.tsx", "public/manifest.json"]
+    },
+    {
+      "id": "S2",
+      "title": "Підключити тестовий каркас (Vitest + React Testing Library) + smoke-тест",
+      "layer": "scaffold",
+      "deps": ["S1"],
+      "acs": [],
+      "dod": "порожній набір тестів запускається зелено; smoke-тест `застосунок завантажується` проходить",
+      "files_hint": ["vitest.config.ts", "src/app/App.test.tsx"]
+    },
+    {
+      "id": "S3",
+      "title": "Створити шар абстракції над localStorage (заміна 'міграцій' для клієнтського сховища)",
+      "layer": "scaffold",
+      "deps": ["S1"],
+      "acs": [],
+      "dod": "сховище ініціалізує схему з ключем schemaVersion; smoke-тест підтверджує запис+читання без прямого звернення до localStorage поза цим шаром",
+      "files_hint": ["src/shared/storage/index.ts", "src/shared/storage/index.test.ts"]
+    },
+    {
+      "id": "S4",
+      "title": "Створити спільний UI-примітив CardShell (каркас картки, що перевертається) + налаштувати Tailwind",
+      "layer": "scaffold",
+      "deps": ["S1"],
+      "acs": [],
+      "dod": "Tailwind-класи застосовуються при збірці; CardShell рендерить лицьову і зворотну сторону (без flip-анімації в MVP) без помилок у smoke-тесті",
+      "files_hint": ["src/shared/ui/CardShell.tsx", "tailwind.config.ts"]
+    },
+    {
+      "id": "S5",
+      "title": "Додати CI-конфіг (build + test + lint)",
+      "layer": "scaffold",
+      "deps": ["S2"],
+      "acs": [],
+      "dod": "CI-конфіг валідний; команди відповідають реальним npm-скриптам build/test/lint",
+      "files_hint": [".github/workflows/ci.yml"]
+    },
+    {
+      "id": "S6",
+      "title": "Написати CLAUDE.md з обраними конвенціями фронтенду",
+      "layer": "scaffold",
+      "deps": ["S1"],
+      "acs": [],
+      "dod": "документ конвенцій відповідає docs/architecture-map.md (структура карток, storage-шар, тести, стилізація)",
+      "files_hint": ["CLAUDE.md"]
+    }
+  ]
+}
