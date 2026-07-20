@@ -1,0 +1,3 @@
+# Особисті локальні налаштування — не потрапляють у репозиторій
+.claude/settings.local.json
+.claude/sdd.local.md
