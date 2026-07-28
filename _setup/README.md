@@ -40,6 +40,15 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 Очікуваний результат кроку 4: `PASSED: 37 checks`.
 
+## Docker поки не потрібен
+
+Рівні 1-3 (settings, permissions, sandbox) працюють одразу після кроків вище — Docker
+для них не потрібен.
+
+Рівень 4 (`.devcontainer/` + `docker-compose.yml`) лежить у репозиторії готовим, але
+контейнер поки **не запускався** — Docker Desktop свідомо не встановлюємо. Причини й
+покроковий план, коли до цього дійде, — у `docs/PROJECT-STATE.md`, розділ 13.10.
+
 ## Якщо перевірка щось завалила
 
 - **`User tier exists` — FAIL** → не виконано крок 2.
