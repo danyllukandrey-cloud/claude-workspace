@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "_comment": "Скопіюй у .claude/settings.local.json і додай свої особисті overrides. settings.local.json у .gitignore — не комітимо.",
+  "permissions": {
+    "allow": [
+      "Bash(docker compose *)",
+      "Bash(docker ps)",
+      "Bash(docker logs *)"
+    ]
+  },
+  "env": {
+    "_comment_env": "Локальні змінні, що не йдуть у git. Наприклад LOG_LEVEL=debug."
+  }
+}

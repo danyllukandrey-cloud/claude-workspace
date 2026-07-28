@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "_comment": "РІВЕНЬ USER. Копіюється у C:\\Users\\U\\.claude\\settings.json — глобально, для всіх проєктів. У git НЕ потрапляє (лежить поза репозиторієм).",
+  "permissions": {
+    "deny": [
+      "Bash(sudo *)",
+      "Bash(rm -rf /*)",
+      "Bash(curl * | sh)",
+      "Bash(curl * | bash)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)"
+    ]
+  },
+  "env": {
+    "BASH_DEFAULT_TIMEOUT_MS": "300000"
+  }
+}

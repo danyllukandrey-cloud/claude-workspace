@@ -1,0 +1,32 @@
+# docker-compose.yml — запуск Claude Code у захищеному контейнері без VS Code.
+# Альтернатива .devcontainer/devcontainer.json (той — для кнопки "Reopen in Container").
+# Обидва варіанти використовують той самий .devcontainer/Dockerfile і init-firewall.sh.
+
+services:
+  claude:
+    build:
+      context: .devcontainer
+      dockerfile: Dockerfile
+    user: node
+    working_dir: /workspace
+    # NET_ADMIN і NET_RAW обов'язкові — без них iptables не запуститься всередині контейнера
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - .:/workspace:delegated
+      - claude-config:/home/node/.claude
+      - claude-history:/commandhistory
+    environment:
+      - CLAUDE_CONFIG_DIR=/home/node/.claude
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - TZ=${TZ:-Europe/Kyiv}
+    # Спершу піднімаємо firewall, і лише потім даємо оболонку
+    entrypoint: ["/bin/bash", "-c", "sudo /usr/local/bin/init-firewall.sh && exec bash"]
+    stdin_open: true
+    tty: true
+    mem_limit: 4g
+
+volumes:
+  claude-config:
+  claude-history:
