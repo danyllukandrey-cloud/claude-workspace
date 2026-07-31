@@ -23,7 +23,6 @@
       "Bash(git branch *)",
       "Bash(git checkout *)",
       "Bash(git pull)",
-      "Bash(git push)",
       "Bash(make verify*)",
       "Bash(make test)",
       "Bash(make build)",
@@ -33,6 +32,8 @@
       "Grep"
     ],
     "deny": [
+      "Bash(git push)",
+      "Bash(git push *)",
       "Bash(git push --force *)",
       "Bash(git push -f *)",
       "Bash(git reset --hard *)",
@@ -62,6 +63,22 @@
       "Edit(.env.*)",
       "Edit(**/.env)",
       "Edit(**/.env.*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "python \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/block-git-push.py\"",
+            "timeout": 10,
+            "statusMessage": "Перевірка команди"
+          }
+        ]
+      }
     ]
   },
   "sandbox": {
