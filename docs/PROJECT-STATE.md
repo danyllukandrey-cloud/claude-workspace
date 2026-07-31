@@ -392,6 +392,9 @@ ADR оновлений якщо рішення змінилось, запис у
 - **Рекомендація:** склонувати курсовий репозиторій локально
   (`git clone https://github.com/genkovich/agentic-engineering-course-public.git`).
   Тоді всі шаблони, приклади й skills будуть під рукою офлайн, без вигадування URL.
+  ✅ **Виконано** — тека `Desktop/agentic-engineering-course-public`. Актуальні деталі
+  (де лежить, як оновлювати) — [`COURSE-INDEX §6`](./course/COURSE-INDEX.md);
+  ролі репозиторіїв — §13.11.
 
 ## 12. Джерела цього документа
 
@@ -608,9 +611,12 @@ Coinrule; Kubera навіть віддає портфель у Claude). Неза
 #### 1. Курс — локальний клон
 
 [`genkovich/agentic-engineering-course-public`](https://github.com/genkovich/agentic-engineering-course-public)
-— публічний, тека `Desktop/agentic-engineering-course-public` (поруч із `claude-workspace`).
+— публічний.
 
-**Навіщо:** швидко звірити наш поточний етап з курсом, без браузера. Оновлювати `git pull`.
+**Навіщо:** швидко звірити наш поточний етап з курсом, без браузера.
+
+**Де лежить, як оновлювати, як під'єднати — [`COURSE-INDEX.md §6`](./course/COURSE-INDEX.md).**
+Тут не дублюємо.
 
 Немає в GitHub → Top repositories, і це нормально: клон живе на диску, сайт про нього
 не знає. Форк не робимо, щоб не плодити копію.
