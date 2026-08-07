@@ -2,7 +2,7 @@
 status: current
 mode: greenfield-bootstrap
 updated_at: "2026-08-07"
-reflects_commit: "TBD — вписати хеш коміту `initial scaffold` після його створення"
+reflects_commit: "bb0863d"
 ---
 
 # Architecture map — ПЛАН (claude-workspace)
