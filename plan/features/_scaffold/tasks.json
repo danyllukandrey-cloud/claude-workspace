@@ -8,7 +8,7 @@
       "deps": [],
       "acs": [],
       "dod": "`npm run build` проходить успішно (порожній застосунок); сторінка відкривається і показує порожній layout",
-      "files_hint": ["package.json", "vite.config.ts", "index.html", "src/app/main.tsx", "public/manifest.json"]
+      "files_hint": ["plan/app/package.json", "plan/app/vite.config.ts", "plan/app/index.html", "plan/app/src/app/main.tsx", "plan/app/public/manifest.json"]
     },
     {
       "id": "S2",
@@ -17,7 +17,7 @@
       "deps": ["S1"],
       "acs": [],
       "dod": "порожній набір тестів запускається зелено; smoke-тест `застосунок завантажується` проходить",
-      "files_hint": ["vitest.config.ts", "src/app/App.test.tsx"]
+      "files_hint": ["plan/app/vitest.config.ts", "plan/app/src/app/App.test.tsx"]
     },
     {
       "id": "S3",
@@ -26,7 +26,7 @@
       "deps": ["S1"],
       "acs": [],
       "dod": "сховище ініціалізує схему з ключем schemaVersion; smoke-тест підтверджує запис+читання без прямого звернення до localStorage поза цим шаром",
-      "files_hint": ["src/shared/storage/index.ts", "src/shared/storage/index.test.ts"]
+      "files_hint": ["plan/app/src/shared/storage/index.ts", "plan/app/src/shared/storage/index.test.ts"]
     },
     {
       "id": "S4",
@@ -35,7 +35,7 @@
       "deps": ["S1"],
       "acs": [],
       "dod": "Tailwind-класи застосовуються при збірці; CardShell рендерить лицьову і зворотну сторону (без flip-анімації в MVP) без помилок у smoke-тесті",
-      "files_hint": ["src/shared/ui/CardShell.tsx", "tailwind.config.ts"]
+      "files_hint": ["plan/app/src/shared/ui/CardShell.tsx", "plan/app/tailwind.config.ts"]
     },
     {
       "id": "S5",
@@ -53,7 +53,7 @@
       "deps": ["S1"],
       "acs": [],
       "dod": "документ конвенцій відповідає docs/architecture-map.md (структура карток, storage-шар, тести, стилізація)",
-      "files_hint": ["CLAUDE.md"]
+      "files_hint": ["plan/app/CLAUDE.md"]
     }
   ]
 }
