@@ -1,0 +1,129 @@
+#!/bin/sh
+#
+# commit-msg — перевіряє мітку Decision у повідомленні коміту.
+#
+# Навіщо: реєстр рішень (docs/DECISIONS.md) і історія Git зв'язані рядком
+# "Decision: D-NN". Зв'язок тримається на пам'яті людини, а забуту мітку
+# заднім числом уже не вписати — повідомлення коміту незмінне.
+# Хук закриває саме цю дірку.
+#
+# Правило цілком: CLAUDE.md § Рішення і зміни  (рішення D-19, D-20)
+#
+# Обійти: git commit --no-verify   (це поручні, не замок)
+
+MSG_FILE="$1"
+ROOT=$(git rev-parse --show-toplevel)
+REGISTRY="$ROOT/docs/DECISIONS.md"
+
+# Прибрати коментарі (#) і можливі CRLF, які лишає Windows
+CLEAN=$(git stripspace --strip-comments < "$MSG_FILE" | tr -d '\r')
+
+# --- Технічні коміти пропускаємо без перевірки -------------------------------
+# Merge — повідомлення генерує сам Git; fixup!/squash! — службові коміти,
+# які rebase згодом вливає в батьківський (мітка вже є там).
+case "$CLEAN" in
+	"Merge "*|"fixup!"*|"squash!"*|"Revert "*) exit 0 ;;
+esac
+
+# Порожнє повідомлення — хай Git сам його відхилить своєю звичною помилкою
+if [ -z "$CLEAN" ]; then
+	exit 0
+fi
+
+# --- Дістати мітки --------------------------------------------------------
+# Саме interpret-trailers, а не grep: він бачить трейлери так само, як їх
+# потім бачитиме `git log --format=%(trailers:...)`. Якщо мітка відділена
+# порожнім рядком, вона сюди НЕ потрапить — і це навмисне, ми хочемо
+# зловити цю помилку зараз, а не через півроку при пошуку.
+VALUES=$(printf '%s\n' "$CLEAN" \
+	| git interpret-trailers --parse \
+	| sed -n 's/^[Dd]ecision:[[:space:]]*//p')
+
+fail_header() {
+	echo ""
+	echo "❌ Коміт не пройшов."
+	echo ""
+}
+
+fail_footer() {
+	echo ""
+	echo "   Повне правило: CLAUDE.md § Рішення і зміни"
+	echo "   Обійти разово: git commit --no-verify"
+	echo ""
+}
+
+# --- Мітки немає ----------------------------------------------------------
+if [ -z "$VALUES" ]; then
+	fail_header
+	# Окремий випадок: рядок є, але відділений порожнім рядком від решти міток.
+	# Найчастіша помилка — і найпідступніша, бо очима все виглядає правильно.
+	if printf '%s\n' "$CLEAN" | grep -qi '^[Dd]ecision:'; then
+		echo "   Рядок Decision: у повідомленні Є, але Git його не бачить."
+		echo ""
+		echo "   Причина: блоком міток вважається ЛИШЕ останній абзац."
+		echo "   Перед Decision: стоїть порожній рядок — прибери його, щоб"
+		echo "   мітка стояла впритул до сусідніх (Co-Authored-By тощо)."
+		echo ""
+		echo "   Правильно:                     Неправильно:"
+		echo "       тіло повідомлення              тіло повідомлення"
+		echo "                                      "
+		echo "       Decision: D-19                 Decision: D-19"
+		echo "       Co-Authored-By: ...                                  <- порожній рядок"
+		echo "                                      Co-Authored-By: ..."
+	else
+		echo "   У повідомленні немає мітки Decision."
+		echo ""
+		echo "   Додай ОСТАННІМ блоком повідомлення один із варіантів:"
+		echo ""
+		echo "       Decision: D-NN     <- номер рішення з docs/DECISIONS.md"
+		echo "       Decision: none     <- рішення тут немає: правопис, форматування,"
+		echo "                             дрібне прибирання"
+		echo ""
+		echo "   Немає потрібного рішення в реєстрі? Спочатку впиши рядок у"
+		echo "   docs/DECISIONS.md, потім повтори коміт. Реєстр веде рішення —"
+		echo "   коміт лише посилається на нього."
+	fi
+	fail_footer
+	exit 1
+fi
+
+# --- Мітки є: перевірити кожну -------------------------------------------
+for VALUE in $VALUES; do
+
+	# Свідома відповідь «рішення тут немає»
+	if [ "$VALUE" = "none" ]; then
+		continue
+	fi
+
+	# Формат номера
+	if ! printf '%s' "$VALUE" | grep -qE '^D-[0-9]+$'; then
+		fail_header
+		echo "   Мітка «Decision: $VALUE» незрозуміла."
+		echo ""
+		echo "   Очікується або номер вигляду D-19, або слово none."
+		fail_footer
+		exit 1
+	fi
+
+	# Реєстр на місці?
+	if [ ! -f "$REGISTRY" ]; then
+		fail_header
+		echo "   Не знайдено docs/DECISIONS.md — нема де перевірити $VALUE."
+		fail_footer
+		exit 1
+	fi
+
+	# Рішення справді існує?
+	if ! grep -q "^| $VALUE |" "$REGISTRY"; then
+		fail_header
+		echo "   Рішення $VALUE не знайдено в docs/DECISIONS.md."
+		echo ""
+		echo "   Або одрук у номері, або рішення ще не записане."
+		echo "   Порядок такий: спочатку рядок у реєстрі — потім коміт."
+		echo "   Рішення існує раніше за зміну, а не навпаки."
+		fail_footer
+		exit 1
+	fi
+done
+
+exit 0

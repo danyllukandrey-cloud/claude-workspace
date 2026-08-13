@@ -3,6 +3,7 @@
 # Тут примусово фіксуємо LF для всього, що виконується всередині контейнера.
 
 *.sh text eol=lf
+.githooks/* text eol=lf
 Dockerfile text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
