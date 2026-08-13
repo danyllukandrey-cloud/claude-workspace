@@ -39,6 +39,21 @@ VALUES=$(printf '%s\n' "$CLEAN" \
 	| git interpret-trailers --parse \
 	| sed -n 's/^[Dd]ecision:[[:space:]]*//p')
 
+# Наступний вільний номер рішення.
+# Рахуємо максимум, а не кількість рядків: таблиця в реєстрі не відсортована
+# (D-20 стоїть перед D-19), тож «останній рядок» дав би неправильну відповідь.
+next_decision() {
+	if [ ! -f "$REGISTRY" ]; then
+		echo "D-?"
+		return
+	fi
+	MAX=$(grep -oE '^\| D-[0-9]+' "$REGISTRY" | grep -oE '[0-9]+' | sort -n | tail -1)
+	if [ -z "$MAX" ]; then
+		MAX=0
+	fi
+	echo "D-$((MAX + 1))"
+}
+
 fail_header() {
 	echo ""
 	echo "❌ Коміт не пройшов."
@@ -76,8 +91,11 @@ if [ -z "$VALUES" ]; then
 		echo "   Додай ОСТАННІМ блоком повідомлення один із варіантів:"
 		echo ""
 		echo "       Decision: D-NN     <- номер рішення з docs/DECISIONS.md"
+		echo "                             наступний вільний: $(next_decision)"
 		echo "       Decision: none     <- рішення тут немає: правопис, форматування,"
 		echo "                             дрібне прибирання"
+		echo ""
+		echo "   Слово none номер не витрачає: наступний вільний лишається вільним."
 		echo ""
 		echo "   Немає потрібного рішення в реєстрі? Спочатку впиши рядок у"
 		echo "   docs/DECISIONS.md, потім повтори коміт. Реєстр веде рішення —"
@@ -119,6 +137,8 @@ for VALUE in $VALUES; do
 		echo "   Рішення $VALUE не знайдено в docs/DECISIONS.md."
 		echo ""
 		echo "   Або одрук у номері, або рішення ще не записане."
+		echo "   Наступний вільний номер: $(next_decision)"
+		echo ""
 		echo "   Порядок такий: спочатку рядок у реєстрі — потім коміт."
 		echo "   Рішення існує раніше за зміну, а не навпаки."
 		fail_footer
