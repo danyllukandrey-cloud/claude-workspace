@@ -1,0 +1,40 @@
+#!/bin/sh
+#
+# pre-push — питає, чи запустити звірку /pm-end, перед тим як зміни підуть у
+# спільний репозиторій (у Git немає клієнтського хука "після push"; pre-push —
+# найближчий робочий еквівалент, спрацьовує до відправки).
+#
+# Технічне обмеження: сам хук НЕ може викликати Claude Code — це окремий
+# процес поза сесією. Він лише питає "так/ні" в терміналі й, якщо "так",
+# зупиняє push (exit 1), щоб ти зайшов у Claude Code, ввів /pm-end сам,
+# і запушив повторно.
+#
+# Чому /pm-end, а не /session-brief: саме агент pm (режим sync) звіряє
+# git log з DECISIONS.md і DELIVERY-PLAN.md. session-brief лише показує
+# статичний знімок — це підказка після post-merge, не перед push.
+#
+# Стандартний вхід (stdin) цього хука зайнятий даними Git про push — тому
+# питання й відповідь ідуть напряму через /dev/tty (сам термінал), а не
+# через stdin/stdout. Немає термінала (push іде з CI чи GUI-клієнта без
+# консолі) — питати нема як, тому просто пропускаємо push без зупинки.
+#
+# Довідка: .claude/commands/pm-end.md
+
+if [ -e /dev/tty ] && exec 3<>/dev/tty 2>/dev/null; then
+	printf "\n📤 Пушимо зміни.\n" >&3
+	printf "→ Запустити /pm-end перед push — звірити DELIVERY-PLAN.md і DECISIONS.md? [y/N] " >&3
+	read -r ANSWER <&3
+	exec 3<&-
+else
+	exit 0
+fi
+
+case "$ANSWER" in
+	[Yy]*)
+		printf "\n⏸  Push зупинено. Зайди в Claude Code, введи /pm-end, потім запуш повторно.\n\n"
+		exit 1
+		;;
+	*)
+		exit 0
+		;;
+esac
