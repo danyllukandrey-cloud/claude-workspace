@@ -16,6 +16,11 @@ feasibility_state: proposed  # усі 3 чекбокси TBD — чесно дл
 <!-- Stage 01 → створено skill-ом interview (курсовий sdlc, Модуль 6) -->
 <!-- Why: capture the idea before it's forgotten or retold incorrectly -->
 
+> ⚠️ **АРХІВ — СКАСОВАНО 2026-08-16 (рішення D-22 у `docs/DECISIONS.md`).** Портфельна тема
+> прибрана з поточної роботи; перша картка веде «Навчання» (`life-area-card`). Цей файл
+> лишається як історичний запис дослідження — **не використовувати як контекст для поточної
+> розробки**. Деталі — `docs/PROJECT-STATE.md` §13.13.
+
 # Idea Brief — Картка ребалансування портфелю
 
 ## 1. Raw idea
