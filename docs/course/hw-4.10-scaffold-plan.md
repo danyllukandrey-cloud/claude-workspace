@@ -34,7 +34,7 @@
 
 1. **Комітів вийшло два, а не один.** Штамп `reflects_commit` неможливо вписати до того,
    як коміт існує.
-2. **Блок 6 захопив частину задачі S1** з [`tasks.json`](../../plan/features/_scaffold/tasks.json)
+2. **Блок 6 захопив частину задачі S1** з [`tasks.json`](../../docs/features/_scaffold/tasks.json)
    — додали `tsconfig.json`, `vite.config.ts`, `index.html`. Без них `Makefile` містив би
    команди, які не працюють.
 3. **Дві папки перейменовано:** `ПЛАН/` → `plan/` (кирилиця ламала `git status` і скріни),

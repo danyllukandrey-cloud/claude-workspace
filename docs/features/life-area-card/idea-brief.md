@@ -15,7 +15,7 @@ feasibility_state: proposed
 
 <!-- Артефакт кроку 01 SDLC. Протокол — .claude/skills/sdlc-interview/SKILL.md
      Шлях цього файлу відрізняється від шаблонного docs/features/<slug>/ —
-     наші артефакти фіч живуть у plan/features/. Причина: D-34, деталі
+     наші артефакти фіч живуть у docs/features/. Причина: D-34, деталі
      в .claude/skills/README.md.
 
      Статус Draft, а не Confirmed: кроки 9-11 протоколу (RICE, здійсненність,
@@ -289,7 +289,7 @@ planning agent chat goals 2026», «personal OKR app individual life strategy qu
 
 ## 15. Open questions
 
-- [ ] **Q-4** — дві папки артефактів фіч (`plan/features/` проти `docs/features/`) — owner: Андрій
+- [ ] **Q-4** — дві папки артефактів фіч (`docs/features/` проти `docs/features/`) — owner: Андрій
 - [ ] **Q-6** — пороги «ефективно / неефективно» і чи впливає пріоритет зі Структури на вагу картки
 - [ ] **Q-7** — мануал і концепція як користувацькі документи; від них залежить §2 і онбординг
 - [ ] **Q-8** — додаткові способи входу після Google
