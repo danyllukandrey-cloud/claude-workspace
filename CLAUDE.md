@@ -53,6 +53,7 @@
 | Структура папок | [`docs/architecture-map.md`](docs/architecture-map.md) |
 | Рішення | [`docs/DECISIONS.md`](docs/DECISIONS.md) |
 | Перелік усіх документів | [`README.md`](README.md) |
+| Поточний статус проєкту (% готовності, блокери) | [`docs/DELIVERY-PLAN.md`](docs/DELIVERY-PLAN.md) |
 
 Не бачиш свій факт у таблиці — не привід копіювати: спитай «хто вже про це пише»
 (пошук по репозиторію), перш ніж писати новий розділ.

@@ -10,10 +10,10 @@
 
 ## Поточний статус
 
-Станом на 2026-07-05 проєкт знаходиться в стадії опису ідеї та розробки документації.
-Автор наразі вчиться і досліджує, як правильно розпочати проєкт.
-
-Послідовність етапів — [Goals](docs/Product_Overview/Goals.md), розділ «Roadmap / етапи».
+Актуальний стан за фазами SDLC (% готовності, блокери, активна робота) —
+[DELIVERY-PLAN.md](docs/DELIVERY-PLAN.md). Тут не дублюємо навмисно: цей розділ сам був
+застарілим (казав «2026-07-05, стадія опису ідеї») до виправлення 2026-08-19 — саме той
+дубль, якого тепер уникаємо.
 
 > Примітка: поточна розробка (стартова/тестова/навчальна частина) ведеться окремо від
 > довгострокового бачення — одне не заважає іншому.
@@ -24,9 +24,63 @@
 
 ## Документи проєкту
 
-- [Product Vision](docs/Product_Overview/Product_Vision.md) — довгострокове бачення продукту, модель продукту, принципи, напрямок розвитку, відкриті позиції
-- [Product Brief](docs/Product_Overview/Product_Brief.md) — короткий опис продукту
+Повний перелік — 34 файли, згруповані за темою. У кожного один рядок: назва, посилання,
+одне речення про що він. Хто з чим пов'язаний — дивись «Карту власників» у
+[CLAUDE.md](CLAUDE.md), тут це навмисно не повторюємо.
+
+### Продукт
+
+- [Product Brief](docs/Product_Overview/Product_Brief.md) — суть продукту, для кого, яку проблему вирішуємо
+- [Product Vision](docs/Product_Overview/Product_Vision.md) — довгострокове бачення, модель продукту, принципи
 - [Goals](docs/Product_Overview/Goals.md) — цілі проєкту та етапи реалізації
 - [Success Metrics](docs/Product_Overview/Success_Metrics.md) — метрики успіху сервісу
-- [Architecture Map](docs/architecture-map.md) — поточна технічна архітектура (стек, модулі)
-- [ADR](docs/adr/) — записи архітектурних рішень
+
+### Стан і рішення
+
+- [DECISIONS.md](docs/DECISIONS.md) — реєстр усіх рішень: що діє, що скасовано, що відкладено
+- [PROJECT-STATE.md](docs/PROJECT-STATE.md) — детальний робочий контекст і історія проєкту
+- [DELIVERY-PLAN.md](docs/DELIVERY-PLAN.md) — тактичний план за фазами SDLC, % готовності, блокери
+- [CONTEXT.md](docs/CONTEXT.md) — словник домену (терміни продукту)
+
+### Архітектура
+
+- [architecture-map.md](docs/architecture-map.md) — технічна архітектура, стек, модулі
+- [ADR-0001](docs/adr/0001-frontend-stack.md) — рішення про стек фронтенду
+- [ADR-0002](docs/adr/0002-card-module-architecture.md) — архітектура модуля картки
+- [ADR-0003](docs/adr/0003-client-only-persistence.md) — зберігання лише на клієнті
+- [ADR-0004](docs/adr/0004-scaffold-architecture.md) — архітектура каркасу проєкту
+- [plan/app/ARCHITECTURE.md](plan/app/ARCHITECTURE.md) — детальна архітектура застосунку
+- [plan/app/CLAUDE.md](plan/app/CLAUDE.md) — конвенції фронтенд-коду для Claude
+- [plan/app/SPEC.md](plan/app/SPEC.md) — специфікація першої картки (PRD)
+
+### Артефакти фіч
+
+- [life-area-card/design-review.md](docs/features/life-area-card/design-review.md) — архітектурне інтерв'ю generic-картки (9 блоків)
+- [life-area-card/idea-brief.md](docs/features/life-area-card/idea-brief.md) — бриф ідеї першої фічі
+- [portfolio-rebalancing-card/idea-brief.md](docs/features/portfolio-rebalancing-card/idea-brief.md) — архів: бриф скасованої тестової картки (D-22)
+- [portfolio-rebalancing-card/competitive-research.md](docs/features/portfolio-rebalancing-card/competitive-research.md) — архів: конкурентне дослідження
+
+### Курс
+
+- [COURSE-INDEX.md](docs/course/COURSE-INDEX.md) — навігаційна карта курсу «Agentic Engineering»
+- [hw-4.10-scaffold-plan.md](docs/course/hw-4.10-scaffold-plan.md) — домашнє завдання 4.10, план каркасу
+
+### Налаштування
+
+- [SETUP-NEW-MACHINE.md](docs/SETUP-NEW-MACHINE.md) — розгортання проєкту на новому комп'ютері
+- [_setup/README.md](_setup/README.md) — допоміжні файли початкового налаштування
+- [.githooks/README.md](.githooks/README.md) — git-хуки проєкту (перевірка міток рішень)
+
+### Робочий процес і інструменти Claude Code
+
+- [PM-WORKFLOW.md](docs/PM-WORKFLOW.md) — команди `/session-brief`, `/pm-start`, `/pm-end` і коли їх вводити
+- [.claude/skills/README.md](.claude/skills/README.md) — паспорт скілів проєкту (свої й скопійовані з курсу)
+- [.claude/skills/session-brief/SKILL.md](.claude/skills/session-brief/SKILL.md) — скіл короткого статусу на старті сесії
+- [.claude/agents/pm.md](.claude/agents/pm.md) — субагент аналізу стану проєкту
+- [.claude/commands/pm-start.md](.claude/commands/pm-start.md) — команда «план на сьогодні»
+- [.claude/commands/pm-end.md](.claude/commands/pm-end.md) — команда «звірка сесії»
+
+### Навігація
+
+- [CLAUDE.md](CLAUDE.md) — правила роботи з Андрієм, карта власників фактів, дозволи
+- [plan/README.md](plan/README.md) — навігація по папці `plan/`
