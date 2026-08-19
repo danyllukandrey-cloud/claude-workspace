@@ -20,11 +20,8 @@
 
 ## 🛠️ Стек
 
-- React + TypeScript
-- Vite (збірник)
-- PWA (прогресивний веб-додаток)
-- localStorage (локальний кеш на клієнті) + мінімальний бекенд-сервер (проксі для агента,
-  синхронізація, Google-вхід — [D-24](../docs/DECISIONS.md))
+Обґрунтування вибору — [ADR-0001](../docs/adr/0001-frontend-stack.md). Повний поточний
+перелік технологій — [architecture-map.md](../docs/architecture-map.md).
 
 ---
 
