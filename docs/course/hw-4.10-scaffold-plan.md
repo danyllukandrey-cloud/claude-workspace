@@ -1,10 +1,8 @@
 # Урок 4.10 «Scaffold» — виконано 2026-08-07
 
-> Стисла версія. Повний план з обґрунтуваннями, рев'ю критика і картками блоків —
-> в історії Git, коміт `bb0863d`.
+> Стисла версія. Повний план з обґрунтуваннями, рев'ю критика і картками блоків — в історії Git, коміт `bb0863d`.
 
-**Завдання:** створити каркас проєкту — структуру папок і базові файли — і зробити коміт
-`initial scaffold`. [Урок в LMS](https://lms.agenticengineering.it.com/courses/agentic-engineering-PhA/urok-10-scaffold-iak-kulminatsiia-materializatsiia-bc-u-failovu-sistemu).
+**Завдання:** створити каркас проєкту — структуру папок і базові файли — і зробити коміт `initial scaffold`. [Урок в LMS](https://lms.agenticengineering.it.com/courses/agentic-engineering-PhA/urok-10-scaffold-iak-kulminatsiia-materializatsiia-bc-u-failovu-sistemu).
 
 ## Блоки
 
@@ -32,17 +30,12 @@
 
 ## Три відхилення від задуму
 
-1. **Комітів вийшло два, а не один.** Штамп `reflects_commit` неможливо вписати до того,
-   як коміт існує.
-2. **Блок 6 захопив частину задачі S1** з [`tasks.json`](../../docs/features/_scaffold/tasks.json)
-   — додали `tsconfig.json`, `vite.config.ts`, `index.html`. Без них `Makefile` містив би
-   команди, які не працюють.
-3. **Дві папки перейменовано:** `ПЛАН/` → `plan/` (кирилиця ламала `git status` і скріни),
-   `portfolio-rebalance` → `portfolio-rebalancing-card` (збіг із назвою папки документів).
+1. **Комітів вийшло два, а не один.** Штамп `reflects_commit` неможливо вписати до того, як коміт існує.
+2. **Блок 6 захопив частину задачі S1** з [`tasks.json`](../../docs/features/_scaffold/tasks.json) — додали `tsconfig.json`, `vite.config.ts`, `index.html`. Без них `Makefile` містив би команди, які не працюють.
+3. **Дві папки перейменовано:** `ПЛАН/` → `plan/` (кирилиця ламала `git status` і скріни), `portfolio-rebalance` → `portfolio-rebalancing-card` (збіг із назвою папки документів).
 
 ## Що лишилось
 
 - `npm install` ще не запускався — команди перевірені лише на папері
-- Відкриті питання Q-4 (дві папки артефактів) і Q-5 (розмір допуску) — у
-  [`DECISIONS.md`](../DECISIONS.md)
+- Відкриті питання Q-4 (дві папки артефактів) і Q-5 (розмір допуску) — у [`DECISIONS.md`](../DECISIONS.md)
 - ADR-0001…0003 досі «прийнято за замовчуванням» — [`PROJECT-STATE §9.3`](../PROJECT-STATE.md)

@@ -8,8 +8,7 @@
 
 ## 🗂️ Структура
 
-Артефакти фіч (idea-brief, дослідження) з 2026-08-19 живуть у [`docs/features/`](../docs/features/)
-([D-47](../docs/DECISIONS.md)), не в цій папці.
+Артефакти фіч (idea-brief, дослідження) з 2026-08-19 живуть у [`docs/features/`](../docs/features/) ([D-47](../docs/DECISIONS.md)), не в цій папці.
 
 ## 📖 Деталі проєкту
 
@@ -20,8 +19,7 @@
 
 ## 🛠️ Стек
 
-Обґрунтування вибору — [ADR-0001](../docs/adr/0001-frontend-stack.md). Повний поточний
-перелік технологій — [architecture-map.md](../docs/architecture-map.md).
+Обґрунтування вибору — [ADR-0001](../docs/adr/0001-frontend-stack.md). Повний поточний перелік технологій — [architecture-map.md](../docs/architecture-map.md).
 
 ---
 
