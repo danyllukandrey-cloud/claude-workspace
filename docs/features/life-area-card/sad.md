@@ -39,7 +39,7 @@ target_surfaces: [backend-service, web-frontend]
 - Tailwind CSS — стилізація
 - Vitest + React Testing Library — тести
 - ESLint + Prettier — лінт/форматування
-- `localStorage` як локальний кеш (~2 МБ, через шар абстракції `shared/storage/`) + мінімальний бекенд-сервер (D-24) — джерело правди для синхронізації
+- `localStorage` як локальний кеш (~2 МБ, через шар абстракції `shared/storage/`) + мінімальний бекенд-сервер (D-24) на PostgreSQL 16+ ([D-59](../../DECISIONS.md#d-59)) — джерело правди для синхронізації
 
 **Organisational.**
 - Одна людина (Андрій) у темпі ~1–2 год/тиждень (idea-brief §11) — Клод як асистент розробки
