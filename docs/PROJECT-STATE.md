@@ -361,7 +361,7 @@ SDLC = Software Development Life Cycle (життєвий цикл розробк
 | Slug | `portfolio-rebalancing-card` |
 | Роль | **тестова** — спосіб уточнити вимоги до логіки карток великого проєкту |
 | Що це НЕ | не перша фіча «ПЛАНу» (нею лишається `life-area-card`), не продукт для ринку |
-| Папка артефактів | `plan/features/portfolio-rebalancing-card/` (з 2026-08-19 — `docs/features/...`, D-47) |
+| Папка артефактів | `plan/features/portfolio-rebalancing-card/` (з 2026-08-19 — `docs/features/...`, D-47; з 2026-08-23 — `docs/z-archive/features/...`, D-63) |
 | Готові артефакти | `idea-brief.md` (15 секцій, status: Confirmed), `competitive-research.md` |
 | Інструмент | курсовий skill `interview` (Модуль 6), пройдено всі 14 фаз |
 | Коміт | `539f602` |
@@ -509,7 +509,7 @@ Hook розбиває команду на сегменти (`;` `&&` `||` `|`), 
 **Що сталося зі старими рішеннями.** D-7, D-8, D-9, D-10 (усі — специфічні для портфельної теми: статус тестової картки, модель Approach C, заборона виконання угод, глибина конкурентного дослідження) позначені `скасовано` в `DECISIONS.md`, замінені на **D-22**. Відкриті питання Q-1, Q-2, Q-3, Q-5 закриті — прив'язані до скасованого домену.
 
 **Що сталося зі старими файлами.** Не видалено — заархівовано:
-- `docs/features/portfolio-rebalancing-card/` (idea-brief, competitive-research) — банер «архів» зверху, зміст без змін, у контекст поточної роботи не читається.
+- `docs/z-archive/features/portfolio-rebalancing-card/` (idea-brief, competitive-research; з 2026-08-23 перенесено з `docs/features/...` у виділену архівну папку, D-63) — банер «архів» зверху, зміст без змін, у контекст поточної роботи не читається.
 - `plan/app/SPEC.md` — переписано під нову картку; попередня версія лишається доступною через `git log` (D-19: історію веде Git, не ручні копії).
 - `plan/app/src/cards/portfolio-rebalancing-card/` — перейменовано на `plan/app/src/cards/life-area-card/` (`git mv`, історія збережена).
 
