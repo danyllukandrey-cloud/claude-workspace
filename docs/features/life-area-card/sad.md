@@ -264,7 +264,7 @@ ADR files live under `docs/features/life-area-card/adr/NNNN-<title>.md`.
 | Модель картки додає третій статус запису (`pending`) — складніше, ніж «є/немає» | Medium | покрито ADR-0002 явно; UI показує pending видимо, не приховує | Андрій | — (прийнято) |
 | Open architectural decision: де саме (шлях/репозиторій) живе код мінімального бекенда — не встановлено на рівні продукту | Open question | зафіксувати при першому scaffold бекенда, ймовірно разом з фічею `agent` | Андрій | перед `/sdd:tasks life-area-card` |
 | Open architectural decision: точне число «короткого вікна» виявлення конфлікту (AC-06) | Open question | узгодити на `/sdd:data-model life-area-card` | Андрій | перед `/sdd:data-model life-area-card` |
-| Open architectural decision: максимальна кількість карток не визначена (spec.md §8) | Open question | за замовчуванням — без ліміту, лише попередження агента | Андрій | перед `/sdd:tasks life-area-card` |
+| ~~Open architectural decision: максимальна кількість карток не визначена~~ | — | перенесено у власника: [`structure/spec.md` §8](../structure/spec.md) («щільність поля розкладки») — питання розкладки, не картки | — | — |
 | Open architectural decision: Approach A ще не підтверджений формально, RICE/Feasibility TBD (spec.md §8) | Open question | рухаємось як з робочою гіпотезою | Андрій | перед `/sdd:tasks life-area-card` |
 
 **Accepted debt (acceptable in v1, plan to fix later):**
