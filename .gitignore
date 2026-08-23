@@ -1,6 +1,7 @@
 # Особисті локальні налаштування — не потрапляють у репозиторій
 .claude/settings.local.json
 .claude/sdd.local.md
+.worktrees/
 
 # Секрети — НІКОЛИ не комітимо. У git іде тільки .env.example із заглушками
 .env
