@@ -49,8 +49,8 @@
 
 - [life-area-card/design-review.md](docs/features/life-area-card/design-review.md) — архітектурне інтерв'ю generic-картки (9 блоків)
 - [life-area-card/idea-brief.md](docs/features/life-area-card/idea-brief.md) — бриф ідеї першої фічі
-- [portfolio-rebalancing-card/idea-brief.md](docs/z-archive/features/portfolio-rebalancing-card/idea-brief.md) — архів: бриф скасованої тестової картки (D-22)
-- [portfolio-rebalancing-card/competitive-research.md](docs/z-archive/features/portfolio-rebalancing-card/competitive-research.md) — архів: конкурентне дослідження
+- [portfolio-rebalancing-card/idea-brief.md](docs/z-archive/portfolio-rebalancing-card/idea-brief.md) — архів: бриф скасованої тестової картки (D-22)
+- [portfolio-rebalancing-card/competitive-research.md](docs/z-archive/portfolio-rebalancing-card/competitive-research.md) — архів: конкурентне дослідження
 
 ### Курс
 
