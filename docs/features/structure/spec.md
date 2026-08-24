@@ -27,7 +27,7 @@ feature_size: "M"
 ## 2. Goals
 
 - Користувач формулює власну декларацію «картина світу, навіщо, пріоритет» — окремо від Опису будь-якої картки.
-- Користувач розкладає картки одна відносно одної за зручним для нього способом і будь-коли перекладає їх наново — з можливістю зробити це і без перетягування.
+- Користувач розкладає картки одна відносно одної за зручним для нього способом і будь-коли перекладає їх наново перетягуванням.
 - Користувач бачить на одному екрані середній прогрес напрямків з обчислюваним відсотком (решта — окремим лічильником) і чесний розрив між заявленим пріоритетом і фактичними зусиллями — без готового вердикту.
 
 ## 3. Non-goals
@@ -93,12 +93,6 @@ feature_size: "M"
 **As a** user
 **I want**, щоб мою Структуру бачив і редагував лише я
 **So that** моя картина життя лишається моєю
-
-### US-10: Пересунути картку без перетягування
-
-**As a** user
-**I want** перемістити картку на нову позицію, обравши її зі списку, а не лише перетягуванням пальцем
-**So that** я можу керувати розкладкою, навіть якщо перетягування мені незручне (зір, моторика)
 
 ### US-11: Мати надійний слід змін картини світу
 
@@ -180,6 +174,12 @@ feature_size: "M"
 **When** they confirm the choice
 **Then** the system applies it to how their cards are arranged from that point on
 
+### AC-11b (US-02) — зміна способу розкладки з уже розкладеними картками
+
+**Given** a user has cards already arranged under one layout mode
+**When** the user switches to a different layout mode
+**Then** the system moves every card to the bottom of the screen in a fixed base order, shows the new mode's grid of allowed cells, and the user re-arranges each card into it by dragging
+
 ### AC-12 (US-08)
 
 **Given** a user decides two cards overlap in what they track
@@ -192,12 +192,6 @@ feature_size: "M"
 **When** the system computes the Structure's average
 **Then** that card is excluded from the average and the count of excluded cards is shown separately, rather than treated as zero or silently distorting the average
 
-### AC-14 (US-10)
-
-**Given** a user selects a card and opens "move to position"
-**When** they pick a target from the list of currently free positions
-**Then** the system places the card there exactly as a drag action would — the list never offers an occupied position, so the AC-02 collision case doesn't apply here
-
 ### AC-15 (US-11) — domain invariant
 
 **Given** a user renames a card, or moves it to a new position in the logic-based layout
@@ -209,7 +203,7 @@ feature_size: "M"
 | Aspect | Target | Measurement |
 |---|---|---|
 | Latency p95 відкриття екрана зведеної аналітики (з кешу) | ≤ 300 ms | клієнтський таймер |
-| Latency p95 запис зміни розкладки (перетягування чи вибір зі списку) | ≤ 200 ms | клієнтський таймер |
+| Latency p95 запис зміни розкладки (перетягування) | ≤ 200 ms | клієнтський таймер |
 | Throughput | N/A — одноосібний клієнтський застосунок | — |
 | Офлайн-доступність (читання) | 100% — аналітика отримує прогрес карток через їхню ж offline-здатну доменну логіку, без мережі | ручна перевірка без з'єднання |
 | Офлайн-доступність (запис) | розкладка й декларація приймаються офлайн, синхронізуються при відновленні з'єднання | ручна перевірка офлайн → онлайн |
