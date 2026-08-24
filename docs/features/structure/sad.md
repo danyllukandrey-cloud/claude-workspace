@@ -147,6 +147,7 @@ C4Container
     Rel(pwa, backend, "Синхронізація Структури, запис розкладки/декларації", "HTTPS")
     Rel(backend, store, "Читає/пише singleton")
     Rel(backend, historySvc, "Повідомляє про подію зміни Структури", "HTTPS")
+    Rel(backend, historySvc, "Читає історію розкладки на дату X — для тренду розриву (AC-07, D-67)", "HTTPS")
     Rel(historySvc, historyStore, "Пише подію з міткою часу")
 ```
 
@@ -308,10 +309,16 @@ sequenceDiagram
     actor User
     participant PWA
     participant Cache as Локальний кеш
+    participant Backend
+    participant HistorySvc as Сервіс літопису
 
     Note over User,PWA: Precondition: користувач відкрив екран аналітики (продовження Потоку 1, після зведення середнього)
-    PWA->>Cache: читає поточний тип розкладки й попередні зафіксовані розриви (для тренду)
-    Cache-->>PWA: тип розкладки + історія розривів по картках
+    PWA->>Cache: читає поточний тип розкладки
+    Cache-->>PWA: тип розкладки
+    PWA->>Backend: запитує розкладку на попередню контрольну точку часу (для тренду, AC-07)
+    Backend->>HistorySvc: читає історію позицій картки на дату X (D-67)
+    HistorySvc-->>Backend: розкладка на ту дату
+    Backend-->>PWA: попередня розкладка
     alt розкладка "за логікою" (є явний ранг за позицією)
         PWA->>PWA: рахує розрив кожної картки — ранг позиції проти фактичного прогресу, без вердикту (AC-06)
     else розкладка без пріоритетної схеми (одна картка / вільно)
