@@ -2,7 +2,7 @@
 status: Draft
 owner: "Андрій Данилюк"
 reviewers: []
-updated_at: "2026-08-23"
+updated_at: "2026-08-24"
 feature_size: "M"
 ---
 

@@ -81,7 +81,7 @@ erDiagram
 |---|---|---|
 | `idx_layout_position_structure` | `structure_layout_position(structure_id)` | список активних позицій на екрані Схема (US-02, US-03) |
 | `uq_layout_position_active_cell` | `structure_layout_position(structure_id, cell_index) WHERE status = 'active'` | блокування розміщення на зайняту клітинку (AC-02) — гарантія на рівні БД, не лише перевірка в PWA (Потік 4) |
-| `uq_layout_position_card` | `structure_layout_position(structure_id, card_id)` | одна позиція на картку; швидкий пошук поточної позиції картки (Потоки 2, 5) |
+| `uq_layout_position_card` | `structure_layout_position(structure_id, card_id)` | одна позиція на картку; швидкий пошук поточної позиції картки (Потоки 2, 6) |
 | `idx_layout_position_card` | `structure_layout_position(card_id)` | зворотний пошук — де зараз ця картка (AC-05 крос-контекст, каскад при видаленні картки `life-area-card`) |
 
 ## База 2 — сховище літопису Структури (окрема схема/інстанс PostgreSQL, ADR-0004 + D-67)
