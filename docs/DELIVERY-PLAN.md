@@ -395,6 +395,7 @@
 - [x] `/sdd:data-model life-area-card` → `data-model.md` — готово 2026-08-23, 4 сутності, PostgreSQL ([D-59](DECISIONS.md#d-59)), staged-міграції 01-04
   - **Доповнено 2026-08-24** ([D-68](DECISIONS.md#d-68)) — колонка `card.status` (м'яка архівація), розширений CHECK на `card_lifecycle_event.transition`, staged-міграція 05; синхронізація з розкладкою Структури — [D-69](DECISIONS.md#d-69)
 - [x] Уточнення з Андрієм — пройдено живо на кожному кроці (AskUserQuestion), окремого проходу не знадобилось
+- [ ] `/sdd:plan-tests life-area-card` → `test-plan.md` — **у черзі**, старт після завершення `PRODUCT-BOOK_OWNER-QUESTIONNAIRE.md` (поточний пріоритет, [DELIVERY-PLAN.md §🎯 Наступна сесія](DELIVERY-PLAN.md)); знайдено 2026-08-25 агентом-аудитором курсу — жодна з двох реалізованих фіч тест-плану ще не має
 
 ### Частина 2 — Структура (новий слаг `structure`)
 
@@ -408,6 +409,7 @@
 - [x] `/sdd:screens structure` → `screens.md` — готово 2026-08-24, 4 SCR у похідних станах, 11 нових компонентів (`NEW:`, усі `pending`)
 - [x] `/sdd:tasks structure` → `tasks.json` + `tasks/` — готово 2026-08-24, 25 атомарних задач, DAG з 8 паралельних гілок, усі 16 AC покриті
 - [x] Уточнення з Андрієм — пройдено живо на кожному кроці (AskUserQuestion)
+- [ ] `/sdd:plan-tests structure` → `test-plan.md` — **у черзі**, старт після завершення `PRODUCT-BOOK_OWNER-QUESTIONNAIRE.md` (поточний пріоритет, [DELIVERY-PLAN.md §🎯 Наступна сесія](DELIVERY-PLAN.md)); знайдено 2026-08-25 агентом-аудитором курсу
 
 ### Частина 3 — Агент (новий слаг `agent`)
 
