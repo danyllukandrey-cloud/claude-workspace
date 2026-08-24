@@ -2,7 +2,7 @@
 status: Draft
 owner: "Андрій Данилюк"
 reviewers: []
-updated_at: "2026-08-23"
+updated_at: "2026-08-24"
 feature_size: "M"
 ---
 
@@ -24,6 +24,7 @@ erDiagram
         uuid owner_user_id
         text name
         text description
+        text status
         timestamptz created_at
         timestamptz updated_at
     }
@@ -69,11 +70,12 @@ erDiagram
 | `owner_user_id` | UUID | NOT NULL | **Немає DB-рівня FK навмисно** — таблиця `users`/автентифікації не належить цій фічі (D-33, поза межами spec.md §3). FK-обмеження додасться, коли її створить власна фіча (ймовірно `agent`). До того — перевірка власника (AC-04) виконується на рівні бекенд-коду |
 | `name` | TEXT | NOT NULL | без назви картку не створюємо (AC-02) |
 | `description` | TEXT | NULL | Опис/«навіщо»; NULL, доки не заповнено (AC-03 блокує лише позначення «заповнена», не саме створення) |
+| `status` | TEXT | NOT NULL DEFAULT 'active', CHECK (`status` IN ('active','archived')) | видалення картки (AC-16) — м'яке, як `entry.status`: ніколи фізично не видаляємо, лише позначаємо. `archived`-картки не показуються в колоді |
 | `created_at` | timestamptz | NOT NULL DEFAULT now() | |
-| `updated_at` | timestamptz | NOT NULL DEFAULT now() | назва/Опис можуть редагуватись |
+| `updated_at` | timestamptz | NOT NULL DEFAULT now() | назва/Опис/статус можуть редагуватись |
 
 **Aggregate root:** root.
-**Access patterns:** список карток користувача (AC-04) → індекс на `owner_user_id`.
+**Access patterns:** список карток користувача (AC-04) → індекс на `owner_user_id`; список **активних** карток колоди (AC-16) → частковий індекс на `owner_user_id` де `status = 'active'`.
 **Constraints:** FK на `owner_user_id` — `<!-- TBD: додається окремою міграцією фічею, що володіє users -->`.
 
 ### `metric_block`
@@ -120,7 +122,7 @@ erDiagram
 |---|---|---|---|
 | `id` | UUID | PK, app-generated | |
 | `card_id` | UUID | NOT NULL, FK → `card(id)` ON DELETE CASCADE | індексовано нижче |
-| `transition` | TEXT | NOT NULL, CHECK (`transition` IN ('created','filled','in_use')) | стани картки, design-review Блок 4. «Некоректні дані» — не тут: це тимчасовий прапорець, не одноразовий перехід (AC-10), рахується з `entry`/`metric_block`, не зберігається окремо |
+| `transition` | TEXT | NOT NULL, CHECK (`transition` IN ('created','filled','in_use','archived')) | стани картки, design-review Блок 4. `archived` додано для AC-16 — той самий журнал, що вже фіксує «створено/заповнено/ведеться», фіксує й архівацію (аудит-слід, окремо від `card.status`, який керує видимістю). «Некоректні дані» — не тут: це тимчасовий прапорець, не одноразовий перехід (AC-10), рахується з `entry`/`metric_block`, не зберігається окремо |
 | `occurred_at` | timestamptz | NOT NULL DEFAULT now() | |
 
 **Aggregate root:** `card`.
@@ -132,6 +134,7 @@ erDiagram
 | Index | Columns | Query it serves |
 |---|---|---|
 | `idx_card_owner` | `card(owner_user_id)` | список карток користувача (AC-04, авторизація на кожному читанні) |
+| `idx_card_owner_active` | `card(owner_user_id) WHERE status = 'active'` | список **активних** карток колоди — архівовані (AC-16) не показуються |
 | `idx_metric_block_card` | `metric_block(card_id)` | читання блоків картки при відкритті (AC-09) |
 | `idx_entry_metric_block` | `entry(metric_block_id)` | перерахунок прогресу блоку з сирих подій (ADR-0001) |
 | `idx_entry_card_recorded` | `entry(card_id, recorded_at DESC)` | історія останніх N записів картки (AC-13) |
@@ -140,7 +143,7 @@ erDiagram
 
 ## Test fixtures
 
-- `buildCard({ ownerUserId, name, description })` — картка з дефолтним власником `user-<uuid>@example.test`.
+- `buildCard({ ownerUserId, name, description, status })` — картка з дефолтним власником `user-<uuid>@example.test`, за замовчуванням `status: 'active'`.
 - `buildMetricBlock({ cardId, label, unit, targetCount, isOngoing, targetDate })` — блок-метрика з дефолтною ціллю.
 - `buildEntry({ metricBlockId, cardId, amount, status })` — запис, за замовчуванням `status: 'confirmed'`.
 - `buildPendingEntry({ metricBlockId, cardId, sourceDeviceId })` — запис у стані `pending` для тестів AC-06/AC-11.

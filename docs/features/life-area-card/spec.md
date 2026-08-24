@@ -2,7 +2,7 @@
 status: Draft
 owner: "Андрій Данилюк"
 reviewers: []
-updated_at: "2026-08-23"
+updated_at: "2026-08-24"
 feature_size: "M"
 ---
 
@@ -115,6 +115,18 @@ feature_size: "M"
 **I want** розгорнути на картці історію останніх записів і разом з агентом виправити чи відкотити помилковий
 **So that** я лишаюсь господарем того, що записано, і довіряю підсумковим цифрам
 
+### US-13: Прийняти перенесену метрику з іншої картки
+
+**As a** user
+**I want** щоб метрика, перенесена із закритої картки (`structure` AC-12), опинилась у картці-отримувачі з усією своєю історією записів
+**So that** я не втрачаю минулі дані, коли перестаю вести два напрямки, що перетинаються, окремо
+
+### US-14: Видалити картку, якою більше не користуюсь
+
+**As a** user
+**I want** прибрати картку зі своєї колоди, коли я більше не веду цей напрямок
+**So that** моя колода відображає лише те, що я справді відстежую зараз
+
 ## 5. Acceptance criteria
 
 ### AC-01 (US-03) — happy path
@@ -201,6 +213,24 @@ feature_size: "M"
 **When** the user expands the card's history area
 **Then** the system shows the most recent entries in order, each with what was recorded and when
 
+### AC-14 (US-13) — happy path
+
+**Given** a user confirms moving a metric-block from a closing card into another existing card (`structure` AC-12)
+**When** the transfer completes
+**Then** the metric-block and all its recorded entries now belong to the destination card, and its history and computed progress include the moved entries exactly as they were before the move
+
+### AC-15 (US-13) — name collision
+
+**Given** the destination card already has a metric-block with the same label and unit as the one being moved
+**When** the user confirms the transfer
+**Then** the system offers to rename the moved metric-block before finishing, rather than silently merging the two into one
+
+### AC-16 (US-14)
+
+**Given** a user decides to stop tracking a card, with or without recorded entries
+**When** the user deletes it
+**Then** the system marks the card archived — never physically removed — and it disappears from the deck and from any layout that references it (`structure`), while remaining technically recoverable
+
 ## 6. Non-functional requirements
 
 | Aspect | Target | Measurement |
@@ -236,3 +266,4 @@ feature_size: "M"
 - [x] ~~Максимальна кількість карток?~~ — перенесено у власника: [`structure/spec.md` §8](../structure/spec.md) («щільність поля розкладки») — це питання розкладки, не картки.
 - [x] ~~Чи фіксуємо правило «похідні числа (прогрес, частка) не зберігаємо, лише перераховуємо з сирих подій» (Engineer, design-review блок 8)?~~ — закрито: так, [sad.md ADR-0001](sad.md) відповідає «так», прогрес рахується спільним кодом клієнт+бекенд з сирих подій.
 - [ ] Q-6 — пороги «ефективно / неефективно» виконання метрик, залежні від типу групування Структури. Default now: поза обсягом v1. — owner: Андрій, due: пізніша версія, після фічі `structure`
+- [ ] Синхронізація архівації з розкладкою Структури (AC-16, [D-66](../../DECISIONS.md#d-66)) — коли картку архівують тут, позиція в `structure_layout_position` не закривається сама собою (окрема база, окрема таблиця): потрібне явне з'єднання на рівні застосунку (архівація картки → подія → Структура позначає позицію `closed`), деталь не спроєктована. Default now: обидві дії існують незалежно, ручна синхронізація на рівні коду `implement`. — owner: Андрій, due: перед `/sdd:api life-area-card` чи `/sdd:api structure`, що відбудеться пізніше
