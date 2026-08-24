@@ -1,0 +1,367 @@
+# Derived — never hand-edit without re-running /sdd:api structure --reconcile after upstream changes.
+#   fields + constraints  ← data-model.md (structure, structure_layout_position)
+#   error responses       ← sad.md §6 sequence alt-branches
+#   endpoint list + shape ← spec.md §4 user stories / §5 acceptance criteria
+openapi: 3.1.0
+
+info:
+  title: Structure API
+  version: 0.1.0
+  description: |
+    Один об'єкт на користувача — Структура — тримає декларацію "картина світу, навіщо, пріоритет"
+    окремо від Опису кожної картки, розкладку карток за одним із трьох варіантів групування,
+    і зведену аналітику (середній прогрес + чесний розрив між заявленим і фактичним, без вердикту).
+    Прогрес кожної картки отримується через уже наявну доменну логіку `life-area-card`
+    (ADR-0001) — цей API не рахує власну формулу прогресу, лише зводить отримані значення.
+
+    Структура — singleton: жодна операція не приймає її ідентифікатор. Кожен ендпоінт діє на
+    "мою власну Структуру", визначену через Bearer-токен — цим структурно закривається AC-03
+    (доступ до чужої Структури неможливо навіть спробувати, бо адресувати чужу Структуру нема як).
+  contact:
+    name: Андрій Данилюк
+
+servers:
+  - url: https://api.example.com
+    description: Production
+  - url: http://localhost
+    description: Local
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Structure
+    description: Singleton-декларація та спосіб розкладки
+  - name: Layout
+    description: Позиції карток у розкладці
+
+paths:
+  /api/v1/structure:
+    get:
+      tags: [Structure]
+      summary: Прочитати мою Структуру (декларація + спосіб розкладки)
+      description: |
+        Повертає Структуру поточного користувача. Якщо Структура ще не існувала (перший вхід) —
+        створюється лениво (lazy) з порожньою декларацією й `layout_mode: null` (AC-09 — вибір
+        способу розкладки не обов'язковий одразу).
+      operationId: getMyStructure
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Structure" }
+        "401":
+          $ref: "#/components/responses/Error"
+
+    patch:
+      tags: [Structure]
+      summary: Оновити декларацію та/або спосіб розкладки
+      description: |
+        Частковий запис — можна передати лише `declaration`, лише `layoutMode`, чи обидва (AC-10,
+        AC-11). Конфлікт офлайн-синхронізації (два пристрої редагували одночасно) вирішується
+        last-write-wins за `updatedAt` клієнта проти збереженого значення (ADR-0002) — сервер
+        мовчки приймає останній за часом запис, явного прапорця конфлікту немає.
+
+        **Побічна дія (AC-11b):** якщо `layoutMode` змінюється на ЗНАЧЕННЯ, ВІДМІННЕ від
+        збереженого, сервер автоматично переміщує кожну активну позицію розкладки в базовий
+        (фіксований) порядок під нову схему клітинок — без окремого виклику клієнта. Клієнт після
+        відповіді читає `GET /structure/layout` і показує користувачу нову схему для повторного
+        розкладання перетягуванням.
+      operationId: updateMyStructure
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StructureUpdate" }
+            example:
+              declaration: "Навчання й здоров'я зараз важливіші за кар'єру."
+              layoutMode: "logic"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Structure" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "422":
+          description: невалідне значення layoutMode (не одне з трьох дозволених)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "structure.invalid_layout_mode"
+                message: "layoutMode must be one of: single, free, logic"
+
+  /api/v1/structure/layout:
+    get:
+      tags: [Layout]
+      summary: Прочитати активні позиції розкладки (екран Схема)
+      description: "Список позицій (`cardId` + `cellIndex`) для екрана Схема — лише активні (`status: active`)."
+      operationId: listLayoutPositions
+      parameters:
+        - in: query
+          name: after
+          description: cursor — id останньої побаченої позиції
+          schema: { type: string, format: uuid }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LayoutPositionPage" }
+        "401":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/structure/layout/history:
+    get:
+      tags: [Layout]
+      summary: Реконструювати розкладку на попередню дату (для тренду розриву, AC-07)
+      description: |
+        Читає з окремого сервісу літопису (ADR-0004, D-67) останню позицію кожної картки з
+        `occurred_at <= asOf` — тобто "якою була розкладка на цю дату". Використовується Потоком 9
+        (`sad.md §6`), щоб порахувати, чи розрив зростає, чи меншає з часом.
+
+        **Відкрите питання (sad.md §11):** поведінка, коли сервіс літопису недоступний, ще не
+        вирішена (блокувати запит чи повертати часткові дані) — цей контракт її не визначає.
+      operationId: getLayoutHistoryAsOf
+      parameters:
+        - in: query
+          name: asOf
+          required: true
+          description: контрольна точка часу (ISO 8601)
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LayoutPositionPage" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "422":
+          description: asOf у майбутньому чи невалідний формат
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "structure.invalid_as_of"
+                message: "asOf must be a past ISO 8601 timestamp"
+
+  /api/v1/structure/layout/{cardId}:
+    put:
+      tags: [Layout]
+      summary: Перемістити картку на нову позицію (перетягування, AC-08)
+      description: |
+        Ставить картку `cardId` на клітинку `cellIndex` у Структурі поточного користувача.
+        Одна активна картка на клітинку в розкладці "за логікою" — гарантовано на рівні БД
+        (частковий унікальний індекс, `data-model.md`), не лише перевіркою тут (AC-02).
+        Конфлікт офлайн-синхронізації — last-write-wins за `positionUpdatedAt` (ADR-0002, Потік 2).
+      operationId: moveCard
+      parameters:
+        - in: path
+          name: cardId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LayoutPositionMoveRequest" }
+            example:
+              cellIndex: 12
+              positionUpdatedAt: "2026-08-24T10:15:00Z"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LayoutPosition" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          description: |
+            картка не знайдена в розкладці поточного користувача — той самий код і для "не існує",
+            і для "належить іншому користувачу" (AC-03: не підтверджуємо й не спростовуємо)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "structure.card_not_found"
+                message: "Card not found in your Structure"
+        "409":
+          description: клітинка вже зайнята активною карткою в розкладці "за логікою" (AC-02)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "structure.cell_occupied"
+                message: "This cell is already taken — pick a free one"
+
+    post:
+      tags: [Layout]
+      summary: Закрити напрямок (AC-12)
+      description: |
+        Закриває позицію картки `cardId` в розкладці (м'який статус `closed`, ніколи фізичне
+        видалення — D-66) і пише подію `closed` у сервіс літопису з часовою міткою (AC-15).
+        Опційно переносить перелічені метрики картки в інші існуючі картки перед закриттям
+        (AC-12, D-65) — сам перенос виконує доменна логіка `life-area-card`
+        (`life-area-card` API US-13/AC-14/AC-15, поза цим контрактом).
+      operationId: closeCard
+      parameters:
+        - in: path
+          name: cardId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CloseCardRequest" }
+            example:
+              metricTransfers:
+                - metricBlockId: "8f14e45f-ceea-4d6a-9c3a-77b3f2a55e11"
+                  targetCardId: "2f9d3e4a-1b2c-4d5e-8f6a-9b0c1d2e3f4a"
+                  newLabel: "км (перенесено)"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LayoutPosition" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          description: cardId не знайдений у Структурі поточного користувача (AC-03, як вище)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "structure.card_not_found"
+                message: "Card not found in your Structure"
+        "422":
+          description: цільова картка перенесення метрики не знайдена чи не належить користувачу
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "structure.metric_transfer_target_invalid"
+                message: "targetCardId does not exist or is not yours"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Error:
+      description: Error — unified envelope
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+          pattern: "^[a-z_]+\\.[a-z_]+$"
+          example: "structure.card_not_found"
+        message: { type: string }
+        details:
+          type: object
+          description: опційний структурований контекст (напр. конфліктуючий cellIndex)
+
+    Structure:
+      type: object
+      required: [id, layoutMode, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        declaration:
+          type: [string, "null"]
+          description: картина світу / навіщо / пріоритет — окремо від Опису картки (AC-10)
+        layoutMode:
+          type: [string, "null"]
+          enum: [single, free, logic, null]
+          description: "null = ще не обрано (AC-09) — три варіанти групування, D-29"
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    StructureUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        declaration: { type: [string, "null"] }
+        layoutMode: { type: [string, "null"], enum: [single, free, logic, null] }
+
+    LayoutPosition:
+      type: object
+      required: [cardId, cellIndex, status, positionUpdatedAt]
+      additionalProperties: false
+      properties:
+        cardId: { type: string, format: uuid }
+        cellIndex:
+          type: integer
+          minimum: 0
+          description: номер клітинки у фіксованій нумерованій схемі (sad.md §5.2, "запас вільних клітинок")
+        status:
+          type: string
+          enum: [active, closed]
+          description: "'closed' — м'яке закриття напрямку (AC-12, D-66), ніколи фізичне видалення"
+        positionUpdatedAt:
+          type: string
+          format: date-time
+          description: часова мітка для last-write-wins при офлайн-конфлікті (ADR-0002)
+
+    LayoutPositionMoveRequest:
+      type: object
+      required: [cellIndex, positionUpdatedAt]
+      additionalProperties: false
+      properties:
+        cellIndex: { type: integer, minimum: 0 }
+        positionUpdatedAt:
+          type: string
+          format: date-time
+          description: часова мітка клієнта — визначає переможця при конфлікті (ADR-0002)
+
+    CloseCardRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        metricTransfers:
+          type: array
+          items: { $ref: "#/components/schemas/MetricTransfer" }
+          default: []
+          description: "порожньо/відсутнє = закрити без перенесення жодної метрики (AC-12)"
+
+    MetricTransfer:
+      type: object
+      required: [metricBlockId, targetCardId]
+      additionalProperties: false
+      properties:
+        metricBlockId: { type: string, format: uuid }
+        targetCardId: { type: string, format: uuid }
+        newLabel:
+          type: [string, "null"]
+          description: "перейменування при колізії назви з метрикою, що вже є на цільовій картці (life-area-card AC-15)"
+
+    LayoutPositionPage:
+      type: object
+      required: [items, has_next, has_prev]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/LayoutPosition" }
+        has_next: { type: boolean }
+        has_prev: { type: boolean }
+        next_cursor: { type: [string, "null"], format: uuid }
