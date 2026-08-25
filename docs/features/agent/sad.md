@@ -4,7 +4,7 @@ owner: "Андрій"
 reviewers: ["Tech Lead", "Security Lead"]
 updated_at: "2026-08-25"
 feature_size: "M"
-target_surfaces: []  # filled in §4 — subset of: backend-service | web-frontend | mobile-app | desktop-app | cli | worker | library-sdk. Read (never re-derived) by api/sequences/tasks/plan-tests/review → _shared/surfaces.md
+target_surfaces: [backend-service, web-frontend, worker]  # ADR-0001 — subset of: backend-service | web-frontend | mobile-app | desktop-app | cli | worker | library-sdk. Read (never re-derived) by api/sequences/tasks/plan-tests/review → _shared/surfaces.md
 ---
 
 # Software Architecture Document — agent
@@ -88,19 +88,21 @@ C4Context
 
 ## 4. Solution strategy
 
-<!-- 🎯 Why: the 3–4 STRATEGIC PILLARS every ADR grows from. Without §4 each ADR looks random —
-     there's no umbrella. ⭐ The densest section — the blast-radius gate fires almost always here
-     (decisions are irreversible + multi-module).
-     📋 Write: 3–4 choices; each a heading + 2–3 sentences of rationale.
-     📌 «Store content as a table of typed blocks» is a pillar — ADR-0001 grows from it. -->
+**Target surfaces (frontmatter `target_surfaces`): `backend-service`, `web-frontend`, `worker`** — [ADR-0001](adr/0001-split-agent-across-three-surfaces.md). Чат-логіка й розбір повідомлень живуть на бекенді; вбудований чат — новий UI-контейнер у вже наявній PWA; звіти активності (AC-11) — окремий контейнер зі своїм розкладом, ізольований від latency-критичного шляху чату.
 
 **Top strategic choices (the seeds for ADRs):**
 
-1. **<e.g. Module isolation through events>** — <2–3 sentences citing quality goals + constraints>.
-2. **<e.g. Single-store persistence>** — <2–3 sentences>.
-3. **<e.g. Server-rendered read side>** — <2–3 sentences>.
+1. **Спільна база + власний розклад для worker** — [ADR-0002](adr/0002-shared-database-plus-schedule-for-worker.md). `worker` читає ту саму PostgreSQL-базу, що й `backend-service`, і сам вирішує, коли час формувати черговий звіт (тижневий/місячний/квартальний) — без окремої черги/брокера, бо тригер часовий, не подієвий (AC-11, Availability 99.0%).
+2. **Довгострокова памʼять — у тій самій базі, що й картки** — [ADR-0003](adr/0003-long-term-memory-in-shared-database.md). Нова чутлива поверхня даних (US-06/AC-09) читається на кожному повідомленні в реальному часі, тому живе поруч із картками в одній транзакційній межі, не в окремому сервісі (на відміну від літопису Структури, де інша природа доступу).
+3. **Примус правил: prompt + post-hoc guard-перевірка** — [ADR-0004](adr/0004-prompt-plus-post-hoc-guard-for-rule-enforcement.md). Найгостріший ризик фічі (`devils-advocate`, spec §1): саме лише покладання на системний промпт не гарантує дотримання правила (AC-07/AC-08/AC-12/AC-14) і не робить порушення видимим. Backend прогонятиме кожну відповідь агента окремою легкою перевіркою перед показом користувачу.
 
-Each tactical decision in later sections should trace to one of these seeds. Tactical decisions that *contradict* a strategic choice are red flags — surface them in §11.
+**UI-архітектура (web-frontend surface):** SPA — чат-компонента живе в тій самій React SPA, що й решта ПЛАНу (D-1, ADR-0001 фронтенд-стек); альтернатива (SSR) вже виключена існуючим стеком, тож без окремого ADR.
+
+**Життєвий цикл пропозиції, що чекає підтвердження (AC-03), закриває спірне питання spec §8:** одна активна пропозиція на користувача, без TTL. Наступне повідомлення або оновлює її (уточнення, AC-02b), або — якщо тематично не повʼязане — стара мовчки відкидається (нічого не записується, AC-03), а нове стає активною пропозицією. Одномодульно й реверсивно (1 з 3 критеріїв блaст-радіуса) — рішення лишається inline, без ADR.
+
+**Cache tier:** немає (v1) — один бекенд-інстанс (Availability §6), латency-бюджет (§6 NFR) переважно йде на виклик Claude API, не на читання бази; додавати кеш немає підстави без виміряного навантаження. Reversible/low-stakes — inline, без ADR, за замовчуванням репозиторію.
+
+Кожне тактичне рішення в наступних секціях трасується до одного з цих чотирьох стовпів. Тактичне рішення, що суперечить стратегічному вибору, — червоний прапорець, виносити в §11.
 
 ## 5. Building block view
 
@@ -226,8 +228,10 @@ sequenceDiagram
 
 | # | Title | Status | Section |
 |---|---|---|---|
-| <NNNN> | <imperative — e.g. "Use a sliding-window counter for rate limiting"> | Accepted | §<N> |
-| <NNNN> | <imperative — e.g. "Co-locate the worker in the API process"> | Accepted | §<N> |
+| 0001 | Split agent across three target surfaces: backend-service, web-frontend, worker | Accepted | §4 |
+| 0002 | Worker integrates with backend-service via the shared database and its own schedule | Accepted | §4 |
+| 0003 | Store long-term agent memory in the shared backend database | Accepted | §4 |
+| 0004 | Enforce user imperative rules via system prompt plus a post-hoc guard check | Accepted | §4 |
 
 ADR files live under `docs/features/<slug>/adr/NNNN-<title>.md`.
 
