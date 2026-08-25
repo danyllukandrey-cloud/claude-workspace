@@ -35,30 +35,26 @@ target_surfaces: []  # filled in §4 — subset of: backend-service | web-fronte
 
 ## 2. Constraints
 
-<!-- 🎯 Why: §4 strategy only works when §2 has fixed WHAT IS ALREADY FIXED — stack, versions,
-     deadline, regulatory. This is an input, not an output.
-     📋 Write: four blocks — Technical / Organisational / Conventions / Regulatory.
-     📌 Pin versions («<datastore> 18», not «<datastore>»); «Q3 deadline — hard», not «ideally».
-     Never N/A — every feature inherits at least Conventions + Technical. -->
-
 **Technical.**
-- <Language + version>
-- <Framework(s) + version>
-- <Datastore(s) + version>
-- <Architecture convention — e.g. the layering style from the project convention file>
+- TypeScript на Node.js — той самий стек, що й фронтенд (architecture-map.md)
+- «Мінімальний бекенд» (сервер-проксі, D-24) — агент живе тут; ще жодного разу не піднімався в коді (DELIVERY-PLAN «Розробка» 5%)
+- PostgreSQL 16+ ([D-59](../../DECISIONS.md#d-59)) — база бекенда, джерело правди для карток і синхронізації
+- Claude API (Anthropic) — постачальник LLM, ключ ховається на бекенді (architecture-map.md C4)
+- PWA-фронтенд (React 18+ + Vite + Tailwind) — вбудований чат з агентом, той самий стек, що й `life-area-card`/`structure`
 
 **Organisational.**
-- <Effort budget — e.g. 3 person-weeks>
-- <Deadline — e.g. 2026-Q3 hard>
-- <Team composition>
+- Одна людина (Андрій) у темпі ~1–2 год/тиждень — Клод як асистент розробки
+- Жорсткого дедлайну немає
 
 **Conventions.**
-- <Link to the project's convention file>
-- <Naming, ID strategy, error-handling pattern>
+- [`architecture-map.md`](../../architecture-map.md) — повний перелік конвенцій продукту
+- Обробка помилок: на лицьовій стороні чату, ніколи `alert`/`confirm`
+- ID: `crypto.randomUUID()` для будь-яких збережених записів
+- Зберігання на клієнті: лише через `shared/storage/` (кеш, не єдине джерело)
 
 **Regulatory / external.**
-- <e.g. data-retention / deletion behaviour per ADR-NNNN>
-- <e.g. applicable compliance controls, or N/A with a reason>
+- spec.md §6.1: Security review — **Required**, нова чутлива поверхня даних (довгострокова памʼять: факти, можливо ім'я, здоров'я, рішення)
+- Дані класифіковані як confidential; авторизація прив'язана до Google-входу (D-33), кожен запит скерований лише на дані свого користувача (AC-06)
 
 ## 3. Context and scope
 
