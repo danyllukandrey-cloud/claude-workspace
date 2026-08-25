@@ -106,49 +106,61 @@ C4Context
 
 ## 5. Building block view
 
-<!-- 🎯 Why: INTERNAL DECOMPOSITION — modules, containers, datastores. The static topology: who
-     may talk to whom. Without §5, §6 (the flows) has no vocabulary of participants.
-     📋 Write: 1 ¶ on the style (layered / hexagonal / clean / event-driven) + a folder tree + a
-     C4Container block.
-     📌 Draw ONE Container per declared `target_surface` (frontmatter): a fullstack
-     [backend-service, web-frontend] = a backend-API container + a web/SPA container; a
-     [backend-service, mobile-app] = the API + the mobile app. The Container(web, …) line below is
-     just one surface's container — swap/add per what was declared in §4. → _shared/surfaces.md
-     📌 e.g. «web app, content API, media worker, datastore, object store, CDN». -->
+Шарова/гексагональна архітектура — той самий принцип, що вже діє на фронтенді (`domain/` + `ui/`, [ADR-0004 scaffold architecture](../../adr/0004-scaffold-architecture.md)): чиста доменна логіка окремо від доставки. На бекенді — `domain/app/infra/ports` ([ADR-0005](adr/0005-layered-domain-app-infra-ports-backend.md)), перша фіча, що реально встановлює цю конвенцію для «мінімального бекенда» (D-24). `worker` — окремий топ-рівень модуль коду, дзеркалить власний C4-контейнер ([ADR-0001](adr/0001-split-agent-across-three-surfaces.md)), за зразком того, як `structure` окремо від `cards/`.
 
-<One paragraph: layered / hexagonal / clean / event-driven, and why.>
-
-**Internal decomposition:**
+**Internal decomposition (backend, `plan/backend/src/`):**
 
 ```
-<e.g. modules/<feature>/>
-├── domain/       <entities + sentinel errors>
-├── app/          <use cases / services>
-├── infra/        <repository + integration impl>
-├── ports/        <handlers, DTOs, error mapping>
-└── wiring        <self-wiring entry point>
+plan/backend/src/
+├── agent/
+│   ├── domain/
+│   │   ├── proposal.ts       # стан пропозиції: одна активна, оновлення уточненням (AC-02b), без TTL
+│   │   ├── rules.ts          # доменна модель правил (глобальні + card-override, AC-08/AC-12)
+│   │   ├── guard.ts          # логіка post-hoc перевірки дотримання правила — ADR-0004
+│   │   └── memory.ts         # доменна модель короткострокового вікна + довгострокових фактів
+│   ├── app/
+│   │   ├── handle-message.ts # use-case: повідомлення/вкладення → пропозиція (AC-01/AC-10)
+│   │   ├── confirm.ts        # use-case: підтвердження → запис у картку (AC-02/AC-03)
+│   │   └── ask-agent.ts      # оркеструє виклик Claude API + guard-перевірку
+│   ├── infra/
+│   │   ├── claude-client.ts  # виклик Claude API (ключ ховається тут, D-24)
+│   │   ├── postgres-repo.ts  # читання/запис карток, правил, пам'яті (ADR-0003)
+│   │   └── auth.ts           # Google-вхід (D-33), скоуп на користувача (AC-06)
+│   └── ports/
+│       └── chat-handler.ts   # HTTP-хендлер чату — контракт лише в /sdd:api agent
+└── agent-worker/
+    ├── domain/
+    │   └── report.ts         # доменна модель activity-report (CONTEXT.md), розрахунок за період
+    ├── app/
+    │   └── generate-report.ts # use-case: «чий звіт зараз» → пасивний запис (AC-11)
+    └── infra/
+        └── schedule.ts        # розклад тижневий/місячний/квартальний, читає ту саму базу — ADR-0002
 ```
 
-**C4 Container (L2):** <!-- syntax → references/c4-mermaid-syntax.md. Real names, no <placeholder> stubs. ONE Container per declared target_surface (frontmatter); the web container below is one example surface. -->
+**C4 Container (L2):**
 
 ```mermaid
 C4Container
-    title <feature> — Containers
+    title agent — Containers
 
-    Person(actor, "<Actor>")
+    Person(user, "Користувач")
 
-    Container_Boundary(app, "<Our system>") {
-        Container(web, "<Web/UI>", "<technology>", "<purpose>")
-        Container(api, "<API/handler>", "<technology>", "<purpose>")
-        ContainerDb(db, "<Datastore>", "<technology>", "<purpose>")
+    Container_Boundary(app, "ПЛАН") {
+        Container(chatUi, "Чат-панель", "React + TypeScript (SPA)", "Вбудований чат — текст/вкладення, показ пропозиції й підтвердження")
+        Container(backend, "Мінімальний бекенд", "Node.js + TypeScript", "Розбір повідомлень, правила, guard-перевірка, пам'ять, Google-вхід")
+        Container(agentWorker, "Сервіс звітів агента", "Node.js (розклад)", "Формує тижневі/місячні/квартальні звіти активності — ADR-0002")
+        ContainerDb(db, "PostgreSQL", "PostgreSQL 16+", "Картки, правила, коротко- й довгострокова пам'ять, звіти активності — ADR-0003")
     }
 
-    System_Ext(ext, "<External>", "<purpose>")
+    System_Ext(claude, "Claude API", "Anthropic")
+    System_Ext(google, "Google", "OAuth")
 
-    Rel(actor, web, "<interaction>", "<protocol>")
-    Rel(web, api, "<calls>")
-    Rel(api, db, "<reads/writes>", "<driver>")
-    Rel(api, ext, "<emits>", "<protocol>")
+    Rel(user, chatUi, "Пише повідомлення чи надсилає вкладення, підтверджує", "HTTPS")
+    Rel(chatUi, backend, "Надсилає повідомлення, отримує пропозицію", "JSON/HTTPS")
+    Rel(backend, db, "Читає/пише картки, правила, пам'ять", "SQL")
+    Rel(backend, claude, "Запит на розбір повідомлення", "HTTPS")
+    Rel(backend, google, "Автентифікація", "OAuth")
+    Rel(agentWorker, db, "Читає активність за період, пише звіт", "SQL")
 ```
 
 ## 6. Runtime view
@@ -232,6 +244,7 @@ sequenceDiagram
 | 0002 | Worker integrates with backend-service via the shared database and its own schedule | Accepted | §4 |
 | 0003 | Store long-term agent memory in the shared backend database | Accepted | §4 |
 | 0004 | Enforce user imperative rules via system prompt plus a post-hoc guard check | Accepted | §4 |
+| 0005 | Layer the backend as domain/app/infra/ports | Accepted | §5 |
 
 ADR files live under `docs/features/<slug>/adr/NNNN-<title>.md`.
 
