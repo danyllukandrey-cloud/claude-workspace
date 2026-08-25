@@ -15,27 +15,21 @@ target_surfaces: []  # filled in §4 — subset of: backend-service | web-fronte
 
 ## 1. Introduction and goals
 
-<!-- 🎯 Why: durable memory of «what + the three dominant qualities + who cares». A year from
-     now nobody recalls which three qualities were critical for this system.
-     📋 Write: 1 ¶ intent + 3 lines of top-3 quality goals + a stakeholders table.
-     ¶4 is the override slot — critic `Override` resolutions emit «Decision override: <headline>
-     — rationale: <reason>» bullets here so downstream skills see the deliberate choice. -->
-
-**Intent.** <One paragraph from spec §2 Goals — what we're building and for whom.>
+**Intent.** Агент — єдиний суцільний співрозмовник продукту ПЛАН (D-25), з яким користувач розмовляє текстом чи надсилає вкладення. Він перетворює вільне повідомлення на конкретну пропозицію запису в потрібній картці, завжди чекає явного підтвердження перед записом, дотримується правил користувача (куратоване меню + власне сформульоване правило) і памʼятає контекст між сесіями — без окремої форми ручного вводу.
 
 **Top-3 quality goals (1-liners; full scenarios in §10):**
 
-1. <e.g. "Availability under partial failure of a downstream module">
-2. <e.g. "Read performance for the dashboard under data-scale growth">
-3. <e.g. "Recoverability with <30 min RTO">
+1. **Довіра до запису** — жоден запис у картку не стається без явного підтвердження користувача; мовчазного запису не буває (D-30, AC-02/AC-03).
+2. **Швидкість діалогу** — p95 ≤4000 мс від повідомлення до пропозиції, p95 ≤1000 мс від підтвердження до оновленого лічильника (spec §6 NFR).
+3. **Конфіденційність довгострокової памʼяті** — нова чутлива поверхня даних (факти про життя людини); Security review Required (spec §6.1).
 
 **Stakeholders.**
 
 | Role | Interest | Sign-off owner? |
 |---|---|---|
-| <author role from glossary> | <feature usage> | No |
-| <consumer role from glossary> | <read usage> | No |
-| Tech Lead | SAD approval | Yes |
+| user (CONTEXT.md) | Розмовляє з агентом, довіряє йому запис своїх даних і особисті правила | No |
+| Tech Lead | Схвалення SAD | Yes |
+| Security Lead | Схвалення через нову чутливу поверхню даних (довгострокова памʼять) | Yes |
 
 <!-- Decision overrides (¶4) — populated by the critic resolution loop, empty otherwise. -->
 
