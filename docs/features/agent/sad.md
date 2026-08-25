@@ -58,37 +58,32 @@ target_surfaces: []  # filled in §4 — subset of: backend-service | web-fronte
 
 ## 3. Context and scope
 
-<!-- 🎯 Why: draws the SYSTEM BOUNDARY — who talks to it from outside, where the trust zone ends.
-     Without §3, §5 and §8 (authorization) blur — unclear what's «inside» vs «outside».
-     📋 Write: 2–3 sentences of business context + an external-systems table + a C4Context block.
-     📌 «External: none (deliberate, no third-party in v1)» is itself a decision worth stating.
-     Trust boundary — the line past which you don't trust data without checking it.
-     Never N/A — greenfield still draws the planned actors + external systems. -->
+Агент — єдиний канал прямого вводу продукту ПЛАН (D-25): користувач пише текстом або надсилає вкладення, агент розпізнає ймовірний запис, чекає підтвердження, дотримується особистих правил користувача і памʼятає контекст між сесіями.
 
-<Business context in 2–3 sentences. What the system does for whom.>
-
-<!-- brownfield: <one-line scan summary> (or «N/A — greenfield repo» if no source existed) -->
+<!-- brownfield: N/A — greenfield-фіча; «мінімальний бекенд» (D-24), де живе агент, ще жодного разу не піднімався в коді (architecture-map.md, DELIVERY-PLAN «Розробка» 5%) -->
 
 **External systems (in / out):**
 
 | Actor or system | Type | Interaction |
 |---|---|---|
-| <author role> | Person | <what they do> |
-| <external service> | System (internal/external) | <interaction> |
-| <identity provider> | System (external) | <provides auth tokens> |
+| user | Person | Пише повідомлення чи надсилає вкладення, підтверджує/уточнює пропозицію, задає правила |
+| Google | System (external) | Вхід користувача (OAuth, D-33) — успадковано з `life-area-card` |
+| Claude API (Anthropic) | System (external) | Мовна модель — розбирає вільний текст/вкладення, формує пропозицію запису й пояснення |
 
-**C4 Context (L1):** <!-- syntax → references/c4-mermaid-syntax.md. Real names, no <placeholder> stubs. -->
+**C4 Context (L1):**
 
 ```mermaid
 C4Context
-    title <feature> — System Context
+    title agent — System Context
 
-    Person(actor, "<Actor role>", "<intent>")
-    System(app, "<Our system>", "<one-sentence description>")
-    System_Ext(ext, "<External system>", "<one-sentence description>")
+    Person(user, "Користувач", "Пише текстом або надсилає вкладення, підтверджує запис")
+    System(plan, "ПЛАН", "Розпізнає повідомлення, пропонує запис, дотримується правил, пам'ятає контекст")
+    System_Ext(google, "Google", "Вхід користувача (OAuth)")
+    System_Ext(claude, "Claude API (Anthropic)", "Мовна модель — розбирає текст/вкладення, формує пропозицію")
 
-    Rel(actor, app, "<interaction>", "<protocol>")
-    Rel(app, ext, "<interaction>", "<protocol>")
+    Rel(user, plan, "Пише повідомлення або вкладення, підтверджує/уточнює пропозицію", "HTTPS")
+    Rel(plan, google, "Автентифікація", "OAuth")
+    Rel(plan, claude, "Запит на розбір повідомлення й формування пропозиції", "HTTPS")
 ```
 
 ## 4. Solution strategy
