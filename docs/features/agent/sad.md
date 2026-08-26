@@ -269,22 +269,18 @@ Each top-3 goal from §1 expanded into a full scenario:
 
 ## 11. Risks and technical debt
 
-<!-- 🎯 Why: ⭐ collects EVERYTHING that can break — not only the technical. Without §11 risks get
-     discussed at standups and lost; debt lives only in the head of whoever accepted it.
-     📋 Write: a risk/debt table — severity — mitigation — owner. Accepted debt in its own block.
-     📌 The first risk is often a product risk, not a technical one. That's normal. -->
-
-<!-- Severity literals: Low / Medium / High for regular risks; "Open question" for rows created by
-     a Save-as-OQ resolution during the Socratic walk (see references/socratic.md). -->
-
 | Risk / debt | Severity | Mitigation | Owner |
 |---|---|---|---|
-| <e.g. Worker lag may reach hours during a downstream outage> | Medium | <alert >10 min, on-call playbook, retry backoff> | <DevOps> |
-| <e.g. No event-schema versioning in v1> | Medium | <ADR-NNNN planned for v2, tolerate unknown fields> | <Backend> |
-| Open architectural decision: <decision-headline> | Open question | Resolve before <stage trigger or YYYY-MM-DD>; <inline rationale from the Save-as-OQ> | <owner> |
+| Дисципліна sentinel-конвенції (ADR-0006): спокуса кинути звичайний `throw` в `infra/` замість sentinel на межі з `domain` | Medium | Code review за чек-листом (лінтер-правило — пізніше, коли зʼявиться конфігурація) | Андрій |
+| Open architectural decision: точність дотримання власного правила користувача (AC-07) | Open question | Resolve before `/sdd:implement agent` — ціль лишається TBD, поки не спроєктовано механізм примусу (D-35, §10 QG-1) | Андрій |
+| Open architectural decision: механізм редагування/видалення хибного факту з довгострокової пам'яті | Open question | Resolve before `/sdd:data-model agent` — спричинено abuse case spec §6.1 (отруєння/невидалюваність пам'яті); торкається схеми даних | Андрій |
+| Open architectural decision: конкретне число ліміту частоти записів проти спаму | Open question | Resolve before `/sdd:data-model agent` — abuse case spec §6.1, число не вирішено | Андрій |
+| Open architectural decision: scaling threshold — коли один інстанс backend/worker/Postgres (§7) перестає вистачати | Open question | Resolve after `/sdd:implement agent` — свідомо не фіксуємо число до перших реальних вимірів навантаження | Андрій |
 
 **Accepted debt (acceptable in v1, plan to fix later):**
-- <e.g. the entity is immutable / unversioned — OK for v1, may need audit versioning in v2>
+- Без retry при недоступності Claude API (AC-03, §6 Critical flow 2) — текст користувача не втрачається, повторна спроба лишається дією користувача, не автоматикою.
+- Без кешу (§4 Cache tier) — жодних вимірів навантаження, що виправдали б додавання шару кешування.
+- Без реплік і autoscaling (§7) — масштаб v1 (Андрій + фокус-група 30+, D-55) цього не потребує.
 
 ## 12. Glossary
 
