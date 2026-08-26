@@ -2,7 +2,7 @@
 status: Draft
 owner: "Андрій"
 reviewers: ["Tech Lead", "Security Lead"]
-updated_at: "2026-08-25"
+updated_at: "2026-08-26"
 feature_size: "M"
 target_surfaces: [backend-service, web-frontend, worker]  # ADR-0001 — subset of: backend-service | web-frontend | mobile-app | desktop-app | cli | worker | library-sdk. Read (never re-derived) by api/sequences/tasks/plan-tests/review → _shared/surfaces.md
 ---
