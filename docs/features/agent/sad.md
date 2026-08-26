@@ -284,13 +284,12 @@ Each top-3 goal from §1 expanded into a full scenario:
 
 ## 12. Glossary
 
-<!-- 🎯 Why: ⭐ the DOMAIN GLOSSARY that ends arguments a year later («checkpoint — weekly or
-     biweekly? quarter — calendar or fiscal?»).
-     📋 Write: a term / meaning table. Business + technical terms mixed.
-     📌 e.g. «Lesson | a unit inside a course made of blocks (text, video)». -->
-
 | Term | Meaning |
 |---|---|
-| <e.g. domain object A> | <its meaning in this domain> |
-| <e.g. domain object B> | <its meaning> |
-| <e.g. domain invariant name> | <the rule, in plain language> |
+| agent | агент — один суцільний співрозмовник продукту (D-25); v1 без вибору характеру (D-78) (CONTEXT.md) |
+| imperative-rule | імперативне правило користувача — куратоване меню (D-27) + власний текст (D-35), примус — ADR-0004 (CONTEXT.md) |
+| activity-report | тижневий/місячний/квартальний звіт активності, формує `worker` (D-70), пасивний запис (CONTEXT.md) |
+| proposal | пропозиція — стан очікування підтвердження: одна активна на користувача, без TTL; наступне повідомлення або уточнює її, або (якщо тематично не пов'язане) вона мовчки відкидається (§4, AC-02/AC-03) — архітектурний термін цього SAD, не в канонічному глосарії |
+| guard-check | post-hoc перевірка дотримання правил перед показом відповіді користувачу — сам системний промпт не гарантує дотримання (ADR-0004) |
+| long-term / short-term memory | гібридна пам'ять агента: довгострокова структурована (значущі факти/рішення) + коротке сире вікно останніх сесій (D-26); довгострокова — нова чутлива поверхня даних (spec §6.1) |
+| sentinel result | типізований результат `Ok<T>ǀErr<E>` для очікуваної помилки в domain-шарі — ніколи `throw` (ADR-0006) |
