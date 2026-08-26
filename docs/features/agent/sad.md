@@ -165,31 +165,50 @@ C4Container
 
 ## 6. Runtime view
 
-<!-- 🎯 Why: the RUNTIME FLOW of 1–2 critical scenarios — who talks to whom, when, in what order.
-     Without §6, §5 is just boxes with no life.
-     📋 Write: a Mermaid sequenceDiagram. Participants are names from §5 (don't invent new ones).
-     Messages are semantic («saves a draft»), NO HTTP verbs / paths / status codes — endpoint-level
-     sequences arrive at the `api` stage.
-     📌 e.g. «author → web: composes draft → web → content API: save». Seed the primary flow(s) here;
-     the `sequences` stage then covers every §5 AC (no cap). Never N/A for M+; XS/S keeps ≥1 happy-path flow. -->
+design лише «сіє» найкритичніші сценарії — `/sdd:sequences agent` далі покриє кожен AC §5 spec.md окремою діаграмою чи гілкою.
 
-**Critical flow 1: <flow name>**
+**Critical flow 1: щасливий шлях — повідомлення → пропозиція → підтвердження (AC-01/AC-02/AC-02b)**
 
 ```mermaid
 sequenceDiagram
-    actor Actor
-    participant Web
-    participant Service
-    participant Store
-    Actor->>Web: <action>
-    Web->>Service: <call>
-    Service->>Store: <write>
-    Store-->>Service: ok
-    Service-->>Web: result
-    Web-->>Actor: confirmation
+    actor User as Користувач
+    participant ChatUi as Чат-панель
+    participant Backend as Мінімальний бекенд
+    participant Claude as Claude API
+    participant DB as PostgreSQL
+
+    User->>ChatUi: пише повідомлення або надсилає вкладення
+    ChatUi->>Backend: передає повідомлення
+    Backend->>Claude: запит на розбір і формування пропозиції
+    Claude-->>Backend: пропозиція запису
+    Backend->>Backend: guard-перевірка дотримання правил (ADR-0004)
+    Backend->>DB: зберігає пропозицію як активну, без запису в картку
+    Backend-->>ChatUi: показує пропозицію
+    ChatUi-->>User: пропозиція на екрані, чекає підтвердження
+    User->>ChatUi: підтверджує
+    ChatUi->>Backend: підтвердження
+    Backend->>DB: записує подію в картку, оновлює лічильник
+    DB-->>Backend: ok
+    Backend-->>ChatUi: запис збережено
+    ChatUi-->>User: показує оновлений лічильник
 ```
 
-**Critical flow 2: <e.g. async event propagation>** — <if applicable, otherwise N/A>.
+**Critical flow 2: Claude API недоступний (закриває spec §8 OQ, AC-03)**
+
+```mermaid
+sequenceDiagram
+    actor User as Користувач
+    participant ChatUi as Чат-панель
+    participant Backend as Мінімальний бекенд
+    participant Claude as Claude API
+
+    User->>ChatUi: пише повідомлення
+    ChatUi->>Backend: передає повідомлення
+    Backend->>Claude: запит на розбір
+    Claude--xBackend: недоступний або таймаут
+    Backend-->>ChatUi: помилка, без retry — текст користувача не втрачено
+    ChatUi-->>User: показує помилку, пропонує спробувати ще раз
+```
 
 ## 7. Deployment view
 
