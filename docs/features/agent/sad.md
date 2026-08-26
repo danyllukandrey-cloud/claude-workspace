@@ -250,29 +250,22 @@ ADR files live under `docs/features/<slug>/adr/NNNN-<title>.md`.
 
 ## 10. Quality requirements
 
-<!-- 🎯 Why: the QUALITY TREE — take a goal from §1 and break it into concrete leaves: tests,
-     metrics, configs, drills. ⭐ Without §10, §1 is a manifesto. With §10 each declaration maps
-     to something PROVABLE.
-     📋 Write: per §1 goal — When / Then / How-verify. Numbers from spec §6 NFR VERBATIM (don't
-     round ≤250ms to ≤300ms — that's a critic F6 hit).
-     📌 e.g. «p95 ≤ 500 ms on a block update, verified by a 100 req/s load test». -->
-
 Each top-3 goal from §1 expanded into a full scenario:
 
-**QG-1. <quality attribute>**
-- **When:** <trigger condition>
-- **Then:** <expected behaviour with numbers from spec §6 NFR>
-- **How verify:** <test / chaos drill / load test / metric>
+**QG-1. Довіра до запису**
+- **When:** агент сформував пропозицію запису (AC-01) і показав її користувачу.
+- **Then:** запис у картку стається лише після явного підтвердження (AC-02/AC-03); жоден мовчазний запис неможливий — кожна зміна стану пропозиції (створена/оновлена/підтверджена/відкинута) лишає слід в аудит-логі (§8 Events).
+- **How verify:** інтеграційний тест на щасливий шлях (§6 Critical flow 1) + негативний тест «повідомлення без підтвердження → рахунок картки не змінився»; аудит-лог перевіряється на відсутність запису без відповідної події підтвердження. Точність дотримання власного правила (AC-07, spec §6 NFR) лишається **відкритою** — ціль «TBD», залежить від невирішеного механізму примусу (D-35) → §11.
 
-**QG-2. <quality attribute>**
-- **When:** <trigger>
-- **Then:** <expected>
-- **How verify:** <how>
+**QG-2. Швидкість діалогу**
+- **When:** користувач надсилає повідомлення чи підтверджує пропозицію.
+- **Then:** p95 ≤ 4000 ms від повідомлення до появи пропозиції (AC-01, spec §6 NFR); p95 ≤ 1000 ms від підтвердження до оновленого лічильника (AC-02, spec §6 NFR); throughput ≥ 5 req/s на інстанс (spec §6 NFR).
+- **How verify:** навантажувальний smoke-тест перед запуском (throughput NFR, verbatim з spec) + вимір p95 обох латентностей на тому ж прогоні; структуровані логи (§7/§8) як джерело метрики — окремого APM немає в v1.
 
-**QG-3. <quality attribute>**
-- **When:** <trigger>
-- **Then:** <expected>
-- **How verify:** <how>
+**QG-3. Конфіденційність довгострокової памʼяті**
+- **When:** запит торкається довгострокової пам'яті користувача (читання при кожному повідомленні, AC-09) або намагається дістатись чужих даних (abuse case, spec §6.1).
+- **Then:** кожен запит скерований лише на дані свого користувача (AC-06); Availability 99.0% на місячному вікні (spec §6 NFR, один бекенд-проксі без резервування); Security review — **Required** перед запуском (spec §6.1) через нову чутливу поверхню даних.
+- **How verify:** AC-06 тест на крос-користувацьку ізоляцію (запит користувача A не бачить даних користувача B); sign-off Security Lead (§1 Stakeholders) як gate перед релізом; місячний Availability рахується за логами аптайму backend-service (§7).
 
 ## 11. Risks and technical debt
 
