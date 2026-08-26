@@ -220,21 +220,15 @@ sequenceDiagram
 
 ## 8. Crosscutting concepts
 
-<!-- 🎯 Why: CROSS-CUTTING PATTERNS spanning several modules: logging, errors, authorization, ID
-     strategy, events, caching. ⭐ The second-densest section. A pattern inside one module is NOT
-     here; a project-wide convention belongs in the convention file.
-     📋 Write: a table — concept / convention / where defined. One row per concept.
-     📌 e.g. «sortable time-based IDs generated in the app layer» as a default from the convention file. -->
-
 | Concept | Convention | Where defined |
 |---|---|---|
-| Logging | <e.g. structured, fields `module=<name>`> | <convention file §X or here> |
-| Authentication | <e.g. token-based via middleware> | <convention file §X> |
-| Error handling | <e.g. domain sentinel → ports error mapping → JSON> | <convention file §X> |
-| ID strategy | <e.g. sortable time-based ID in the app layer> | <convention file §X> |
-| Internationalisation | <e.g. N/A, single language> | — |
-| Observability | <e.g. tracing on the request boundary> | — |
-| Events | <module-specific patterns, if any> | <here> |
+| Logging | Структуровані логи, поле `module=<name>` (наприклад `module=agent.guard`) — мінімум для v1, без окремого агрегатора (§7 Monitoring) | тут |
+| Authentication | Google OAuth (D-33), токен перевіряється мідлваром `infra/auth.ts` перед кожним викликом use-case | [D-33](../../DECISIONS.md#d-33) · §5 |
+| Error handling | Domain-sentinel `Ok<T>ǀErr<E>`, ніколи не `throw` для очікуваної помилки (Claude недоступний, правило порушено); `app` мапить `Err` у ports-помилку; `ports`/HTTP — у JSON `{code, message}` | [ADR-0006](adr/0006-domain-sentinel-for-expected-errors.md) |
+| ID strategy | `crypto.randomUUID()` для будь-якого збереженого запису (пропозиція, подія аудит-логу, звіт) | §2 Conventions |
+| Internationalisation | N/A — один інтерфейс, українська мова; продукт не оголошував i18n у жодному з попередніх рішень | — |
+| Observability | N/A понад §7 (логи + ручна перевірка) — трейсинг і метрики не виправдані масштабом v1 | §7 |
+| Events | Власний аудит-лог агента: подія на кожну зміну стану пропозиції (створена/оновлена/підтверджена/відкинута) і на кожен результат guard-перевірки (пройшла/провалилась) — за зразком `card_lifecycle_event` у `life-area-card` (D-57), але окрема таблиця в domain-моделі `agent`, бо факти інші (пропозиція, правило, а не картка). Обґрунтування: чутлива поверхня даних, security review Required (spec §6.1) — без запису рішень guard немає що показати рев'юеру постфактум | тут; таблиця — предмет `/sdd:data-model agent` |
 
 ## 9. Architecture decisions
 
@@ -250,6 +244,7 @@ sequenceDiagram
 | 0003 | Store long-term agent memory in the shared backend database | Accepted | §4 |
 | 0004 | Enforce user imperative rules via system prompt plus a post-hoc guard check | Accepted | §4 |
 | 0005 | Layer the backend as domain/app/infra/ports | Accepted | §5 |
+| 0006 | Use a domain sentinel result for expected errors, never throw | Accepted | §8 |
 
 ADR files live under `docs/features/<slug>/adr/NNNN-<title>.md`.
 
