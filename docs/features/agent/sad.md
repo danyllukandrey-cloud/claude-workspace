@@ -212,25 +212,11 @@ sequenceDiagram
 
 ## 7. Deployment view
 
-<!-- 🎯 Why: the TOPOLOGY DevOps must know without reading the deploy charts — how many replicas,
-     where the background worker lives, AT WHAT NUMBERS we scale.
-     📋 Write: 2–3 sentences on topology + monitoring + concrete threshold numbers.
-     📌 e.g. «500 authors → partition by quarter» (not «we'll think about scale later»).
-     🎯 N/A allowed for XS/S that reuses an existing deployment unit with no change.
-     Deployment-diagram scaffold → templates/deployment.md. -->
+**Topology.** `backend-service` (чат) і `worker` (звіти активності) — **окремі процеси**, не один процес із двома вхідними точками: повільний виклик Claude API в чаті ніколи не блокує формування квартального звіту й навпаки (те саме обґрунтування, що вже зафіксоване в ADR-0002, §4). Обидва читають ту саму PostgreSQL 16+ (D-59). Один інстанс кожного — без реплік, без autoscaling: масштаб (Андрій + фокус-група 30+, D-55) цього не потребує.
 
-<Topology in 2–3 sentences. Where it runs, replicas, scaling thresholds.>
+**Monitoring.** Мінімум для v1: структуровані логи (конвенція фіксується в §8 Crosscutting concepts) + ручна перевірка Андрієм при потребі. Жодних окремих алертів/трейсингу — соло-розробник без чергування on-call, масштаб не виправдовує інфраструктуру спостережності.
 
-**Monitoring:**
-- <Metrics — e.g. `<metric_name>`>
-- <Alerts — e.g. «worker lag > 10 min → page on-call»>
-- <Tracing — e.g. spans on the request boundary>
-
-**Scaling thresholds:**
-- <e.g. comfortable in one table up to N rows/year>
-- <e.g. partition by quarter above N rows/year>
-
-<!-- For XS/S with no deployment change: <!-- N/A: reuses existing deployment unit, no infra change --> -->
+**Scaling thresholds.** Свідомо не фіксуємо конкретне число зараз — дивись відкрите питання в §11 (коли один інстанс кожного контейнера й один Postgres перестають вистачати).
 
 ## 8. Crosscutting concepts
 
