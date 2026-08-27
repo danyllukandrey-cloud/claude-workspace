@@ -215,6 +215,325 @@ sequenceDiagram
     ChatUi-->>User: показує помилку, пропонує спробувати ще раз
 ```
 
+**Critical flow 3: вкладення (фото) → пропозиція, включно з нерозпізнаним вкладенням (AC-10/AC-10b)**
+
+```mermaid
+sequenceDiagram
+    actor User as Користувач
+    participant ChatUi as Чат-панель
+    participant Backend as Мінімальний бекенд
+    participant Claude as Claude API
+    participant DB as PostgreSQL
+
+    Note over User,ChatUi: precondition: користувач має активну картку, надсилає лише вкладення, без тексту
+    User->>ChatUi: надсилає вкладення (фото) без тексту
+    ChatUi->>Backend: передає вкладення
+    Backend->>Claude: запит на розпізнавання вкладення як факту
+    alt вкладення розпізнано як самодостатній факт
+        Claude-->>Backend: пропозиція запису на основі вкладення
+        Backend->>Backend: guard-перевірка дотримання правил (ADR-0004)
+        Backend->>DB: зберігає пропозицію як активну, без запису в картку
+        Backend-->>ChatUi: показує пропозицію
+        ChatUi-->>User: пропозиція на екрані, чекає підтвердження
+    else вкладення нерозпізнане, нечитабельне або непідтримуваного типу
+        Claude-->>Backend: не вдалось виділити факт
+        Backend-->>ChatUi: пояснює, чому не може обробити вкладення, просить текстовий опис
+        ChatUi-->>User: показує пояснення і прохання надіслати текст
+    end
+    Note over Backend,DB: postcondition: у гілці успіху пропозиція чекає підтвердження (той самий цикл, що й Flow 1); у гілці помилки нічого не збережено
+```
+
+**Critical flow 4: прив'язка до свого акаунта і прибирання третьої особи з тексту (AC-06)**
+
+```mermaid
+sequenceDiagram
+    actor User as Користувач
+    participant ChatUi as Чат-панель
+    participant Backend as Мінімальний бекенд
+    participant Claude as Claude API
+    participant DB as PostgreSQL
+
+    Note over User,Backend: precondition: користувач автентифікований (Google OAuth, D-33)
+    User->>ChatUi: пише повідомлення, що згадує ім'я третьої особи ("біг з Марією 5 км")
+    ChatUi->>Backend: передає повідомлення й токен сесії
+    Backend->>Backend: мідлвар перевіряє токен, скеровує запит лише на дані цього користувача (AC-06)
+    Backend->>Claude: запит на розбір повідомлення
+    Claude-->>Backend: пропозиція запису
+    alt текст містить ім'я третьої особи
+        Backend->>Backend: прибирає ім'я, лишає лише вимірюване число ("5 км")
+    end
+    Backend->>DB: зберігає пропозицію, скеровано лише на дані цього користувача
+    Backend-->>ChatUi: показує пропозицію без згадки третьої особи
+    ChatUi-->>User: пропозиція на екрані, чекає підтвердження
+    Note over Backend,DB: жоден запит не читає й не пише дані іншого користувача, незалежно від вмісту тексту
+```
+
+**Critical flow 5: пропозиція мовчки відкидається без підтвердження (AC-03)**
+
+```mermaid
+sequenceDiagram
+    actor User as Користувач
+    participant ChatUi as Чат-панель
+    participant Backend as Мінімальний бекенд
+    participant Claude as Claude API
+    participant DB as PostgreSQL
+
+    Note over Backend,DB: precondition: активна пропозиція вже збережена (Flow 1, крок "зберігає пропозицію")
+    alt користувач мовчить — нове повідомлення не приходить
+        Note over Backend: нічого не відбувається, пропозиція лишається активною й чекає
+    else наступне повідомлення тематично не пов'язане з пропозицією
+        User->>ChatUi: пише повідомлення на іншу тему
+        ChatUi->>Backend: передає нове повідомлення
+        Backend->>Backend: визначає, що повідомлення не стосується активної пропозиції
+        Backend->>DB: мовчки відкидає стару пропозицію — нічого не записано в картку
+        Backend->>Claude: запит на розбір нового повідомлення як окремого
+        Claude-->>Backend: нова пропозиція
+        Backend->>DB: зберігає нову пропозицію як активну
+        Backend-->>ChatUi: показує нову пропозицію
+        ChatUi-->>User: нова пропозиція на екрані, чекає підтвердження
+    end
+    Note over DB: postcondition: рахунок картки не змінився з попередньої активної пропозиції — мовчазного запису не буває (AC-03, D-30)
+```
+
+**Critical flow 6: власне правило дотримується у відповіді (AC-07)**
+
+```mermaid
+sequenceDiagram
+    actor User as Користувач
+    participant ChatUi as Чат-панель
+    participant Backend as Мінімальний бекенд
+    participant Claude as Claude API
+    participant DB as PostgreSQL
+
+    Note over User,DB: precondition: користувач задав власне правило ("не радь, якщо не питаю")
+    User->>ChatUi: описує подію, що звичайно спровокувала б непрохану пораду
+    ChatUi->>Backend: передає повідомлення
+    Backend->>DB: читає активні правила користувача (глобальні + card override)
+    DB-->>Backend: правило "не радь, якщо не питаю"
+    Backend->>Claude: запит на розбір + системний промпт з правилом користувача
+    Claude-->>Backend: чернетка відповіді
+    Backend->>Backend: guard-перевірка — чи відповідь порушує правило (ADR-0004)
+    alt відповідь порушує правило
+        Backend->>Backend: відкидає чернетку, формує повторний запит без поради
+        Backend->>DB: записує подію guard-перевірки "провалилась" в аудит-лог
+    else відповідь відповідає правилу
+        Backend->>DB: записує подію guard-перевірки "пройшла" в аудит-лог
+    end
+    Backend-->>ChatUi: показує відповідь, що слідує правилу користувача
+    ChatUi-->>User: бачить відповідь, узгоджену з власним правилом
+```
+
+**Critical flow 7: формулювання правила в діалозі з перевіркою на несуперечливість (AC-14)**
+
+```mermaid
+sequenceDiagram
+    actor User as Користувач
+    participant ChatUi as Чат-панель
+    participant Backend as Мінімальний бекенд
+    participant Claude as Claude API
+    participant DB as PostgreSQL
+
+    Note over User,DB: precondition: користувач хоче правило, але не знає точного формулювання
+    User->>ChatUi: звертається до агента з чорновою ідеєю правила
+    ChatUi->>Backend: передає повідомлення
+    Backend->>Claude: запит на допомогу з формулюванням
+    Claude-->>Backend: пропозиція чіткого формулювання правила
+    Backend->>DB: читає наявні правила тієї самої області дії (лише глобальні, або лише правила цієї картки)
+    DB-->>Backend: наявні правила
+    Backend->>Backend: перевіряє нове формулювання на несуперечливість із наявними правилами тієї самої області
+    alt формулювання суперечить наявному правилу тієї самої області
+        Backend-->>ChatUi: пояснює суперечність, просить уточнити або скасувати
+        ChatUi-->>User: бачить пояснення суперечності
+    else формулювання несуперечливе
+        Backend-->>ChatUi: показує сформульоване правило, чекає підтвердження
+        ChatUi-->>User: підтверджує формулювання
+        User->>ChatUi: підтверджує
+        ChatUi->>Backend: підтвердження
+        Backend->>DB: зберігає нове правило як активне
+    end
+    Note over DB: postcondition: перевизначення картки (AC-12) свідомо не звіряється з глобальними правилами — це не предмет цієї перевірки
+```
+
+**Critical flow 8: вибір категорій правил з готового меню (AC-08)**
+
+```mermaid
+sequenceDiagram
+    actor User as Користувач
+    participant ChatUi as Чат-панель
+    participant Backend as Мінімальний бекенд
+    participant DB as PostgreSQL
+
+    Note over User,ChatUi: precondition: користувач відкрив налаштування правил
+    User->>ChatUi: обирає одну чи кілька категорій з готового меню (без вільного тексту)
+    ChatUi->>Backend: передає обрані категорії
+    Backend->>DB: зберігає обрані категорії як активні правила користувача
+    DB-->>Backend: ok
+    Backend-->>ChatUi: підтверджує збереження
+    ChatUi-->>User: показує активні категорії
+    Note over Backend,DB: postcondition: подальші відповіді агента відображають ці правила (Flow 6, крок "читає активні правила")
+```
+
+**Critical flow 9: перевизначення правила на конкретній картці (AC-12)**
+
+```mermaid
+sequenceDiagram
+    actor User as Користувач
+    participant ChatUi as Чат-панель
+    participant Backend as Мінімальний бекенд
+    participant DB as PostgreSQL
+
+    Note over User,ChatUi: precondition: користувач перебуває на конкретній картці, хоче інакшу поведінку саме тут
+    User->>ChatUi: задає перевизначення правила для цієї картки
+    ChatUi->>Backend: передає перевизначення + ідентифікатор картки
+    Backend->>DB: зберігає перевизначення, прив'язане до цієї картки
+    DB-->>Backend: ok
+    Backend-->>ChatUi: підтверджує збереження
+    ChatUi-->>User: показує, що на цій картці діє перевизначене правило
+    Note over Backend,DB: postcondition: глобальне правило лишається чинним для решти карток; перевизначення свідомо переважає глобальне саме тут (§4, не суперечність)
+```
+
+**Critical flow 10: суперечливі або незрозумілі дані — агент просить уточнення (AC-04)**
+
+```mermaid
+sequenceDiagram
+    actor User as Користувач
+    participant ChatUi as Чат-панель
+    participant Backend as Мінімальний бекенд
+    participant Claude as Claude API
+    participant DB as PostgreSQL
+
+    User->>ChatUi: вводить дані, що суперечать уже відомому, або не мапляться на жодну відому метрику
+    ChatUi->>Backend: передає повідомлення
+    Backend->>DB: читає наявні дані картки для звірки
+    DB-->>Backend: наявні дані
+    Backend->>Claude: запит на розбір з урахуванням наявних даних
+    Claude-->>Backend: виявлена суперечність або невідповідність метриці
+    Backend-->>ChatUi: пояснює простими словами, що саме незрозуміло чи суперечливо, просить уточнити
+    ChatUi-->>User: бачить пояснення і прохання уточнити
+    Note over Backend,DB: postcondition: нічого не збережено — агент не вгадує і не мовчить
+```
+
+**Critical flow 11: довгострокова пам'ять — врахування факту з минулої сесії (AC-09)**
+
+```mermaid
+sequenceDiagram
+    actor User as Користувач
+    participant ChatUi as Чат-панель
+    participant Backend as Мінімальний бекенд
+    participant Claude as Claude API
+    participant DB as PostgreSQL
+
+    Note over User,DB: precondition: у попередній сесії користувач повідомив значущий факт чи рішення (збережено в довгостроковій пам'яті)
+    User->>ChatUi: пише повідомлення, що торкається тієї самої теми в новій сесії
+    ChatUi->>Backend: передає повідомлення
+    Backend->>DB: читає довгострокові факти користувача за темою
+    DB-->>Backend: раніше збережений факт
+    Backend->>Claude: запит на розбір разом з відомим фактом у контексті
+    Claude-->>Backend: відповідь, що враховує факт без повторного пояснення від користувача
+    Backend-->>ChatUi: показує відповідь
+    ChatUi-->>User: бачить відповідь, що вже враховує сказане раніше
+```
+
+**Critical flow 12: коротке сире вікно пам'яті в межах поточної сесії (AC-15)**
+
+```mermaid
+sequenceDiagram
+    actor User as Користувач
+    participant ChatUi as Чат-панель
+    participant Backend as Мінімальний бекенд
+    participant Claude as Claude API
+    participant DB as PostgreSQL
+
+    Note over User,DB: precondition: користувач щось сказав у поточній сесії (календарний день, D-26), ще не оформлене як довгострокове рішення
+    User->>ChatUi: продовжує розмову тим самим днем, посилаючись на щойно сказане
+    ChatUi->>Backend: передає нове повідомлення
+    Backend->>DB: читає коротке сире вікно поточної сесії (весь день)
+    DB-->>Backend: щойно сказане цієї сесії
+    Backend->>Claude: запит на розбір разом із коротким вікном у контексті
+    Claude-->>Backend: відповідь, що не "забуває" щойно сказане
+    Backend-->>ChatUi: показує відповідь
+    ChatUi-->>User: бачить, що агент пам'ятає сказане раніше цього ж дня
+```
+
+**Critical flow 13: неоднозначна картка — агент питає або пропонує створити нову (AC-05)**
+
+```mermaid
+sequenceDiagram
+    actor User as Користувач
+    participant ChatUi as Чат-панель
+    participant Backend as Мінімальний бекенд
+    participant Claude as Claude API
+    participant DB as PostgreSQL
+
+    User->>ChatUi: пише повідомлення, що могло б стосуватись кількох карток або жодної
+    ChatUi->>Backend: передає повідомлення
+    Backend->>DB: читає перелік карток користувача
+    DB-->>Backend: картки
+    Backend->>Claude: запит на визначення відповідної картки
+    Claude-->>Backend: кілька однаково ймовірних карток або жодної відповідної
+    alt кілька карток однаково ймовірні
+        Backend-->>ChatUi: питає, яку картку користувач мав на увазі
+        ChatUi-->>User: бачить перелік карток на вибір
+    else жодна наявна картка не підходить
+        Backend-->>ChatUi: пропонує створити нову картку
+        ChatUi-->>User: бачить пропозицію створити нову картку
+    end
+    Note over Backend,DB: postcondition: агент не вгадує сам — нічого не записано, поки користувач не уточнить вибір
+```
+
+**Critical flow 14: автоматичний звіт активності (AC-11) — async, worker**
+
+```mermaid
+sequenceDiagram
+    participant Worker as Сервіс звітів агента
+    participant DB as PostgreSQL
+
+    Note over Worker: precondition: настав час чергового звіту (тижневого/місячного/квартального), власний розклад worker (ADR-0002)
+    Worker->>Worker: перевіряє ідемпотентність — чи звіт за цей період уже сформовано
+    alt звіт за цей період уже існує
+        Note over Worker: нічого не робить, уникає дубля
+    else звіт ще не сформовано
+        Worker->>DB: читає активність користувача за період
+        DB-->>Worker: сирі дані активності
+        Worker->>Worker: формує звіт за визначеними правилами (тижневий/місячний/квартальний акцент)
+        Worker->>DB: зберігає звіт як пасивний запис
+        alt запис не вдався
+            Note over Worker,DB: retry N разів з backoff
+            alt усі спроби провалились
+                Note over Worker: dead-letter — звіт позначається як такий, що потребує ручної перевірки
+            end
+        end
+    end
+    Note over DB: postcondition: агент нічого не надсилає й нікого не перериває — звіт лише пасивний запис (D-70/D-43)
+```
+
+**Critical flow 15: онбординг — вітання і короткий гайд при першому запуску (AC-13)**
+
+```mermaid
+sequenceDiagram
+    actor User as Користувач
+    participant ChatUi as Чат-панель
+    participant Backend as Мінімальний бекенд
+
+    Note over User,Backend: precondition: користувач щойно встановив застосунок і відкриває його вперше
+    User->>ChatUi: відкриває застосунок вперше
+    ChatUi->>Backend: запитує стан онбордингу
+    Backend->>Backend: визначає, що це перший запуск (одноразовий виняток із "агент не заговорює першим", D-43)
+    Backend-->>ChatUi: коротке вітання і короткий гайд через чат
+    ChatUi-->>User: бачить вітання й гайд, без окремої статичної сторінки
+    Note over Backend: postcondition: подальші сесії — звичайна поведінка, агент більше не заговорює першим
+```
+
+**Coverage check (`/sdd:sequences`, крок 7).**
+
+*Use-case pass (§4):* усі 9 US мають ≥1 потік — US-01→Flow 1/3/4, US-02→Flow 1/2/5, US-03→Flow 6/7, US-04→Flow 8/9, US-05→Flow 10, US-06→Flow 11/12, US-07→Flow 13, US-08→Flow 14, US-09→Flow 15.
+
+*AC pass (§5):* усі 17 AC показані — AC-01/AC-02/AC-02b→Flow 1, AC-03→Flow 5 (дедиковано; Flow 2 позначений як AC-03, але фактично зображає інший сценарій — див. прапорець нижче), AC-04→Flow 10, AC-05→Flow 13, AC-06→Flow 4, AC-07→Flow 6, AC-08→Flow 8, AC-09→Flow 11, AC-10/AC-10b→Flow 3, AC-11→Flow 14, AC-12→Flow 9, AC-13→Flow 15, AC-14→Flow 7, AC-15→Flow 12.
+
+**Flagged for review (не автоправка — рішення design/людини):**
+- Flow 2 (existing, заголовок «закриває AC-03») по суті зображає відмову зовнішньої системи (Claude API недоступний), не буквальний AC-03 («користувач не підтвердив»). Дедикований Flow 5 тепер покриває буквальний AC-03; заголовок Flow 2 варто звірити з design при наступному проході — можливо, точніше «AC-03 accepted debt / Availability», не сам AC-03.
+- Жодного нового учасника поза §5 не знадобилось (Worker = вже задекларований контейнер «Сервіс звітів агента»).
+
 ## 7. Deployment view
 
 **Topology.** `backend-service` (чат) і `worker` (звіти активності) — **окремі C4-контейнери, межа логічна** (ADR-0001/0002 Neutral): повільний виклик Claude API в чаті не повинен блокувати формування квартального звіту й навпаки. На старті вони можуть тимчасово ділити один фізичний процес/деплой (наприклад `node-cron` у тому самому Node-процесі) — фізичне розділення на окремі деплой-юніти відкладається до реального навантаження, контейнерна межа лишається логічною вже зараз. Обидва читають ту саму PostgreSQL 16+ (D-59). Один інстанс кожного — без реплік, без autoscaling: масштаб (Андрій + фокус-група 30+, D-55) цього не потребує.
