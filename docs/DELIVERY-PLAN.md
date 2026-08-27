@@ -412,8 +412,8 @@
 
 - [x] `/sdd:api life-area-card` → `contracts/openapi.yaml` — готово 2026-08-27 (коміт `77b4a74`), 10 операцій (Cards/MetricBlocks/Entries), усі 14 US і 17 AC покриті; закрито Save-as-OQ зі `structure` (перенесення метрики)
 - [x] `/sdd:ux-flows life-area-card` → `ux-flows.md` — готово 2026-08-27 (коміт `915a77f`), 13 потоків на 13 UI-touching US (US-10 поза обсягом), 6 SCR, усі 17 AC покриті
-- [ ] `/sdd:screens life-area-card` → `screens.md` — **наступний крок**
-- [ ] RICE/Feasibility для Approach A (`sdlc-interview` кроки 9-11) — **due перед `/sdd:tasks life-area-card`** (відкрите питання `spec.md §8`, ніколи не закривалось)
+- [x] `/sdd:screens life-area-card` → `screens.md` — готово 2026-08-27 (коміт `793225e`), code-режим, 6 SCR, 3 нові компоненти + 4 reused-pending зі `structure`
+- [ ] RICE/Feasibility для Approach A (`sdlc-interview` кроки 9-11) — **наступний крок, due перед `/sdd:tasks life-area-card`** (відкрите питання `spec.md §8`, ніколи не закривалось)
 - [ ] `/sdd:tasks life-area-card` → `tasks.json`
 - [ ] `/sdd:plan-tests life-area-card` → `test-plan.md`
 
