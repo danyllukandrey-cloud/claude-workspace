@@ -406,7 +406,16 @@
 - [x] `/sdd:data-model life-area-card` → `data-model.md` — готово 2026-08-23, 4 сутності, PostgreSQL ([D-59](DECISIONS.md#d-59)), staged-міграції 01-04
   - **Доповнено 2026-08-24** ([D-68](DECISIONS.md#d-68)) — колонка `card.status` (м'яка архівація), розширений CHECK на `card_lifecycle_event.transition`, staged-міграція 05; синхронізація з розкладкою Структури — [D-69](DECISIONS.md#d-69)
 - [x] Уточнення з Андрієм — пройдено живо на кожному кроці (AskUserQuestion), окремого проходу не знадобилось
-- [ ] `/sdd:plan-tests life-area-card` → `test-plan.md` — **у черзі**, старт після завершення `PRODUCT-BOOK_OWNER-QUESTIONNAIRE.md` (поточний пріоритет, [DELIVERY-PLAN.md §🎯 Наступна сесія](DELIVERY-PLAN.md)); знайдено 2026-08-25 агентом-аудитором курсу — жодна з двох реалізованих фіч тест-плану ще не має
+- [x] `/sdd:sequences life-area-card` → `sad.md §6` — готово 2026-08-27 (коміт `02c0f3b`), ретроактивно; знайдено 2026-08-27, що крок ніколи не запускали (лише 2 сіяні потоки з `design`, 3 з 17 AC) — домальовано 11 нових потоків, усі 17 AC покриті
+
+**Виявлено 2026-08-27 (звірка з реальними файлами):** решта кроків конвеєра для Картки — `api`/`ux-flows`/`screens`/`tasks` — **ніколи не запускались**, попри те що чек-лист досі показував «`plan-tests` — у черзі» одразу після уточнення. Той самий тип розбіжності, що вже виправляли для `sequences`. Пауза «до завершення `PRODUCT-BOOK_OWNER-QUESTIONNAIRE.md`» знята ще 2026-08-25 (розділ вище) — старий текст лишався застарілим формулюванням, не чинним блокером.
+
+- [ ] `/sdd:api life-area-card` → `contracts/openapi.yaml` — **наступний крок**
+- [ ] `/sdd:ux-flows life-area-card` → `ux-flows.md`
+- [ ] `/sdd:screens life-area-card` → `screens.md`
+- [ ] RICE/Feasibility для Approach A (`sdlc-interview` кроки 9-11) — **due перед `/sdd:tasks life-area-card`** (відкрите питання `spec.md §8`, ніколи не закривалось)
+- [ ] `/sdd:tasks life-area-card` → `tasks.json`
+- [ ] `/sdd:plan-tests life-area-card` → `test-plan.md`
 
 ### Частина 2 — Структура (новий слаг `structure`)
 
