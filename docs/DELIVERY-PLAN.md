@@ -414,8 +414,8 @@
 - [x] `/sdd:ux-flows life-area-card` → `ux-flows.md` — готово 2026-08-27 (коміт `915a77f`), 13 потоків на 13 UI-touching US (US-10 поза обсягом), 6 SCR, усі 17 AC покриті
 - [x] `/sdd:screens life-area-card` → `screens.md` — готово 2026-08-27 (коміт `793225e`), code-режим, 6 SCR, 3 нові компоненти + 4 reused-pending зі `structure`
 - [x] RICE/Feasibility для Approach A (`sdlc-interview` кроки 9-11) — готово 2026-08-27 ([D-79](DECISIONS.md#d-79), коміт `94600e8`), Reach 1 × Impact 3 × Confidence 0.8 / Effort M, Tech/Skills/Time усі Feasible, `idea-brief.md` → `status: Confirmed`
-- [ ] `/sdd:tasks life-area-card` → `tasks.json` — **наступний крок**
-- [ ] `/sdd:plan-tests life-area-card` → `test-plan.md`
+- [x] `/sdd:tasks life-area-card` → `tasks.json` — готово 2026-08-27 (коміт `392d0df`), 31 задача (5 migration/4 domain/3 infra/8 app/3 ports/6 ui/1 wiring/1 tests), DAG ациклічний, усі 17 AC покриті
+- [ ] `/sdd:plan-tests life-area-card` → `test-plan.md` — **наступний крок**
 
 ### Частина 2 — Структура (новий слаг `structure`)
 
