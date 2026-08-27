@@ -1,0 +1,492 @@
+# Derived — never hand-edit without re-running /sdd:api agent --reconcile after upstream changes.
+#   fields + constraints  ← data-model.md (app_user, agent_proposal, imperative_rule,
+#                            long_term_memory_fact, chat_message, agent_audit_event, activity_report)
+#   error responses       ← sad.md §6 sequence alt-branches
+#   endpoint list + shape ← spec.md §4 user stories / §5 acceptance criteria
+openapi: 3.1.0
+
+info:
+  title: Agent API
+  version: 0.1.0
+  description: |
+    Агент — єдиний канал прямого вводу продукту ПЛАН (D-25): користувач пише текстом чи надсилає
+    вкладення, агент розпізнає ймовірний запис, чекає підтвердження, дотримується особистих правил
+    і памʼятає контекст між сесіями. Цей контракт покриває чат (повідомлення + пропозиції), правила
+    та читання автоматичних звітів активності — не сам розрахунок прогресу картки (`life-area-card`
+    API) і не розкладку (`structure` API).
+
+    Довгострокова пам'ять (`long_term_memory_fact`) навмисно не має власного ендпоінта тут:
+    перегляд/редагування/видалення факту відбувається виключно командою в чаті («забудь, що…»,
+    sad.md §4) — той самий канал, що й запис, не окремий екран.
+  contact:
+    name: Андрій Данилюк
+
+servers:
+  - url: https://api.example.com
+    description: Production
+  - url: http://localhost
+    description: Local
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Messages
+    description: Чат — прямий ввід (текст/вкладення), пропозиції запису
+  - name: Proposals
+    description: Підтвердження пропозиції, що очікує на реакцію користувача
+  - name: Rules
+    description: Імперативні правила користувача (глобальні + card-override)
+  - name: Reports
+    description: Автоматичні звіти активності (тижневий/місячний/квартальний)
+  - name: Onboarding
+    description: Одноразове вітання й гайд при першому запуску
+
+paths:
+  /api/v1/messages:
+    get:
+      tags: [Messages]
+      summary: Прочитати історію чату (для відновлення екрана при відкритті)
+      description: |
+        Не привʼязано до жодного окремого AC напряму — випливає з існування Чат-панелі (`sad.md
+        §5`) і сутності `chat_message`: без цього ендпоінта UI не може відновити розмову після
+        перезавантаження. Позначено в `api-sync-report.md`.
+      operationId: listMessages
+      parameters:
+        - in: query
+          name: after
+          description: cursor — id останнього побаченого повідомлення
+          schema: { type: string, format: uuid }
+        - in: query
+          name: before
+          schema: { type: string, format: uuid }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessagePage" }
+        "401":
+          $ref: "#/components/responses/Error"
+
+    post:
+      tags: [Messages]
+      summary: Надіслати повідомлення або вкладення (AC-01, AC-10)
+      description: |
+        Текст і/або вкладення (фото) — принаймні одне обов'язкове. Вкладення передається
+        multipart, байти НЕ зберігаються (`data-model.md agent_proposal.raw_input` — лише текст):
+        Claude API розбирає зображення транзитно, у базу лягає лише похідний опис.
+
+        Якщо в користувача вже є активна пропозиція (`agent_proposal.status = 'active'`),
+        бекенд сам вирішує — уточнення до неї (AC-02b, оновлює ту саму пропозицію) чи нова тема
+        (AC-03, стара мовчки відкидається, `sad.md §6` Flow 5). Відповідь може містити пропозицію
+        (AC-01/AC-10), уточнююче питання без пропозиції (AC-04 суперечливі дані, AC-05 неоднозначна
+        картка — обидва як звичайна `reply`, не помилка), або текст, що вже слідує активним
+        правилам користувача (AC-07, guard-перевірка ADR-0004).
+      operationId: createMessage
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/MessageCreate" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageTurn" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "422":
+          description: вкладення нерозпізнане, нечитабельне або непідтримуваного типу (AC-10b)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "agent.attachment_unrecognized"
+                message: "Couldn't read this attachment — try describing it in text instead"
+        "429":
+          description: перевищено ліміт частоти повідомлень (§8 SAD Rate limiting, 60/год)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "agent.rate_limited"
+                message: "Too many messages — try again later"
+        "503":
+          description: |
+            Claude API недоступний або таймаут (`sad.md §6` Critical flow 2) — без retry, текст
+            користувача не втрачено (accepted debt, `sad.md §11`); клієнт сам пропонує спробувати
+            ще раз
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "agent.llm_unavailable"
+                message: "The agent is temporarily unavailable — your message wasn't lost, try again"
+
+  /api/v1/proposals/active:
+    get:
+      tags: [Proposals]
+      summary: Прочитати активну пропозицію (для відновлення екрана)
+      description: |
+        Один результат — домен-інваріант "одна активна пропозиція на користувача" (§4 SAD, AC-03),
+        забезпечений на рівні БД (`uq_agent_proposal_active_user`, `data-model.md`). `null`, якщо
+        немає активної (щойно підтверджена, відкинута, або ще нічого не пропонувалось).
+      operationId: getActiveProposal
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActiveProposalResponse" }
+        "401":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/proposals/{proposalId}/confirm:
+    post:
+      tags: [Proposals]
+      summary: Підтвердити пропозицію (AC-02)
+      description: |
+        Записує подію в картку (домен `life-area-card`) і переводить пропозицію в `confirmed`.
+        Уточнення до пропозиції (AC-02b) йде звичайним `POST /messages`, не сюди — цей ендпоінт
+        лише для явного підтвердження.
+      operationId: confirmProposal
+      parameters:
+        - in: path
+          name: proposalId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Proposal" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          description: |
+            пропозиція не знайдена серед пропозицій поточного користувача — той самий код і для
+            "не існує", і для "належить іншому користувачу" (AC-06: не підтверджуємо/не
+            спростовуємо чуже)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "agent.proposal_not_found"
+                message: "Proposal not found"
+        "409":
+          description: |
+            пропозиція вже не активна (`confirmed`/`dropped`) — похідне з домен-інваріанту
+            `uq_agent_proposal_active_user` (`data-model.md`) + AC-03; жоден §6-потік не малює цю
+            гілку явно, позначено в `api-sync-report.md` як gap, не мовчазний вигад
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "agent.proposal_not_active"
+                message: "This proposal is no longer active"
+
+  /api/v1/rules:
+    get:
+      tags: [Rules]
+      summary: Прочитати активні правила (AC-08 «відкрив налаштування правил»)
+      description: "Глобальні правила (`scopeCardId` відсутній) і card-override, якщо передано `scopeCardId`."
+      operationId: listRules
+      parameters:
+        - in: query
+          name: scopeCardId
+          description: фільтр — лише правила цієї картки; відсутній параметр = лише глобальні
+          schema: { type: string, format: uuid }
+        - in: query
+          name: after
+          schema: { type: string, format: uuid }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RulePage" }
+        "401":
+          $ref: "#/components/responses/Error"
+
+    post:
+      tags: [Rules]
+      summary: Зберегти правило — з меню категорій (AC-08), власний текст (AC-07/AC-14), card-override (AC-12)
+      description: |
+        Формулювання власного правила в діалозі (AC-14) відбувається через `POST /messages`
+        заздалегідь — цей ендпоінт лише зберігає вже узгоджений результат і повторно звіряє його
+        на несуперечливість із наявними правилами тієї самої області дії (глобальне — з
+        глобальними, card-override — лише з правилами тієї самої картки; `data-model.md CHECK`
+        гарантує, що хоч щось із `category`/`ruleText` задано).
+      operationId: createRule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RuleCreate" }
+            example:
+              category: "reminder"
+              ruleText: null
+              scopeCardId: null
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Rule" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: нове правило суперечить наявному правилу тієї самої області дії (AC-14)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "agent.rule_conflict"
+                message: "This rule contradicts an existing rule in the same scope"
+        "422":
+          description: ні `category`, ні `ruleText` не задано (`data-model.md CHECK`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "agent.rule_empty"
+                message: "A rule needs a category, free text, or both"
+
+  /api/v1/reports:
+    get:
+      tags: [Reports]
+      summary: Прочитати звіти активності (AC-11)
+      description: |
+        Лише читання — сам звіт формує `agent-worker` за власним розкладом (ADR-0002, `sad.md §6`
+        Flow 14), без клієнтського тригера. `status: dead_letter` — запис не вдався після retry,
+        потребує ручної перевірки (§11 SAD accepted debt).
+      operationId: listReports
+      parameters:
+        - in: query
+          name: periodType
+          schema: { type: string, enum: [weekly, monthly, quarterly] }
+        - in: query
+          name: after
+          schema: { type: string, format: uuid }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReportPage" }
+        "401":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/onboarding:
+    get:
+      tags: [Onboarding]
+      summary: Перевірити й, за потреби, показати вітання та гайд (AC-13)
+      description: |
+        Одноразовий виняток із «агент не заговорює першим» (D-43, `CONTEXT.md` Invariants).
+        Перший виклик для нового користувача створює вітальне `chat_message` (role=agent) і
+        повертає його; кожен наступний виклик повертає `welcomeShown: true, message: null` —
+        історія вже містить вітання, читати її через `GET /messages`.
+      operationId: getOnboardingStatus
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OnboardingStatus" }
+        "401":
+          $ref: "#/components/responses/Error"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Error:
+      description: Error — unified envelope
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+          pattern: "^[a-z_]+\\.[a-z_]+$"
+          example: "agent.proposal_not_active"
+        message: { type: string }
+        details:
+          type: object
+          description: опційний структурований контекст
+
+    Message:
+      type: object
+      required: [id, role, content, createdAt]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        role: { type: string, enum: [user, agent] }
+        content: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    MessageCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        content:
+          type: [string, "null"]
+          description: текстове повідомлення; NULL допустимо, якщо передано вкладення (AC-10)
+        attachment:
+          type: [string, "null"]
+          format: binary
+          description: фото; NULL допустимо, якщо передано текст (AC-01). Байти транзитні — не зберігаються
+
+    MessageTurn:
+      type: object
+      required: [reply]
+      additionalProperties: false
+      description: Відповідь агента на одне надіслане повідомлення/вкладення.
+      properties:
+        reply:
+          type: string
+          description: текст відповіді агента (пропозиція, уточнююче питання, чи пояснення — AC-04/AC-05)
+        proposal:
+          oneOf:
+            - $ref: "#/components/schemas/Proposal"
+            - type: "null"
+          description: присутня, коли повідомлення сформувало чи оновило пропозицію (AC-01/AC-02b/AC-10); NULL для суто уточнюючої відповіді
+
+    Proposal:
+      type: object
+      required: [id, status, sourceType, rawInput, proposedSummary, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        cardId: { type: [string, "null"], format: uuid }
+        metricBlockId: { type: [string, "null"], format: uuid }
+        status: { type: string, enum: [active, confirmed, dropped] }
+        sourceType: { type: string, enum: [text, attachment] }
+        rawInput: { type: string }
+        proposedAmount: { type: [number, "null"] }
+        proposedSummary: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    ActiveProposalResponse:
+      type: object
+      required: [proposal]
+      additionalProperties: false
+      properties:
+        proposal:
+          oneOf:
+            - $ref: "#/components/schemas/Proposal"
+            - type: "null"
+
+    Rule:
+      type: object
+      required: [id, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        scopeCardId:
+          type: [string, "null"]
+          format: uuid
+          description: "NULL = глобальне правило; заповнено = card-override (AC-12)"
+        category:
+          type: [string, "null"]
+          enum: [data, correction, survey, context_clarification, owner_impact, reminder, null]
+          description: 6 категорій D-27
+        ruleText: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    RuleCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        scopeCardId: { type: [string, "null"], format: uuid }
+        category:
+          type: [string, "null"]
+          enum: [data, correction, survey, context_clarification, owner_impact, reminder, null]
+        ruleText: { type: [string, "null"] }
+
+    Report:
+      type: object
+      required: [id, periodType, periodStart, periodEnd, content, status, generatedAt]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        periodType: { type: string, enum: [weekly, monthly, quarterly] }
+        periodStart: { type: string, format: date }
+        periodEnd: { type: string, format: date }
+        content: { type: string }
+        status: { type: string, enum: [generated, dead_letter] }
+        generatedAt: { type: string, format: date-time }
+
+    OnboardingStatus:
+      type: object
+      required: [welcomeShown]
+      additionalProperties: false
+      properties:
+        welcomeShown:
+          type: boolean
+          description: true, якщо вітання вже показано (щойно цим викликом чи раніше)
+        message:
+          oneOf:
+            - $ref: "#/components/schemas/Message"
+            - type: "null"
+          description: вітальне повідомлення, якщо саме цей виклик його щойно створив; інакше NULL
+
+    MessagePage:
+      type: object
+      required: [items, has_next, has_prev]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Message" }
+        has_next: { type: boolean }
+        has_prev: { type: boolean }
+        next_cursor: { type: [string, "null"], format: uuid }
+
+    RulePage:
+      type: object
+      required: [items, has_next, has_prev]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Rule" }
+        has_next: { type: boolean }
+        has_prev: { type: boolean }
+        next_cursor: { type: [string, "null"], format: uuid }
+
+    ReportPage:
+      type: object
+      required: [items, has_next, has_prev]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Report" }
+        has_next: { type: boolean }
+        has_prev: { type: boolean }
+        next_cursor: { type: [string, "null"], format: uuid }
