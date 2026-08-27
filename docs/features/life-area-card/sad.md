@@ -154,7 +154,33 @@ C4Container
 
 ## 6. Runtime view
 
-**Critical flow 1: Запис події з підтвердженням (happy path, AC-01)**
+**Critical flow 1: Створення картки без назви — блокується (AC-02)**
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant PWA
+
+    User->>PWA: намагається зберегти нову картку без назви
+    PWA->>PWA: перевіряє наявність назви (клієнтська валідація)
+    PWA-->>User: блокує створення, пояснює, що потрібна назва
+    Note over PWA: postcondition: картка не створена, доки немає назви
+```
+
+**Critical flow 2: Позначення «заповнена» без Опису — блокується (AC-03)**
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant PWA
+
+    User->>PWA: намагається позначити картку заповненою, Опис порожній
+    PWA->>PWA: перевіряє наявність Опису
+    PWA-->>User: блокує позначення «заповнена», пояснює, що потрібен короткий «навіщо»
+    Note over PWA: postcondition: картка лишається у стані «створена», не «заповнена»
+```
+
+**Critical flow 3: Запис події з підтвердженням (happy path, AC-01)**
 
 ```mermaid
 sequenceDiagram
@@ -178,7 +204,60 @@ sequenceDiagram
     PWA-->>User: показує новий прогрес
 ```
 
-**Critical flow 2: Близький за часом конфлікт і неперевірений запис (AC-06, AC-11, ADR-0002)**
+**Critical flow 4: Перегляд прогресу, включно з capping при перевищенні цілі (AC-09/AC-09b)**
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant PWA
+    participant Cache as Локальний кеш
+
+    User->>PWA: відкриває картку
+    PWA->>Cache: читає сирі події картки
+    Cache-->>PWA: сирі події
+    PWA->>PWA: рахує частку виконання цілі по кожному блоку-метриці (domain/progress.ts, ADR-0001)
+    alt лічильник перевищує ціль блоку-метрики
+        PWA->>PWA: обмежує показ часткою 100%, окремо показує суму понад ціль (AC-09b)
+    end
+    PWA-->>User: показує пораховані числа й агрегований прогрес картки
+```
+
+**Critical flow 5: Агент вказує на підозрілі дані (AC-10)**
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant PWA
+    participant Backend
+    participant Claude as Агент
+
+    Note over Backend,Claude: precondition: дані картки виглядають несумісними з тим, що описав користувач
+    User->>PWA: відкриває картку або питає агента про неї
+    PWA->>Backend: запит стану картки
+    Backend->>Claude: перевіряє дані на суперечність
+    Claude-->>Backend: знайдена невідповідність
+    Backend-->>PWA: показує пояснення агента
+    PWA-->>User: бачить, що саме виглядає некоректно, і пропозицію виправити разом
+    Note over PWA: postcondition: решта картки лишається доступною, нічого не заблоковано
+```
+
+**Critical flow 6: Ціль «постійний процес» — показ без відсотка (AC-05)**
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant PWA
+    participant Cache as Локальний кеш
+
+    Note over User,PWA: precondition: блок-метрика має ціль «постійний процес» (без кінцевої дати)
+    User->>PWA: відкриває картку
+    PWA->>Cache: читає сирі події
+    Cache-->>PWA: сирі події
+    PWA->>PWA: рахує накопичену кількість (без відсотка від відсутнього дедлайну)
+    PWA-->>User: показує кількість як триваючий підрахунок, не відсоток
+```
+
+**Critical flow 7: Близький за часом конфлікт і неперевірений запис (AC-06, AC-11, ADR-0002)**
 
 ```mermaid
 sequenceDiagram
@@ -214,6 +293,142 @@ sequenceDiagram
         Backend->>Store: оновлює статуси
     end
 ```
+
+**Critical flow 8: Допомога з невимірною ціллю (AC-07)**
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant PWA
+    participant Backend
+    participant Claude as Агент
+
+    User->>PWA: називає ціль, яку не може виразити числом
+    PWA->>Backend: передає формулювання цілі
+    Backend->>Claude: просить допомогти знайти вимірне число
+    Claude-->>Backend: пропонує вимірну версію цілі
+    Backend-->>PWA: показує пропозицію
+    PWA-->>User: бачить вимірну ціль, підтверджує або уточнює
+    Note over PWA: postcondition: ціль не блокується і не приймається невимірною — завжди зводиться до числа
+```
+
+**Critical flow 9: Декларативна картка без метрики (AC-08)**
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant PWA
+
+    User->>PWA: створює картку з Описом, без жодного блоку-метрики
+    PWA->>PWA: перевіряє наявність блоків-метрик
+    PWA-->>User: картка існує і доступна, але не переходить у стан «ведеться»
+    Note over PWA: postcondition: картка лишається декларативною — це дозволений стан, не помилка
+```
+
+**Critical flow 10: Доступ лише до своїх карток (AC-04)**
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant PWA
+    participant Backend
+    participant Store as База бекенда
+
+    User->>PWA: намагається переглянути чи записати на картку
+    PWA->>Backend: запит з ідентифікатором картки + токен сесії
+    Backend->>Backend: перевіряє, що картка належить автору запиту (Google-вхід, D-33)
+    alt картка належить іншому користувачу або не існує
+        Backend-->>PWA: відмова, без підтвердження чи спростування існування картки
+        PWA-->>User: бачить відмову доступу
+    else картка належить цьому користувачу
+        Backend->>Store: читає/пише дані картки
+        Store-->>Backend: ok
+        Backend-->>PWA: дані картки
+        PWA-->>User: бачить свою картку
+    end
+```
+
+**Critical flow 11: Перегляд і виправлення історії записів (AC-12, AC-13)**
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant PWA
+    participant Backend
+    participant Claude as Агент
+    participant Store as База бекенда
+
+    User->>PWA: розгортає історію останніх записів картки
+    PWA->>Backend: запит історії
+    Backend->>Store: читає останні записи
+    Store-->>Backend: записи (що і коли записано)
+    Backend-->>PWA: історія
+    PWA-->>User: бачить останні записи в порядку, кожен з деталями (AC-13)
+    User->>PWA: позначає один запис як помилковий
+    PWA->>Backend: передає запис на перевірку
+    Backend->>Claude: просить допомогти виправити чи відкотити
+    Claude-->>Backend: пропозиція виправлення/відкату
+    Backend-->>PWA: показує пропозицію
+    PWA-->>User: погоджує виправлення разом з агентом
+    User->>PWA: підтверджує
+    PWA->>Backend: підтверджене виправлення
+    Backend->>Store: оновлює запис, перераховує прогрес
+    Store-->>Backend: ok
+    Backend-->>PWA: оновлений прогрес
+    PWA-->>User: бачить виправлену історію й оновлений прогрес (AC-12)
+```
+
+**Critical flow 12: Прийняття перенесеної метрики, включно з колізією назви (AC-14, AC-15)**
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant PWA
+    participant Backend
+    participant Store as База бекенда
+
+    Note over Backend,Store: precondition: користувач підтвердив перенесення блоку-метрики із закритої картки (structure AC-12)
+    Backend->>Store: читає блок-метрику й усі її записи із закритої картки
+    Store-->>Backend: блок-метрика + історія
+    Backend->>Backend: перевіряє колізію назви й одиниці з наявними блоками картки-отримувача
+    alt колізія назви й одиниці
+        Backend-->>PWA: пропонує перейменувати блок-метрику перед завершенням
+        PWA-->>User: обирає нову назву
+        User->>PWA: підтверджує назву
+        PWA->>Backend: нова назва
+    end
+    Backend->>Store: переносить блок-метрику й усю історію в картку-отримувача
+    Store-->>Backend: ok
+    Backend-->>PWA: оновлена картка з перенесеними даними
+    PWA-->>User: бачить блок-метрику й історію на новій картці, прогрес враховує перенесені записи (AC-14)
+```
+
+**Critical flow 13: Видалення (м'яка архівація) картки (AC-16)**
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant PWA
+    participant Backend
+    participant Store as База бекенда
+
+    User->>PWA: вирішує видалити картку (з записами чи без)
+    PWA-->>User: просить підтвердити видалення
+    User->>PWA: підтверджує
+    PWA->>Backend: запит на видалення картки
+    Backend->>Store: позначає картку архівованою (status=archived), не видаляє фізично
+    Store-->>Backend: ok
+    Backend-->>PWA: картка архівована
+    PWA-->>User: картка зникає з колоди й розкладки Структури, лишається відновлюваною
+```
+
+**Coverage check (`/sdd:sequences`, крок 7).**
+
+*Use-case pass (§4):* усі 14 US мають ≥1 потік — US-01→Flow 1, US-02→Flow 2, US-03→Flow 3, US-04→Flow 4, US-05→Flow 5, US-06→Flow 6, US-07→Flow 7, US-08→Flow 8, US-09→Flow 9, US-10→Flow 10, US-11→Flow 7 (AC-11), US-12→Flow 11, US-13→Flow 12, US-14→Flow 13.
+
+*AC pass (§5):* усі 17 AC показані — AC-01→Flow 3, AC-02→Flow 1, AC-03→Flow 2, AC-04→Flow 10, AC-05→Flow 6, AC-06→Flow 7, AC-07→Flow 8, AC-08→Flow 9, AC-09/AC-09b→Flow 4, AC-10→Flow 5, AC-11→Flow 7, AC-12/AC-13→Flow 11, AC-14/AC-15→Flow 12, AC-16→Flow 13.
+
+**Flagged for review:** жодного нового учасника поза §5 не знадобилось (`Cache` — те саме, що вже задекларований контейнер «Локальний кеш» у C4 Container).
 
 ## 7. Deployment view
 
