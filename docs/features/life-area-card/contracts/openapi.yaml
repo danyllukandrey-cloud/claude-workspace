@@ -1,0 +1,562 @@
+# Derived — never hand-edit without re-running /sdd:api life-area-card --reconcile after upstream changes.
+#   fields + constraints  ← data-model.md (card, metric_block, entry, card_lifecycle_event)
+#   error responses       ← sad.md §6 sequence alt-branches
+#   endpoint list + shape ← spec.md §4 user stories / §5 acceptance criteria
+openapi: 3.1.0
+
+info:
+  title: Life-area-card API
+  version: 0.1.0
+  description: |
+    Картка — generic-механізм, що описує одну зону життя користувача (spec.md §2): назва, Опис
+    (навіщо), блоки-метрики (кількість + частота + ціль у часі), Відстеження (порахований
+    прогрес). Записи потрапляють у картку виключно через підтверджену пропозицію агента
+    (`agent` API, поза цим контрактом) — цей API лише зберігає/читає картку й приймає вже
+    підтверджені або неперевірені (pending, ADR-0002) записи.
+
+    Прогрес рахується завжди з сирих подій, спільним кодом клієнт+бекенд (ADR-0001) — жодне поле
+    тут не є похідним кешем, який можна розсинхронізувати.
+  contact:
+    name: Андрій Данилюк
+
+servers:
+  - url: https://api.example.com
+    description: Production
+  - url: http://localhost
+    description: Local
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Cards
+    description: Створення, читання, редагування, архівація картки
+  - name: MetricBlocks
+    description: Блоки-метрики картки, включно з перенесенням із закритої картки Структури
+  - name: Entries
+    description: Записи подій (confirmed/pending/rejected) і їхня історія
+
+paths:
+  /api/v1/cards:
+    get:
+      tags: [Cards]
+      summary: Прочитати колоду карток користувача (AC-04)
+      description: "Лише активні картки (`status` = active) — архівовані (AC-16) сюди не потрапляють."
+      operationId: listCards
+      parameters:
+        - in: query
+          name: after
+          schema: { type: string, format: uuid }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CardPage" }
+        "401":
+          $ref: "#/components/responses/Error"
+
+    post:
+      tags: [Cards]
+      summary: Створити картку (AC-01 US-01)
+      description: Лише назва обов'язкова — решта рішень (Опис, метрики) відкладені на US-02.
+      operationId: createCard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CardCreate" }
+            example:
+              name: "Спорт"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Card" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "422":
+          description: назва відсутня чи порожня (AC-02)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "card.name_required"
+                message: "A name is required before a card can exist"
+
+  /api/v1/cards/{cardId}:
+    get:
+      tags: [Cards]
+      summary: Прочитати картку з пораховим прогресом (AC-09/AC-09b/AC-10)
+      description: |
+        `progress` — частка виконання цілі по кожному блоку-метриці, обмежена 100% при
+        перевищенні (`overGoalAmount` показує надлишок окремо, AC-09b, ADR-0001). `dataWarning` —
+        непорожнє, коли агент вважає щось на картці підозрілим (AC-10); не блокує решту картки.
+      operationId: getCard
+      parameters:
+        - in: path
+          name: cardId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Card" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/CardNotFound"
+
+    patch:
+      tags: [Cards]
+      summary: Оновити назву/Опис, позначити заповненою (AC-02 US-02)
+      description: |
+        Часткове оновлення. Позначення `status: filled` вимагає непорожнього `description`
+        (AC-03) — сама назва вже перевірена при створенні.
+      operationId: updateCard
+      parameters:
+        - in: path
+          name: cardId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CardUpdate" }
+            example:
+              description: "Регулярні тренування для форми й енергії"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Card" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/CardNotFound"
+        "422":
+          description: спроба позначити картку заповненою без Опису (AC-03)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "card.description_required"
+                message: "A short \"навіщо\" is required before marking this card filled"
+
+    delete:
+      tags: [Cards]
+      summary: Видалити (архівувати) картку (AC-16 US-14)
+      description: |
+        М'яка архівація — `status: archived`, ніколи фізичне видалення (той самий підхід, що
+        `entry.status`). Картка зникає з колоди й з будь-якої розкладки Структури, лишається
+        технічно відновлюваною.
+      operationId: archiveCard
+      parameters:
+        - in: path
+          name: cardId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Card" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/CardNotFound"
+
+  /api/v1/cards/{cardId}/metric-blocks:
+    post:
+      tags: [MetricBlocks]
+      summary: Додати блок-метрику до картки (AC-05/AC-07/AC-08 US-02/06/08/09)
+      description: |
+        `targetCount`/`targetDate` опційні — `isOngoing: true` означає «постійний процес», без
+        кінцевої дати (AC-05). Картка без жодного блоку лишається декларативною (AC-08) — це не
+        помилка, просто відсутність цього виклику. Допомога перетворити розмиту ціль на вимірну
+        (AC-07) відбувається в чаті з агентом до цього виклику, не тут.
+      operationId: createMetricBlock
+      parameters:
+        - in: path
+          name: cardId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MetricBlockCreate" }
+            example:
+              label: "тренування"
+              unit: "раз"
+              targetCount: 12
+              isOngoing: false
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MetricBlock" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/CardNotFound"
+
+  /api/v1/cards/{cardId}/metric-blocks/transfer:
+    post:
+      tags: [MetricBlocks]
+      summary: Прийняти блок-метрику, перенесену із закритої картки (AC-14/AC-15 US-13)
+      description: |
+        Викликається `structure` API під час закриття напрямку (`structure`'s
+        `POST /structure/layout/{cardId}` `metricTransfers`), не напряму користувачем. Переносить
+        блок-метрику й **усю** її історію записів у цю картку (AC-14). Якщо назва+одиниця
+        збігаються з наявним блоком цієї картки — без `newLabel` повертає `409` замість мовчазного
+        злиття (AC-15); повторний виклик з `newLabel` завершує перенесення.
+      operationId: transferMetricBlock
+      parameters:
+        - in: path
+          name: cardId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MetricBlockTransferRequest" }
+            example:
+              sourceMetricBlockId: "8f14e45f-ceea-4d6a-9c3a-77b3f2a55e11"
+              newLabel: null
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MetricBlock" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          description: цільова картка чи блок-метрика джерела не знайдені/не належать користувачу
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "card.not_found"
+                message: "Card not found"
+        "409":
+          description: назва+одиниця вже є на цільовій картці — потрібен `newLabel` (AC-15)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "metric_block.name_collision"
+                message: "This card already has a metric-block with that label and unit — provide newLabel to continue"
+
+  /api/v1/cards/{cardId}/entries:
+    get:
+      tags: [Entries]
+      summary: Прочитати історію останніх записів картки (AC-13 US-12)
+      description: Найновіші зверху.
+      operationId: listEntries
+      parameters:
+        - in: path
+          name: cardId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: query
+          name: after
+          schema: { type: string, format: uuid }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EntryPage" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/CardNotFound"
+
+  /api/v1/cards/{cardId}/metric-blocks/{metricBlockId}/entries:
+    post:
+      tags: [Entries]
+      summary: Записати подію (AC-01 happy; AC-06/AC-11 конфлікт → pending)
+      description: |
+        Викликається агентом після підтвердження (`agent` API `confirm`), не напряму користувачем.
+        Звичайний запис повертає `status: confirmed`. Якщо виявлено близький за часом запис того
+        самого блоку з іншого пристрою — обидва лишаються `status: pending`, не входять у прогрес,
+        доки агент не уточнить дублікат/окремий запис (AC-06); те саме, якщо агент був тимчасово
+        недоступний (AC-11) — запис лишається `pending` до першого повернення агента.
+      operationId: createEntry
+      parameters:
+        - in: path
+          name: cardId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: path
+          name: metricBlockId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EntryCreate" }
+            example:
+              amount: 5
+              rawText: "пробіг 5 км"
+              sourceDeviceId: "device-a1"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Entry" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          description: картка чи блок-метрика не знайдені/не належать користувачу
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "metric_block.not_found"
+                message: "Metric-block not found"
+
+  /api/v1/entries/{entryId}:
+    patch:
+      tags: [Entries]
+      summary: Виправити, відкотити чи вирішити конфлікт запису (AC-06/AC-11/AC-12 US-07/11/12)
+      description: |
+        Три випадки одного механізму: агент вирішує конфлікт близьких за часом записів
+        (`status: confirmed` чи `rejected`, AC-06), агент підтверджує накопичений `pending` запис
+        після повернення (AC-11), або користувач разом з агентом виправляє/відкочує помилковий
+        запис з історії (AC-12 — `rejected`, ніколи фізичне видалення). Виклик іде через `agent`
+        API, не напряму користувачем.
+      operationId: resolveEntry
+      parameters:
+        - in: path
+          name: entryId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EntryResolve" }
+            example:
+              status: "confirmed"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Entry" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          description: запис не знайдений/не належить користувачу
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "entry.not_found"
+                message: "Entry not found"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Error:
+      description: Error — unified envelope
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    CardNotFound:
+      description: |
+        картка не знайдена серед карток поточного користувача — той самий код і для «не існує»,
+        і для «належить іншому» (AC-04: не підтверджуємо й не спростовуємо)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            code: "card.not_found"
+            message: "Card not found"
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+          pattern: "^[a-z_]+\\.[a-z_]+$"
+          example: "card.not_found"
+        message: { type: string }
+        details:
+          type: object
+          description: опційний структурований контекст
+
+    Card:
+      type: object
+      required: [id, name, status, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: [string, "null"] }
+        status:
+          type: string
+          enum: [active, archived]
+          description: "archived — м'яка архівація (AC-16), ніколи фізичне видалення"
+        aggregateProgress:
+          type: [number, "null"]
+          description: середнє часток виконання цілі по всіх блоках-метриках картки; NULL для декларативної картки без жодного блоку (AC-08)
+        dataWarning:
+          type: [string, "null"]
+          description: пояснення агента, що саме виглядає некоректно (AC-10); NULL, коли нічого не виявлено
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    CardCreate:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string }
+
+    CardUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string }
+        description: { type: [string, "null"] }
+        markFilled:
+          type: boolean
+          description: "true = спроба перейти в стан «заповнена» (AC-03 перевіряє Опис)"
+
+    MetricBlock:
+      type: object
+      required: [id, cardId, label, unit, isOngoing, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        cardId: { type: string, format: uuid }
+        label: { type: string }
+        unit: { type: string }
+        frequency: { type: [string, "null"] }
+        targetCount: { type: [number, "null"] }
+        isOngoing:
+          type: boolean
+          description: "«постійний процес» (AC-05) — прогрес показується як накопичена кількість, не відсоток"
+        targetDate: { type: [string, "null"], format: date }
+        progress:
+          type: [number, "null"]
+          description: частка виконання цілі, обмежена 1.0 (AC-09b); NULL для is_ongoing без денумератора
+        overGoalAmount:
+          type: [number, "null"]
+          description: сума понад ціль, показана окремо при перевищенні (AC-09b)
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    MetricBlockCreate:
+      type: object
+      required: [label, unit]
+      additionalProperties: false
+      properties:
+        label: { type: string }
+        unit: { type: string }
+        frequency: { type: [string, "null"] }
+        targetCount: { type: [number, "null"] }
+        isOngoing: { type: boolean, default: false }
+        targetDate: { type: [string, "null"], format: date }
+
+    MetricBlockTransferRequest:
+      type: object
+      required: [sourceMetricBlockId]
+      additionalProperties: false
+      properties:
+        sourceMetricBlockId:
+          type: string
+          format: uuid
+          description: блок-метрика на картці, що закривається (structure AC-12)
+        newLabel:
+          type: [string, "null"]
+          description: "перейменування при колізії назви+одиниці (AC-15); NULL, доки колізія не виявлена"
+
+    Entry:
+      type: object
+      required: [id, metricBlockId, cardId, amount, status, recordedAt, createdAt]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        metricBlockId: { type: string, format: uuid }
+        cardId: { type: string, format: uuid }
+        amount: { type: number }
+        rawText: { type: [string, "null"] }
+        status:
+          type: string
+          enum: [pending, confirmed, rejected]
+          description: "ADR-0002 — pending не входить у прогрес до підтвердження"
+        sourceDeviceId: { type: [string, "null"] }
+        recordedAt: { type: string, format: date-time }
+        confirmedAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+
+    EntryCreate:
+      type: object
+      required: [amount]
+      additionalProperties: false
+      properties:
+        amount: { type: number }
+        rawText: { type: [string, "null"] }
+        sourceDeviceId: { type: [string, "null"] }
+
+    EntryResolve:
+      type: object
+      required: [status]
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum: [confirmed, rejected]
+
+    CardPage:
+      type: object
+      required: [items, has_next, has_prev]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Card" }
+        has_next: { type: boolean }
+        has_prev: { type: boolean }
+        next_cursor: { type: [string, "null"], format: uuid }
+
+    EntryPage:
+      type: object
+      required: [items, has_next, has_prev]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Entry" }
+        has_next: { type: boolean }
+        has_prev: { type: boolean }
+        next_cursor: { type: [string, "null"], format: uuid }
