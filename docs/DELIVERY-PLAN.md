@@ -41,7 +41,7 @@
 
 ## 📊 Аналіз вимог (50%)
 
-**Документи:** [SPEC.md](../plan/app/SPEC.md) · [Success_Metrics.md](Product_Overview/Success_Metrics.md) · [PRODUCT-BOOK.md](PRODUCT-BOOK.md) (заплановано)
+**Документи:** [life-area-card/spec.md](features/life-area-card/spec.md) · [Success_Metrics.md](Product_Overview/Success_Metrics.md) · [PRODUCT-BOOK.md](PRODUCT-BOOK.md)
 
 **Розрахунок 2026-08-19:** 14 пунктів разом (5 наявних + 6 нових від книги опису продукту, D-49), 5 готово → **36%**. Було 60% — не тому що зроблено менше, а тому що книга показала реальний обсяг фази, якого раніше не рахували.
 
@@ -106,7 +106,7 @@
 
 ## 💻 Розробка (5%, умовно)
 
-**Документи:** [plan/app/](../plan/app/) · [SPEC.md Goals](../plan/app/SPEC.md#goals--що-має-вміти-перша-версія)
+**Документи:** [plan/app/](../plan/app/) · [life-area-card/spec.md §2 Goals](features/life-area-card/spec.md#2-goals)
 
 ### Що готово ✅
 
@@ -152,7 +152,7 @@
 
 ## 🧪 Тестування (0%, умовно)
 
-**Документи:** [SPEC.md Acceptance criteria](../plan/app/SPEC.md#acceptance-criteria--коли-вважаємо-що-вдалось)
+**Документи:** [life-area-card/spec.md §5 Acceptance criteria](features/life-area-card/spec.md#5-acceptance-criteria)
 
 ### Статус ⏳
 
@@ -447,12 +447,12 @@
 
 ### Частина 4 — Зворотна звірка (після частин 1–3; той самий підхід, що й Фаза 3 книги D-49)
 
-- [ ] Звірити й виправити за новими документами: `design-review.md`, `idea-brief.md`, `DECISIONS.md` (D-23…D-45), `Product_Vision.md`, `plan/app/SPEC.md`, ADR
+- [x] ~~Звірити й виправити за новими документами: `design-review.md`, `idea-brief.md`, `DECISIONS.md` (D-23…D-45), `Product_Vision.md`, `plan/app/SPEC.md`, ADR~~ — виконано 2026-08-27 ([D-80](DECISIONS.md#d-80)). `design-review.md` і `plan/app/SPEC.md` архівовано (замінені `sad.md`/трьома `spec.md`), усі знайдені посилання виправлені; тригери D-26 (буфер пам'яті) і D-35 (механізм примусу правил) оновлено — обидва вже закриті `agent`'s дизайном, але тригери про це не знали
 - [x] ~~Перевірити Картку (`life-area-card`) на пропущений крок `/sdd:sequences`~~ — виконано 2026-08-27 (коміт `02c0f3b`). Підозра підтвердилась: §6 покривав лише 3 з 17 AC (AC-01, AC-06, AC-11). Домальовано 11 нових потоків, усі 17 AC тепер покриті, порядок звірено з §4.
 
 **Поза обсягом:** блоки книги «Проєкт» і «Філософія» — додаткових документів не потребують, книга для них фінальна.
 
-**Наступний крок сесії, де продовжуємо (оновлено 2026-08-27):** усі три фічі (Картка, Структура, Агент) тепер мають **повний SDD-опис до кінця конвеєра** — `specify → … → plan-tests` без жодної прогалини. Остання закрита сьогодні: `structure/test-plan.md` (коміт `9aa4fad`). Наступний логічний крок — **Частина 4 (зворотна звірка застарілих документів)**, яка саме на це й чекала («після частин 1–3»): `design-review.md`, `idea-brief.md`, `DECISIONS.md` (D-23…D-45), `Product_Vision.md`, `plan/app/SPEC.md`, ADR — звірити з тим, що тепер записано в трьох повних SAD/data-model/api. Альтернатива — `/sdd:implement`, але він для всіх трьох чекає піднятого бекенд-середовища (Docker відкладено, D-12). Крос-фічева залежність порядку промоції (`agent`-міграції 02-03 після `life-area-card`, `card`/`metric_block`) лишається задокументованою в обох `_audit/`.
+**Наступний крок сесії, де продовжуємо (оновлено 2026-08-27):** усі три фічі (Картка, Структура, Агент) мають повний SDD-опис до кінця конвеєра, і Частина 4 (зворотна звірка) закрита — обидва застарілі документи архівовано ([D-80](DECISIONS.md#d-80)), два застарілі тригери рішень виправлено. Наступний крок — **`/sdd:implement`**, але він для всіх трьох фіч чекає піднятого бекенд-середовища (Docker відкладено, D-12). Крос-фічева залежність порядку промоції (`agent`-міграції 02-03 після `life-area-card`, `card`/`metric_block`) лишається задокументованою в обох `_audit/`.
 
 ---
 
@@ -500,7 +500,7 @@
 
 - [DECISIONS.md](DECISIONS.md) — реєстр усіх рішень
 - [PROJECT-STATE.md](PROJECT-STATE.md) — детальний контекст
-- [SPEC.md](../plan/app/SPEC.md) — специфікація першої картки
+- [life-area-card/spec.md](features/life-area-card/spec.md) — специфікація першої картки
 - [Success_Metrics.md](Product_Overview/Success_Metrics.md) — метрики успіху
 - [CLAUDE.md](../CLAUDE.md) — правила роботи в проєкті
 - `docs/roadmap.md` — портфельний рівень (outcomes, Now/Next/Later), **ще не створений**; з'явиться через скіл `sdd:roadmap`. Цей файл (DELIVERY-PLAN.md) — тактичний рівень (фази SDLC поточної роботи)

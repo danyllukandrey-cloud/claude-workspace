@@ -67,4 +67,4 @@ _Визначимо, коли фокус-група буде готова і р�
 
 - [DECISIONS.md](../DECISIONS.md) — рішення про структуру метрик
 - [Product_Vision.md](Product_Vision.md) — що вирішуємо
-- [SPEC.md](../../plan/app/SPEC.md) — acceptance criteria для першої картки (окремо від цих метрик)
+- [life-area-card/spec.md](../features/life-area-card/spec.md) — acceptance criteria для першої картки (окремо від цих метрик)

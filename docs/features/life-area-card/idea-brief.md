@@ -8,7 +8,7 @@ status: Confirmed owner: "Андрій Данилюк" reviewers: [] updated_at:
 
 # Idea Brief — life-area-card (генерик-картка ПЛАН)
 
-> Зібрано 2026-08-18 за протоколом `sdlc-interview` (кроки 0–8 із 14). Три повні проходи кроків 5–8, разом 21 запуск субагентів. Повна деталізація архітектурних рішень — [`design-review.md`](./design-review.md). Реєстр рішень — [`docs/DECISIONS.md`](../../../docs/DECISIONS.md).
+> Зібрано 2026-08-18 за протоколом `sdlc-interview` (кроки 0–8 із 14). Три повні проходи кроків 5–8, разом 21 запуск субагентів. Повна деталізація архітектурних рішень — [`design-review.md`](../../z-archive/life-area-card-design-review.md) (архів, замінено `sad.md`). Реєстр рішень — [`docs/DECISIONS.md`](../../../docs/DECISIONS.md).
 
 ## 1. Raw idea
 
@@ -244,10 +244,10 @@ status: Confirmed owner: "Андрій Данилюк" reviewers: [] updated_at:
 
 ## Related
 
-- [`design-review.md`](./design-review.md) — дев'ятиблокове архітектурне інтерв'ю, повна деталізація
+- [`design-review.md`](../../z-archive/life-area-card-design-review.md) — архів, дев'ятиблокове архітектурне інтерв'ю, замінено `sad.md`
 - [`docs/CONTEXT.md`](../../../docs/CONTEXT.md) — словник домену
 - [`docs/DECISIONS.md`](../../../docs/DECISIONS.md) — реєстр рішень, D-22…D-45
-- [`plan/app/SPEC.md`](../../app/SPEC.md) — специфікація першої версії
+- [`spec.md`](spec.md) · [`sad.md`](sad.md) — повний SDD-опис цієї фічі (замінює `plan/app/SPEC.md`, D-80)
 - [`docs/Product_Overview/Product_Vision.md`](../../../docs/Product_Overview/Product_Vision.md) — бачення продукту
 - [`docs/DELIVERY-PLAN.md`](../../../docs/DELIVERY-PLAN.md) — фази SDLC
 

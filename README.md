@@ -43,12 +43,13 @@
 - [ADR-0004](docs/adr/0004-scaffold-architecture.md) — архітектура каркасу проєкту
 - [plan/app/ARCHITECTURE.md](plan/app/ARCHITECTURE.md) — детальна архітектура застосунку
 - [plan/app/CLAUDE.md](plan/app/CLAUDE.md) — конвенції фронтенд-коду для Claude
-- [plan/app/SPEC.md](plan/app/SPEC.md) — специфікація першої картки (PRD)
 
 ### Артефакти фіч
 
-- [life-area-card/design-review.md](docs/features/life-area-card/design-review.md) — архітектурне інтерв'ю generic-картки (9 блоків)
-- [life-area-card/idea-brief.md](docs/features/life-area-card/idea-brief.md) — бриф ідеї першої фічі
+- [life-area-card/idea-brief.md](docs/features/life-area-card/idea-brief.md) — бриф ідеї першої фічі (RICE/Feasibility Confirmed, D-79)
+- [life-area-card/spec.md](docs/features/life-area-card/spec.md), [structure/spec.md](docs/features/structure/spec.md), [agent/spec.md](docs/features/agent/spec.md) — повні SDD-специфікації трьох фіч (заміняють `plan/app/SPEC.md`, D-80)
+- [z-archive/life-area-card-design-review.md](docs/z-archive/life-area-card-design-review.md) — архів: архітектурне інтерв'ю generic-картки (9 блоків), замінено `life-area-card/sad.md` (D-80)
+- [z-archive/plan-app-SPEC.md](docs/z-archive/plan-app-SPEC.md) — архів: перша сумарна специфікація v1, замінено трьома `spec.md` вище (D-80)
 - [portfolio-rebalancing-card/idea-brief.md](docs/z-archive/portfolio-rebalancing-card/idea-brief.md) — архів: бриф скасованої тестової картки (D-22)
 - [portfolio-rebalancing-card/competitive-research.md](docs/z-archive/portfolio-rebalancing-card/competitive-research.md) — архів: конкурентне дослідження
 
