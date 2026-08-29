@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" role="img" aria-label="Одна велика прямокутна картка приблизно на чверть площі в центрі, навколо — десять рівних прямокутних карток по колу, кожна зʼєднана тонкою лінією з центром">
+  <rect x="0" y="0" width="640" height="640" fill="#ffffff"/>
+
+  <g stroke="#2e4f42" stroke-width="1" opacity="0.35">
+    <line x1="320" y1="320" x2="320" y2="90"/>
+    <line x1="320" y1="320" x2="455.2" y2="133.9"/>
+    <line x1="320" y1="320" x2="538.7" y2="248.9"/>
+    <line x1="320" y1="320" x2="538.7" y2="391.1"/>
+    <line x1="320" y1="320" x2="455.2" y2="506.1"/>
+    <line x1="320" y1="320" x2="320" y2="550"/>
+    <line x1="320" y1="320" x2="184.8" y2="506.1"/>
+    <line x1="320" y1="320" x2="101.3" y2="391.1"/>
+    <line x1="320" y1="320" x2="101.3" y2="248.9"/>
+    <line x1="320" y1="320" x2="184.8" y2="133.9"/>
+  </g>
+
+  <rect x="220" y="255" width="200" height="130" rx="6" fill="#2e4f42"/>
+  <text x="320" y="316" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="600" font-size="15" fill="#ffffff">Здоровʼя</text>
+  <text x="320" y="334" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="600" font-size="10.5" fill="#ffffff" opacity="0.85">~25% площі</text>
+
+  <g font-family="system-ui, sans-serif" font-size="11.5" fill="#1c211d">
+    <rect x="262" y="66"  width="116" height="48" rx="4" fill="#dbe6dd" stroke="#2e4f42" stroke-width="1.4"/>
+    <text x="320" y="94" text-anchor="middle">Спорт</text>
+
+    <rect x="397.2" y="109.9" width="116" height="48" rx="4" fill="#dbe6dd" stroke="#2e4f42" stroke-width="1.4"/>
+    <text x="455.2" y="137.9" text-anchor="middle">Кар'єра</text>
+
+    <rect x="480.7" y="224.9" width="116" height="48" rx="4" fill="#dbe6dd" stroke="#2e4f42" stroke-width="1.4"/>
+    <text x="538.7" y="252.9" text-anchor="middle">Фінанси</text>
+
+    <rect x="480.7" y="367.1" width="116" height="48" rx="4" fill="#dbe6dd" stroke="#2e4f42" stroke-width="1.4"/>
+    <text x="538.7" y="395.1" text-anchor="middle">Навчання</text>
+
+    <rect x="397.2" y="482.1" width="116" height="48" rx="4" fill="#dbe6dd" stroke="#2e4f42" stroke-width="1.4"/>
+    <text x="455.2" y="510.1" text-anchor="middle">Стосунки</text>
+
+    <rect x="262" y="526" width="116" height="48" rx="4" fill="#dbe6dd" stroke="#2e4f42" stroke-width="1.4"/>
+    <text x="320" y="554" text-anchor="middle">Відпочинок</text>
+
+    <rect x="126.8" y="482.1" width="116" height="48" rx="4" fill="#dbe6dd" stroke="#2e4f42" stroke-width="1.4"/>
+    <text x="184.8" y="510.1" text-anchor="middle">Дім</text>
+
+    <rect x="43.3" y="367.1" width="116" height="48" rx="4" fill="#dbe6dd" stroke="#2e4f42" stroke-width="1.4"/>
+    <text x="101.3" y="395.1" text-anchor="middle">Хобі</text>
+
+    <rect x="43.3" y="224.9" width="116" height="48" rx="4" fill="#dbe6dd" stroke="#2e4f42" stroke-width="1.4"/>
+    <text x="101.3" y="252.9" text-anchor="middle">Спільнота</text>
+
+    <rect x="126.8" y="109.9" width="116" height="48" rx="4" fill="#dbe6dd" stroke="#2e4f42" stroke-width="1.4"/>
+    <text x="184.8" y="137.9" text-anchor="middle">Духовність</text>
+  </g>
+</svg>
