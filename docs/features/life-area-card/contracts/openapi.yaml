@@ -40,10 +40,15 @@ paths:
   /api/v1/cards:
     get:
       tags: [Cards]
-      summary: Прочитати колоду карток користувача (AC-04)
-      description: "Лише активні картки (`status` = active) — архівовані (AC-16) сюди не потрапляють."
+      summary: Прочитати колоду карток користувача (AC-04), або архів (AC-18)
+      description: |
+        За замовчуванням — лише активні картки (`status` = active). `status=archived` повертає
+        архів (AC-18, US-16, 2026-08-29) — окремий список, той самий шлях, інший фільтр.
       operationId: listCards
       parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [active, archived], default: active }
         - in: query
           name: after
           schema: { type: string, format: uuid }
@@ -115,10 +120,12 @@ paths:
 
     patch:
       tags: [Cards]
-      summary: Оновити назву/Опис, позначити заповненою (AC-02 US-02)
+      summary: Оновити назву/Опис, позначити заповненою (AC-02 US-02, AC-19 US-02)
       description: |
         Часткове оновлення. Позначення `status: filled` вимагає непорожнього `description`
-        (AC-03) — сама назва вже перевірена при створенні.
+        (AC-03) — сама назва вже перевірена при створенні. Той самий виклик покриває
+        перейменування (AC-19, 2026-08-29) — окремого ендпоінта не потрібно, лише UI-вхід
+        (SCR-02 стан `rename`).
       operationId: updateCard
       parameters:
         - in: path
@@ -174,6 +181,38 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/CardNotFound"
+
+  /api/v1/cards/{cardId}/restore:
+    post:
+      tags: [Cards]
+      summary: Розархівувати картку (AC-17 US-15)
+      description: |
+        `status: archived` → `active`. Позиція в розкладці Структури НЕ відновлюється
+        автоматично (D-69) — користувач розкладає картку заново. Дзеркало `archiveCard`.
+      operationId: restoreCard
+      parameters:
+        - in: path
+          name: cardId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Card" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/CardNotFound"
+        "409":
+          description: картка вже активна (не в стані `archived`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "card.not_archived"
+                message: "Only an archived card can be restored"
 
   /api/v1/cards/{cardId}/metric-blocks:
     post:

@@ -440,8 +440,8 @@
 - [x] `/sdd:ux-flows life-area-card` → `ux-flows.md` — готово 2026-08-27 (коміт `915a77f`), 13 потоків на 13 UI-touching US (US-10 поза обсягом), 6 SCR, усі 17 AC покриті
 - [x] `/sdd:screens life-area-card` → `screens.md` — готово 2026-08-27 (коміт `793225e`), code-режим, 6 SCR, 3 нові компоненти + 4 reused-pending зі `structure`
 - [x] RICE/Feasibility для Approach A (`sdlc-interview` кроки 9-11) — готово 2026-08-27 ([D-79](DECISIONS.md#d-79), коміт `94600e8`), Reach 1 × Impact 3 × Confidence 0.8 / Effort M, Tech/Skills/Time усі Feasible, `idea-brief.md` → `status: Confirmed`
-- [x] `/sdd:tasks life-area-card` → `tasks.json` — готово 2026-08-27 (коміт `392d0df`), 31 задача (5 migration/4 domain/3 infra/8 app/3 ports/6 ui/1 wiring/1 tests), DAG ациклічний, усі 17 AC покриті
-- [x] `/sdd:plan-tests life-area-card` → `test-plan.md` — готово 2026-08-27 (коміт `11cf410`), 17/17 AC покриті (9 integration + 6 unit + 2 багаторівневі), load — N/A (без числового серверного NFR)
+- [x] `/sdd:tasks life-area-card` → `tasks.json` — готово 2026-08-27 (коміт `392d0df`), доповнено 2026-08-29 ([D-91](DECISIONS.md#d-91)) до 38 задач (T32-T38 — розархівація/архів/перейменування + крос-фічева FK-міграція), DAG ациклічний, усі 20 AC покриті
+- [x] `/sdd:plan-tests life-area-card` → `test-plan.md` — готово 2026-08-27 (коміт `11cf410`), доповнено 2026-08-29 ([D-91](DECISIONS.md#d-91)) — 20/20 AC покриті, load — N/A (без числового серверного NFR)
 
 ### Частина 2 — Структура (новий слаг `structure`)
 
@@ -453,7 +453,7 @@
 - [x] `/sdd:api structure` → `contracts/openapi.yaml` — готово 2026-08-24, 6 ендпоінтів, singleton без ID (структурно закриває AC-03), 0 помилок лінтера
 - [x] `/sdd:ux-flows structure` → `ux-flows.md` — готово 2026-08-24 (ретроактивно, після `design`), 4 екрани, 8 потоків
 - [x] `/sdd:screens structure` → `screens.md` — готово 2026-08-24, 4 SCR у похідних станах, 11 нових компонентів (`NEW:`, усі `pending`)
-- [x] `/sdd:tasks structure` → `tasks.json` + `tasks/` — готово 2026-08-24, 25 атомарних задач, DAG з 8 паралельних гілок, усі 16 AC покриті
+- [x] `/sdd:tasks structure` → `tasks.json` + `tasks/` — готово 2026-08-24, доповнено 2026-08-29 ([D-91](DECISIONS.md#d-91)) до 26 задач (T26 — крос-фічева FK-міграція, вмикає каскадне видалення акаунта), DAG з 8 паралельних гілок, усі 16 AC покриті
 - [x] Уточнення з Андрієм — пройдено живо на кожному кроці (AskUserQuestion)
 - [x] `/sdd:plan-tests structure` → `test-plan.md` — готово 2026-08-27 (коміт `9aa4fad`), 16/16 AC покриті (11 integration + 5 unit), дві ephemeral-БД, load — N/A
 
@@ -468,8 +468,8 @@
 - [x] `/sdd:api agent` → `contracts/openapi.yaml` — готово 2026-08-27 (коміт `07f2bac`), 8 операцій (Messages/Proposals/Rules/Reports/Onboarding), усі 9 US і 17 AC покриті. Драфт-чек знайшов і закрив прогалину (Flow 2 → `503`). `events.md` свідомо не написано — Flow 14 без `<message-bus>`-учасника
 - [x] `/sdd:ux-flows agent` → `ux-flows.md` — готово 2026-08-27 (коміт `607795b`, ретроактивно — запущено з `screens`, бо файл був відсутній), 9 потоків на 9 UI-touching US, 3 SCR, усі 17 AC покриті (AC-06 — N/A, скоринг на бекенді)
 - [x] `/sdd:screens agent` → `screens.md` — готово 2026-08-27 (коміт `6415cfe`), code-режим (жоден MCP недоступний), 3 SCR (Чат/Налаштування правил/Звіти активності), 6 нових компонентів + 4 reused-pending зі `structure/screens.md` (не дубльовані)
-- [x] `/sdd:tasks agent` → `tasks.json` — готово 2026-08-27 (коміт `4c6dc13`), 30 атомарних задач (7 migration/4 domain/4 infra/4 app/5 ports/4 ui/1 wiring/1 tests), DAG ациклічний, усі 17 AC покриті. Флаговано: крос-фічева залежність промоції, крос-фічеве читання worker-звіту (TBD), текст онбордингу залежить від ненаписаного `Concept.md`
-- [x] `/sdd:plan-tests agent` → `test-plan.md` — готово 2026-08-27 (коміт `d468070`), 17/17 AC покриті (14 integration + 3 unit, рівень обрано з Андрієм по кожному AC), NFR-навантаження з числами §6, самоперевірка 6/6
+- [x] `/sdd:tasks agent` → `tasks.json` — готово 2026-08-27 (коміт `4c6dc13`), доповнено 2026-08-29 ([D-91](DECISIONS.md#d-91)) до 47 задач (T31-T47 — акаунт/синхронізація/документи/баг-звіт + раніше пропущена T3/AC-16), DAG ациклічний, усі 27 AC покриті. Флаговано: крос-фічева залежність промоції (нове — T39 чекає на FK-міграції `life-area-card`/`structure`), крос-фічеве читання worker-звіту (TBD), текст онбордингу залежить від ненаписаного `Concept.md`
+- [x] `/sdd:plan-tests agent` → `test-plan.md` — готово 2026-08-27 (коміт `d468070`), доповнено 2026-08-29 ([D-91](DECISIONS.md#d-91)) — 27/27 AC покриті, NFR-навантаження з числами §6
 
 ### Частина 4 — Зворотна звірка (після частин 1–3; той самий підхід, що й Фаза 3 книги D-49)
 

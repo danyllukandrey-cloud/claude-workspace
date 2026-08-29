@@ -2,7 +2,7 @@
 status: Draft
 owner: "Андрій"
 reviewers: ["<implementing engineer>", "Tech Lead"]
-updated_at: "2026-08-27"
+updated_at: "2026-08-29"
 feature_size: "M"
 ---
 
@@ -44,6 +44,10 @@ feature_size: "M"
 | AC-14 happy | a metric-block moved from a closing card arrives with its full history | integration | destination card's progress and history include the moved entries |
 | AC-15 error | a name+unit collision on transfer is rejected, not silently merged | integration | transfer blocked until a new label is supplied |
 | AC-16 happy | deleting a card soft-archives it | integration | card gone from the active deck, technically recoverable |
+| AC-17 happy | restoring an archived card | integration | status returns to active, card back in the default deck, layout position untouched |
+| AC-17 error | restoring a card that isn't archived | integration | rejected with `card.not_archived`, nothing changed |
+| AC-18 happy | listing archived cards | integration | only archived cards returned, newest first; default listing unaffected |
+| AC-19 happy | renaming a card via inline edit | component | new name saved, deck and Structure history reflect it |
 
 ## Edge cases / error paths
 
@@ -52,6 +56,8 @@ feature_size: "M"
 - Transfer target card archived between the source closing and the transfer call → transfer rejected, source metric-block stays on the closing card.
 - Two devices resolve the same conflicting entry pair at nearly the same moment → the second resolution is rejected once the first has already settled the pair, not applied on top of it.
 - Offline record made with no connectivity at all → stays queued locally, syncs and resolves to pending/confirmed once reconnected (see Test data below).
+- Restoring a card the account doesn't own → same non-disclosure "not found" outcome as AC-04, never confirms it exists archived under another account.
+- Account deletion cascades to this feature (`agent` AC-17, [D-89](../../../DECISIONS.md#d-89)) → covered end-to-end in `agent/test-plan.md`, not duplicated here; this plan only owns the FK/cascade migration itself (T38) applying cleanly.
 
 ## Test data
 

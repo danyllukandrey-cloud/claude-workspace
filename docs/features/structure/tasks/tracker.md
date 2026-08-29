@@ -30,5 +30,6 @@
 | T23 | UI: SCR-04 Закрити напрямок dialog | ui | TBD | M | T19, T18 | todo |
 | T24 | Wiring: register Структура module in app-shell | wiring | TBD | S | T20, T21, T22, T23 | todo |
 | T25 | Tests: cross-cutting integration (AC-05 + offline sync) | tests | TBD | M | T24 | todo |
+| T26 | Migration: add owner_user_id FK | migration | TBD | S | T1 | todo |
 
-**Total:** 25 tasks — 9 S + 14 M + 2 L. Орієнтовно 1.5–2 «спринти» в термінах size-matrix (M), але в реальному часі значно довше через темп проєкту (~1–2 год/тиждень, `architecture-map.md` §Organisational).
+**Total:** 26 tasks — 10 S + 14 M + 2 L. Доповнено 2026-08-29 (T26, D-89) — крос-фічева FK-міграція для каскадного видалення акаунта. Орієнтовно 1.5–2 «спринти» в термінах size-matrix (M), але в реальному часі значно довше через темп проєкту (~8-12 год/тиждень, уточнено 2026-08-29 — стара оцінка 1-2 год/тиждень застаріла, [D-87](../../../DECISIONS.md#d-87)).

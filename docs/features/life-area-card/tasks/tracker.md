@@ -34,7 +34,14 @@
 | T27 | UI: SCR-04 Форма створення | ui | TBD | S | T24, T21 | todo |
 | T28 | UI: SCR-05 Форма блоку-метрики | ui | TBD | M | T24, T22 | todo |
 | T29 | UI: SCR-06 Підтвердження архівації | ui | TBD | S | T24, T21 | todo |
-| T30 | Wiring: register life-area-card module | wiring | TBD | S | T25, T26, T27, T28, T29 | todo |
+| T30 | Wiring: register life-area-card module | wiring | TBD | S | T25, T26, T27, T28, T29, T36, T37 | todo |
 | T31 | Tests: cross-cutting integration | tests | TBD | M | T30, T11 | todo |
+| T32 | Migration: restore transition + archived index | migration | TBD | S | T5 | todo |
+| T33 | App: restoreCard use-case | app | TBD | S | T9, T10 | todo |
+| T34 | App: listCards with status filter | app | TBD | S | T10 | todo |
+| T35 | Ports: restoreCard + archived listCards handlers | ports | TBD | S | T33, T34 | todo |
+| T36 | UI: SCR-07 Архів карток | ui | TBD | M | T24, T35 | todo |
+| T37 | UI: SCR-02 rename state | ui | TBD | S | T24, T21 | todo |
+| T38 | Migration: add owner_user_id FK | migration | TBD | S | T1 | todo |
 
-**Total:** 31 tasks — 11 S + 17 M + 3 L. Порівнянно з `agent` (30 задач) — реалістично довше за одну сесію навіть у термінах size-matrix (M); у реальному часі — значно довше через темп проєкту (~1–2 год/тиждень, `architecture-map.md` §Organisational).
+**Total:** 38 tasks — 17 S + 18 M + 3 L. Доповнено 2026-08-29 (T32-T38, D-89) — 6 задач на розархівацію/архів/перейменування + 1 крос-фічева FK-міграція. Порівнянно з `agent` (30 задач до доповнення) — реалістично довше за одну сесію навіть у термінах size-matrix (M); у реальному часі — значно довше через темп проєкту (~8-12 год/тиждень, уточнено 2026-08-29 — стара оцінка 1-2 год/тиждень застаріла, [D-87](../../../DECISIONS.md#d-87)).

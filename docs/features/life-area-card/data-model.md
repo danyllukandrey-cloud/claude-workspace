@@ -67,7 +67,7 @@ erDiagram
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
 | `id` | UUID | PK, app-generated | `crypto.randomUUID()` |
-| `owner_user_id` | UUID | NOT NULL | **Немає DB-рівня FK навмисно** — таблиця `users`/автентифікації не належить цій фічі (D-33, поза межами spec.md §3). FK-обмеження додасться, коли її створить власна фіча (ймовірно `agent`). До того — перевірка власника (AC-04) виконується на рівні бекенд-коду |
+| `owner_user_id` | UUID | NOT NULL, FK → `app_user(id)` ON DELETE CASCADE | FK додано 2026-08-29, міграція 07 — `agent`'s `app_user` (migration 01) тепер існує. Закриває TBD від 2026-08-23; вмикає каскадне видалення акаунта (agent AC-17, D-89) |
 | `name` | TEXT | NOT NULL | без назви картку не створюємо (AC-02) |
 | `description` | TEXT | NULL | Опис/«навіщо»; NULL, доки не заповнено (AC-03 блокує лише позначення «заповнена», не саме створення) |
 | `status` | TEXT | NOT NULL DEFAULT 'active', CHECK (`status` IN ('active','archived')) | видалення картки (AC-16) — м'яке, як `entry.status`: ніколи фізично не видаляємо, лише позначаємо. `archived`-картки не показуються в колоді |
@@ -75,7 +75,7 @@ erDiagram
 | `updated_at` | timestamptz | NOT NULL DEFAULT now() | назва/Опис/статус можуть редагуватись |
 
 **Aggregate root:** root.
-**Access patterns:** список карток користувача (AC-04) → індекс на `owner_user_id`; список **активних** карток колоди (AC-16) → частковий індекс на `owner_user_id` де `status = 'active'`.
+**Access patterns:** список карток користувача (AC-04) → індекс на `owner_user_id`; список **активних** карток колоди (AC-16) → частковий індекс на `owner_user_id` де `status = 'active'`; список **архівованих** карток (AC-18, 2026-08-29) → частковий індекс на `owner_user_id` де `status = 'archived'`.
 **Constraints:** FK на `owner_user_id` — `<!-- TBD: додається окремою міграцією фічею, що володіє users -->`.
 
 ### `metric_block`
@@ -122,7 +122,7 @@ erDiagram
 |---|---|---|---|
 | `id` | UUID | PK, app-generated | |
 | `card_id` | UUID | NOT NULL, FK → `card(id)` ON DELETE CASCADE | індексовано нижче |
-| `transition` | TEXT | NOT NULL, CHECK (`transition` IN ('created','filled','in_use','archived')) | стани картки, design-review Блок 4. `archived` додано для AC-16 — той самий журнал, що вже фіксує «створено/заповнено/ведеться», фіксує й архівацію (аудит-слід, окремо від `card.status`, який керує видимістю). «Некоректні дані» — не тут: це тимчасовий прапорець, не одноразовий перехід (AC-10), рахується з `entry`/`metric_block`, не зберігається окремо |
+| `transition` | TEXT | NOT NULL, CHECK (`transition` IN ('created','filled','in_use','archived','restored')) | стани картки, design-review Блок 4. `archived` додано для AC-16; `restored` додано 2026-08-29 для AC-17 (розархівація, Крок 3 опитувальника) — той самий журнал фіксує й повернення з архіву. «Некоректні дані» — не тут: це тимчасовий прапорець, не одноразовий перехід (AC-10), рахується з `entry`/`metric_block`, не зберігається окремо |
 | `occurred_at` | timestamptz | NOT NULL DEFAULT now() | |
 
 **Aggregate root:** `card`.

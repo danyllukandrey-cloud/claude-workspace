@@ -26,6 +26,8 @@ erDiagram
     APP_USER ||--o{ CHAT_MESSAGE : sends
     APP_USER ||--o{ AGENT_AUDIT_EVENT : triggers
     APP_USER ||--o{ ACTIVITY_REPORT : receives
+    APP_USER ||--o{ SYNC_RESOURCE : configures
+    APP_USER ||--o{ DEVELOPER_REPORT : files
 
     APP_USER {
         uuid id PK
@@ -92,6 +94,23 @@ erDiagram
         text content
         text status
         timestamptz generated_at
+    }
+    SYNC_RESOURCE {
+        uuid id PK
+        uuid user_id FK
+        text url
+        text status
+        timestamptz last_synced_at
+        text last_error
+        timestamptz created_at
+    }
+    DEVELOPER_REPORT {
+        uuid id PK
+        uuid user_id FK
+        text trigger_type
+        text description
+        text delivery_status
+        timestamptz sent_at
     }
 ```
 
@@ -185,8 +204,8 @@ erDiagram
 |---|---|---|---|
 | `id` | UUID | PK, app-generated | |
 | `user_id` | UUID | NOT NULL, FK → `app_user(id)` ON DELETE CASCADE | |
-| `event_type` | TEXT | NOT NULL, CHECK (`event_type` IN ('proposal_created','proposal_updated','proposal_confirmed','proposal_dropped','guard_passed','guard_failed','memory_fact_edited','memory_fact_deleted')) | §8 Crosscutting Events — за зразком `card_lifecycle_event`, але окрема таблиця (інші сутності) |
-| `subject_type` | TEXT | NOT NULL, CHECK (`subject_type` IN ('proposal','guard','memory_fact')) | |
+| `event_type` | TEXT | NOT NULL, CHECK (`event_type` IN ('proposal_created','proposal_updated','proposal_confirmed','proposal_dropped','guard_passed','guard_failed','memory_fact_edited','memory_fact_deleted','account_deleted','resource_sync_failed')) | §8 Crosscutting Events — за зразком `card_lifecycle_event`, але окрема таблиця (інші сутності). `account_deleted`/`resource_sync_failed` додано 2026-08-29 (AC-17/AC-18b, D-89) — `account_deleted` пишеться **до** видалення `app_user` (інакше сам аудит-рядок каскадно зникне) |
+| `subject_type` | TEXT | NOT NULL, CHECK (`subject_type` IN ('proposal','guard','memory_fact','account','sync_resource')) | `account`/`sync_resource` додано 2026-08-29 (D-89) для нових `event_type` |
 | `subject_id` | UUID | NULL | поліморфне посилання (на `agent_proposal.id` або `long_term_memory_fact.id`) — **без DB-рівня FK навмисно**, дві можливі цілі; цілісність на рівні коду `<!-- TBD: перевірка коректності subject_id — домен-рівень, не DB -->` |
 | `detail` | TEXT | NULL | вільний текст (наприклад, яке правило порушено/дотримано) |
 | `occurred_at` | timestamptz | NOT NULL DEFAULT now() | |
@@ -212,6 +231,41 @@ erDiagram
 **Access patterns:** ідемпотентність — чи звіт за період уже існує (Flow 14, AC-11) → унікальний індекс на `(user_id, period_type, period_start)`; перелік звітів користувача → індекс на `(user_id, generated_at DESC)`.
 **Constraints:** FK → `app_user(id)`; CHECK на `period_type`/`status`; UNIQUE на `(user_id, period_type, period_start)`.
 
+### `sync_resource`
+
+*Додано 2026-08-29 (US-12, AC-18/AC-18b, D-89, Крок 3 опитувальника).*
+
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `id` | UUID | PK, app-generated | |
+| `user_id` | UUID | NOT NULL, FK → `app_user(id)` ON DELETE CASCADE | |
+| `url` | TEXT | NOT NULL | посилання на зовнішній ресурс (Google Doc/Sheet тощо), яке додав користувач |
+| `status` | TEXT | NOT NULL DEFAULT 'active', CHECK (`status` IN ('active','error')) | `error` — останній запуск синхронізації не зміг записати туди (AC-18b), причина в `last_error` |
+| `last_synced_at` | timestamptz | NULL | NULL, доки жодної успішної синхронізації ще не було |
+| `last_error` | TEXT | NULL | коротке пояснення для банера в налаштуваннях (AC-18b), NULL коли `status = 'active'` |
+| `created_at` | timestamptz | NOT NULL DEFAULT now() | |
+
+**Aggregate root:** root (власність `agent-worker`, той самий контейнер, що й `activity_report` — щоденний розклад, ADR-0002, той самий патерн, інша періодичність).
+**Access patterns:** ресурси одного користувача (SCR-04 `ResourceList`) → індекс на `user_id`; щоденний прохід `worker`'а по всіх активних ресурсах → індекс на `status` де `status = 'active'`.
+**Constraints:** FK → `app_user(id)`; CHECK на `status`.
+
+### `developer_report`
+
+*Додано 2026-08-29 (US-14, AC-20/AC-20b, D-89, Крок 3 опитувальника).*
+
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `id` | UUID | PK, app-generated | |
+| `user_id` | UUID | NULL, FK → `app_user(id)` ON DELETE SET NULL | NULL допустимо — агент може виявити технічну помилку поза контекстом конкретного користувача; `SET NULL`, не `CASCADE` (звіт про баг не повинен зникнути разом з акаунтом, що його спричинив) |
+| `trigger_type` | TEXT | NOT NULL, CHECK (`trigger_type` IN ('agent_detected','user_requested')) | AC-20 vs AC-20b |
+| `description` | TEXT | NOT NULL | опис проблеми — від агента (AC-20) або переказ слів користувача (AC-20b) |
+| `delivery_status` | TEXT | NOT NULL DEFAULT 'sent', CHECK (`delivery_status` IN ('sent','failed')) | лист на пошту розробника; `failed` — потребує ручної перевірки, той самий підхід, що `activity_report.status = 'dead_letter'` |
+| `sent_at` | timestamptz | NOT NULL DEFAULT now() | |
+
+**Aggregate root:** root (append-only лог, ніколи не редагується/видаляється — той самий підхід, що `agent_audit_event`).
+**Access patterns:** ретроспективний перегляд надісланих звітів (підтримка/дебаг) → індекс на `sent_at DESC`.
+**Constraints:** FK → `app_user(id)` (`SET NULL`); CHECK на `trigger_type`/`delivery_status`.
+
 ## Indexes
 
 | Index | Columns | Query it serves |
@@ -230,6 +284,9 @@ erDiagram
 | `idx_agent_audit_event_subject` | `agent_audit_event(subject_type, subject_id)` | пошук подій за конкретною пропозицією/фактом |
 | `uq_activity_report_period` | `activity_report(user_id, period_type, period_start)` | ідемпотентність автозвіту (AC-11, Flow 14); заодно FK-покриття `user_id` |
 | `idx_activity_report_user_time` | `activity_report(user_id, generated_at DESC)` | перелік звітів користувача |
+| `idx_sync_resource_user` | `sync_resource(user_id)` | ресурси одного користувача (AC-18, SCR-04); заодно FK-покриття |
+| `idx_sync_resource_active` | `sync_resource(status)` WHERE `status = 'active'` | щоденний прохід `worker`'а по активних ресурсах (AC-18) |
+| `idx_developer_report_sent` | `developer_report(sent_at DESC)` | ретроспективний перегляд надісланих звітів (AC-20/AC-20b) |
 
 ## Test fixtures
 
@@ -240,3 +297,5 @@ erDiagram
 - `buildChatMessage({ userId, role, content, sessionDate })` — повідомлення чату.
 - `buildAgentAuditEvent({ userId, eventType, subjectType, subjectId })` — подія аудит-логу.
 - `buildActivityReport({ userId, periodType, periodStart, periodEnd, status })` — звіт активності, за замовчуванням `status: 'generated'`.
+- `buildSyncResource({ userId, url, status, lastSyncedAt, lastError })` — ресурс синхронізації, за замовчуванням `status: 'active'`.
+- `buildDeveloperReport({ userId, triggerType, description, deliveryStatus })` — звіт про проблему, за замовчуванням `triggerType: 'user_requested'`, `deliveryStatus: 'sent'`.

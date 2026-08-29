@@ -49,7 +49,7 @@ erDiagram
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
 | `id` | UUID | PK, app-generated | `crypto.randomUUID()` |
-| `owner_user_id` | UUID | NOT NULL, UNIQUE | singleton на користувача (AC-03) — UNIQUE забезпечує «рівно одна Структура на власника». **Немає DB-рівня FK навмисно** — таблиця `users`/автентифікації ще не належить жодній фічі (D-33), той самий стан, що й `life-area-card.card.owner_user_id` |
+| `owner_user_id` | UUID | NOT NULL, UNIQUE, FK → `app_user(id)` ON DELETE CASCADE | singleton на користувача (AC-03) — UNIQUE забезпечує «рівно одна Структура на власника». FK додано 2026-08-29, міграція 03 — `agent`'s `app_user` (migration 01) тепер існує. Закриває TBD від 2026-08-24; вмикає каскадне видалення акаунта (agent AC-17, D-89) |
 | `declaration` | TEXT | NULL | картина світу / навіщо / пріоритет, вільний текст (AC-10); NULL, доки не написано |
 | `layout_mode` | TEXT | NULL, CHECK (`layout_mode` IN ('single','free','logic')) | один із трьох варіантів групування (D-29); **NULL = ще не обрано** — саме так реалізовано AC-09 («не блокує вибором режиму») |
 | `created_at` | timestamptz | NOT NULL DEFAULT now() | |

@@ -69,7 +69,11 @@ flowchart LR
     T23 --> T24
 
     T24 --> T25[T25 tests: cross-cutting]
+
+    T1 --> T26[T26 migration: owner FK]
 ```
+
+**Доповнено 2026-08-29** ([D-89](../../../DECISIONS.md#d-89)): T26 — крос-фічева FK-міграція, вмикає каскадне видалення акаунта (`agent` AC-17).
 
 ## Tasks
 
@@ -102,6 +106,7 @@ See [tracker.md](./tracker.md) for status. Machine contract: [tasks.json](../tas
 | T23 | UI: SCR-04 Закрити напрямок dialog | ui | T19, T18 | screens.md SCR-04 states rendered |
 | T24 | Wiring: register Структура module in app-shell | wiring | T20–T23 | 3 nav tabs boot and navigate |
 | T25 | Tests: cross-cutting integration (AC-05 + offline sync) | tests | T24 | AC-05 + offline-sync e2e pass |
+| T26 | Migration: add owner_user_id FK | migration | T1 | FK applies/reverts; enables cascading account deletion |
 
 ## Risks / Hard rules
 

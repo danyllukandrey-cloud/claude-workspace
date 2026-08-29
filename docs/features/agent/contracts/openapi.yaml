@@ -41,6 +41,10 @@ tags:
     description: Автоматичні звіти активності (тижневий/місячний/квартальний)
   - name: Onboarding
     description: Одноразове вітання й гайд при першому запуску
+  - name: Account
+    description: Видалення акаунта й усіх даних (2026-08-29, D-89)
+  - name: SyncResources
+    description: Зовнішні ресурси, куди агент щодня пише копію даних користувача (2026-08-29, D-89)
 
 paths:
   /api/v1/messages:
@@ -308,6 +312,90 @@ paths:
         "401":
           $ref: "#/components/responses/Error"
 
+  /api/v1/account:
+    delete:
+      tags: [Account]
+      summary: Видалити акаунт і всі дані назавжди (AC-17/AC-17b US-11)
+      description: |
+        Незворотно. Каскадно видаляє все, повʼязане з `app_user.id`: власні таблиці агента
+        (FK CASCADE), картки й Структуру (`life-area-card`/`structure` FK CASCADE, додано
+        2026-08-29 саме для цього). Пише `account_deleted` в `agent_audit_event` **до** видалення
+        (інакше аудит-рядок каскадно зникне разом з рештою). Підтвердження (AC-17b, слово
+        підтвердження) перевіряється на UI-рівні до цього виклику — сам ендпоінт передбачає, що
+        рішення вже прийняте.
+      operationId: deleteAccount
+      responses:
+        "204":
+          description: Видалено, сесія завершена
+        "401":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/sync-resources:
+    get:
+      tags: [SyncResources]
+      summary: Прочитати список ресурсів синхронізації (AC-18 US-12)
+      operationId: listSyncResources
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SyncResource" }
+        "401":
+          $ref: "#/components/responses/Error"
+
+    post:
+      tags: [SyncResources]
+      summary: Додати зовнішній ресурс синхронізації (AC-18 US-12)
+      operationId: createSyncResource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SyncResourceCreate" }
+            example:
+              url: "https://docs.google.com/document/d/..."
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SyncResource" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "422":
+          description: посилання порожнє чи не є валідним URL
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "sync_resource.url_invalid"
+                message: "A valid resource URL is required"
+
+  /api/v1/sync-resources/{resourceId}:
+    delete:
+      tags: [SyncResources]
+      summary: Прибрати ресурс синхронізації (AC-18 US-12)
+      operationId: deleteSyncResource
+      parameters:
+        - in: path
+          name: resourceId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204":
+          description: Прибрано, фізичне видалення (не м'яке — це лише список посилань, не дані
+            користувача)
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          description: ресурс не знайдено
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
 components:
   securitySchemes:
     BearerAuth:
@@ -357,7 +445,10 @@ components:
         attachment:
           type: [string, "null"]
           format: binary
-          description: фото; NULL допустимо, якщо передано текст (AC-01). Байти транзитні — не зберігаються
+          description: |
+            Фото або документ (текст/таблиця/PDF, AC-19, розширено 2026-08-29 — раніше лише фото);
+            аудіо/відео поза межами цього поля (окремий канал, D-41). NULL допустимо, якщо передано
+            текст (AC-01). Байти транзитні — не зберігаються
 
     MessageTurn:
       type: object
@@ -490,3 +581,22 @@ components:
         has_next: { type: boolean }
         has_prev: { type: boolean }
         next_cursor: { type: [string, "null"], format: uuid }
+
+    SyncResource:
+      type: object
+      required: [id, url, status, createdAt]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        url: { type: string }
+        status: { type: string, enum: [active, error] }
+        lastSyncedAt: { type: [string, "null"], format: date-time }
+        lastError: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+
+    SyncResourceCreate:
+      type: object
+      required: [url]
+      additionalProperties: false
+      properties:
+        url: { type: string }

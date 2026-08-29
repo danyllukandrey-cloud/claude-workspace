@@ -4,12 +4,14 @@
 
 ## Goal
 
-Реалізувати Агента — єдиний канал прямого вводу продукту ПЛАН (spec.md §2): текст/вкладення → пропозиція → підтвердження, імперативні правила (глобальні + card-override), гібридна памʼять, автоматичні звіти активності. Три поверхні (`backend-service`/`web-frontend`/`worker`, ADR-0001), 7 сутностей БД, 8 API-ендпоінтів, 3 екрани.
+Реалізувати Агента — єдиний канал прямого вводу продукту ПЛАН (spec.md §2): текст/вкладення → пропозиція → підтвердження, імперативні правила (глобальні + card-override), гібридна памʼять, автоматичні звіти активності. Три поверхні (`backend-service`/`web-frontend`/`worker`, ADR-0001), 9 сутностей БД, 13 API-ендпоінтів, 4 екрани.
+
+**Доповнено 2026-08-29** ([D-89](../../../DECISIONS.md#d-89), Крок 3 опитувальника): видалення акаунта (AC-17/17b), синхронізація в зовнішній ресурс (AC-18/18b), одноразова обробка документа (AC-19/19b, розширює вкладення), звіт про баг розробнику (AC-20/20b) — T31-T46. Плюс T47 закриває раніше пропущену задачу на T3 (AC-16/16b, підказка над полем вводу, D-84).
 
 ## Scope
 
-- **In:** доменна логіка (пропозиція/правила+guard/памʼять/звіт), інфраструктура (Claude-клієнт, Postgres-репо, Google OAuth, worker-розклад), use-case шар, HTTP-ендпоінти, 3 UI-екрани, wiring.
-- **Out (spec.md §3):** голосове розпізнавання/синтез (D-41), вибір характеру агента (D-37/D-78, після v1), готові конектори, проактивна ініціатива/нагадування (D-31/D-43), формати вкладень поза фото (`clarify`).
+- **In:** доменна логіка (пропозиція/правила+guard/памʼять/звіт/видалення акаунта/синхронізація/звіт про баг), інфраструктура (Claude-клієнт, Postgres-репо, Google OAuth, worker-розклад, email-клієнт, зовнішній resource-writer), use-case шар, HTTP-ендпоінти, 4 UI-екрани, wiring.
+- **Out (spec.md §3):** голосове розпізнавання/синтез (D-41), вибір характеру агента (D-37/D-78, після v1), готові конектори (Google Fit тощо, відмінно від синхронізації в зовнішній ресурс), проактивна ініціатива/нагадування (D-31/D-43). Формати вкладень поза фото — **більше не Out** з 2026-08-29 (документи/таблиці тепер In, AC-19); аудіо/відео лишаються Out (D-41).
 
 ## Task map
 
@@ -72,6 +74,41 @@ flowchart LR
     T28 --> T29
 
     T29 --> T30[T30 tests: cross-cutting]
+
+    T1 --> T31[T31 migration: sync_resource]
+    T1 --> T32[T32 migration: developer_report]
+    T6 --> T33[T33 migration: extend audit events]
+
+    T34[T34 domain: account deletion]
+    T35[T35 domain: resource-sync schedule]
+    T36[T36 domain: developer-report class.]
+
+    T37[T37 infra: email client]
+    T38[T38 infra: resource writer]
+
+    T34 --> T39[T39 app: deleteAccount]
+    T13 --> T39
+    T35 --> T40[T40 app: sync-resource CRUD]
+    T13 --> T40
+    T35 --> T41[T41 app: daily-sync]
+    T38 --> T41
+    T36 --> T42[T42 app: developer-report]
+    T37 --> T42
+
+    T39 --> T43[T43 ports: account]
+    T40 --> T44[T44 ports: sync-resources]
+
+    T25 --> T45[T45 ui: SCR-04 Обліковий запис]
+    T43 --> T45
+    T44 --> T45
+
+    T39 --> T46[T46 tests: cascade deletion]
+
+    T25 --> T47[T47 ui: HintBubble]
+    T26 --> T47
+
+    T45 --> T29
+    T47 --> T29
 ```
 
 ## Tasks
@@ -108,8 +145,25 @@ See [tracker.md](./tracker.md) for status. Machine contract: [tasks.json](../tas
 | T26 | UI: SCR-01 Чат screen | ui | T25, T20, T21, T24 | all 9 screens.md states render |
 | T27 | UI: SCR-02 Налаштування правил screen | ui | T22 | all 7 screens.md states render |
 | T28 | UI: SCR-03 Звіти активності screen | ui | T23 | all 5 screens.md states render |
-| T29 | Wiring: register agent module | wiring | T14, T26, T27, T28 | app boots, auth middleware wired |
+| T29 | Wiring: register agent module | wiring | T14, T26, T27, T28, T45, T47 | app boots, auth middleware wired |
 | T30 | Tests: cross-cutting integration | tests | T29 | cross-user isolation + Claude-outage e2e pass |
+| T31 | Migration: create sync_resource table | migration | T1 | migration 08 applies/reverts cleanly |
+| T32 | Migration: create developer_report table | migration | T1 | migration 09 applies/reverts cleanly |
+| T33 | Migration: extend agent_audit_event types | migration | T6 | migration 10 applies/reverts cleanly |
+| T34 | Domain: account deletion orchestration | domain | — | unit tests for AC-17/17b |
+| T35 | Domain: resource-sync scheduling model | domain | — | unit tests for AC-18 due-selection |
+| T36 | Domain: developer-report classification | domain | — | unit tests for AC-20/20b |
+| T37 | Infra: outbound email client | infra | — | send/fail round-trip on stub |
+| T38 | Infra (agent-worker): external resource writer | infra | — | write/fail round-trip on stub |
+| T39 | App: deleteAccount use-case | app | T34, T13 | audit-then-cascade tested, cross-feature |
+| T40 | App: sync-resource CRUD use-cases | app | T35, T13 | add/list/remove tested |
+| T41 | App (agent-worker): daily-sync use-case | app | T35, T38 | copy-to-resource + error-tagging tested |
+| T42 | App: developer-report use-case | app | T36, T37 | persist+send tested, failure non-silent |
+| T43 | Ports: DELETE /account handler | ports | T39 | matches contract exactly (204/401) |
+| T44 | Ports: sync-resources handlers | ports | T40 | matches contract exactly (200/201/204/404/422) |
+| T45 | UI: SCR-04 Обліковий запис і дані | ui | T25, T43, T44 | all screens.md SCR-04 states render |
+| T46 | Tests: cascading account deletion | tests | T39 | 0 rows in 3 features post-delete |
+| T47 | UI: HintBubble + SCR-01 confirmed-hint | ui | T25, T26 | confirmed-hint state renders + dismisses |
 
 ## Risks / Hard rules
 
@@ -119,3 +173,5 @@ See [tracker.md](./tracker.md) for status. Machine contract: [tasks.json](../tas
 - **§4 SAD (одна активна пропозиція):** T2 (частковий унікальний індекс) + T8 (домен) разом гарантують інваріант на двох рівнях — БД і код.
 - **AC-07 §6 NFR (≥95% точність, уточнення 2026-08-27):** T30 або T18 мають включати вимір цієї метрики на реалістичному наборі правил, не лише функціональний тест «одна відповідь дотримується».
 - **`sad.md §11` відкрите питання:** scaling threshold (коли один інстанс кожного контейнера/Postgres перестає вистачати) — свідомо не вирішується жодною задачею тут, due after `/sdd:implement`.
+- **Крос-фічева залежність промоції для T39 (нова, 2026-08-29):** каскадне видалення акаунта працює лише після того, як `life-area-card`'s migration 07 (`add_owner_fk`) і `structure`'s `backend/03` (`add_owner_fk`) обидві промотовані — вони самі залежать від `agent`'s migration 01 (`app_user`), тож порядок: `agent` 01 → (`life-area-card` 07, `structure` 03) → `agent` T33 → T39.
+- **T33 перед T39, завжди:** запис `account_deleted` в `agent_audit_event` вимагає розширеного CHECK — без T33 деталь видалення провалиться на самому аудит-записі, до фактичного видалення `app_user`.

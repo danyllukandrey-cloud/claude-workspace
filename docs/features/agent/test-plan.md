@@ -2,7 +2,7 @@
 status: Draft
 owner: "Андрій"
 reviewers: ["<implementing engineer>", "Tech Lead"]
-updated_at: "2026-08-27"
+updated_at: "2026-08-29"
 feature_size: "M"
 ---
 
@@ -45,6 +45,17 @@ feature_size: "M"
 | AC-13 happy | the very first open shows a one-time welcome | integration | welcome message created once; later opens return none |
 | AC-14 happy | a new rule is checked against same-scope rules before saving | unit | conflicting rule rejected with the reason named; non-conflicting saved |
 | AC-15 happy | the agent doesn't "forget" something said earlier the same day | integration | reply reflects same-day context not yet in long-term memory |
+| AC-16 happy | a hint appears above the composer after a completed action | component | hint bubble renders on the confirmed-hint state |
+| AC-16b happy | the hint dismisses via ✕ or composer focus | component | hint gone after either interaction, doesn't reappear until the next action |
+| AC-17 happy | account deletion cascades across all three features | e2e | zero rows for that user_id in agent, life-area-card, AND structure tables |
+| AC-17 error | deletion without the confirmation flag is rejected | integration | nothing deleted, no audit row written |
+| AC-17b happy | the confirm button stays disabled until the confirmation word is typed | component | UI-level guard, independent of the backend rejection above |
+| AC-18 happy | a due resource receives a fresh daily copy | integration | resource's `last_synced_at` updated, external write called exactly once |
+| AC-18b error | an unreachable resource is marked with an error, not retried silently forever | integration | `status: error`, `last_error` set, `resource_sync_failed` audit row written |
+| AC-19 happy | a document/spreadsheet attachment is processed like a photo | integration | proposal created from the attachment's content |
+| AC-19b error | an unsupported attachment format is explained, not guessed | integration | same outcome as AC-10b — text description requested |
+| AC-20 happy | the agent detects and reports its own technical error | integration | `developer_report` row (`trigger_type: agent_detected`) persisted, email sent |
+| AC-20b happy | a user-requested bug report is forwarded | integration | `developer_report` row (`trigger_type: user_requested`) persisted with the user's description, email sent |
 
 ## Edge cases / error paths
 
@@ -54,11 +65,15 @@ feature_size: "M"
 - A rule with neither a category nor free text submitted → rejected before it reaches storage.
 - Attempting to view/confirm/report on data addressed by a made-up or someone else's id → the same outcome as "not found" — existence is never confirmed or denied.
 - Third-person name inside a message destined for long-term memory → the name is stripped before storage, only the measurable value is kept.
+- Email delivery fails when sending a developer report → row persists with `delivery_status: failed`, never silently dropped (AC-20/AC-20b).
+- A sync resource that was active becomes unreachable mid-run, then reachable again the next day → recovers to `status: active` without manual intervention (AC-18b isn't a permanent ban).
+- Account deletion attempted twice in quick succession (double-click) → second call returns "not found", not a second cascade.
 
 ## Test data
 
-- Seed strategy: factories per `data-model.md` entity — `buildAppUser`, `buildAgentProposal`, `buildImperativeRule`, `buildLongTermMemoryFact`, `buildChatMessage`, `buildAgentAuditEvent`, `buildActivityReport` (already named in `data-model.md` §Test fixtures).
-- Integration dependency: an ephemeral real PostgreSQL instance (throwaway container), NOT a mocked store; Claude API calls go through a stub client (deterministic canned responses), never the real provider.
+- Seed strategy: factories per `data-model.md` entity — `buildAppUser`, `buildAgentProposal`, `buildImperativeRule`, `buildLongTermMemoryFact`, `buildChatMessage`, `buildAgentAuditEvent`, `buildActivityReport`, `buildSyncResource`, `buildDeveloperReport` (already named in `data-model.md` §Test fixtures).
+- Integration dependency: an ephemeral real PostgreSQL instance (throwaway container), NOT a mocked store; Claude API calls go through a stub client (deterministic canned responses), never the real provider; outbound email (AC-20) and the external resource writer (AC-18) each go through their own stub, never a real send/write.
+- Cascading-deletion tests (AC-17) seed a user with data in **all three** features (agent + life-area-card + structure) in one fixture — the point of the test is the cross-feature FK, not any single feature in isolation.
 - Cleanup boundary: per-test — each test seeds only what it needs and the suite resets the database between tests, so cross-test state never leaks (important given the one-active-proposal-per-user invariant).
 
 ## NFR validation (load)

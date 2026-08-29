@@ -4,7 +4,9 @@
 
 ## Goal
 
-Реалізувати Картку — generic-механізм зони життя (spec.md §2): назва, Опис, блоки-метрики, Відстеження. Записи потрапляють виключно через підтверджену пропозицію агента (`agent`, поза цим epic). 4 сутності БД, 10 API-ендпоінтів, 6 екранів.
+Реалізувати Картку — generic-механізм зони життя (spec.md §2): назва, Опис, блоки-метрики, Відстеження. Записи потрапляють виключно через підтверджену пропозицію агента (`agent`, поза цим epic). 4 сутності БД, 12 API-ендпоінтів, 7 екранів.
+
+**Доповнено 2026-08-29** ([D-89](../../../DECISIONS.md#d-89), Крок 3 опитувальника): розархівація (AC-17), перегляд архіву (AC-18), перейменування картки (AC-19) — T32-T37; плюс T38 (крос-фічева FK-міграція, вмикає каскадне видалення акаунта — `agent` AC-17).
 
 ## Scope
 
@@ -86,6 +88,21 @@ flowchart LR
 
     T30 --> T31[T31 tests: cross-cutting]
     T11 --> T31
+
+    T5 --> T32[T32 migration: restore + archived index]
+    T9 --> T33[T33 app: restoreCard]
+    T10 --> T33
+    T10 --> T34[T34 app: listCards status filter]
+    T33 --> T35[T35 ports: restore + archived list]
+    T34 --> T35
+    T24 --> T36[T36 ui: SCR-07 Архів]
+    T35 --> T36
+    T24 --> T37[T37 ui: SCR-02 rename]
+    T21 --> T37
+    T36 --> T30
+    T37 --> T30
+
+    T1 --> T38[T38 migration: owner FK]
 ```
 
 ## Tasks
@@ -123,8 +140,15 @@ See [tracker.md](./tracker.md) for status. Machine contract: [tasks.json](../tas
 | T27 | UI: SCR-04 Форма створення | ui | T24, T21 | screens.md SCR-04 states render |
 | T28 | UI: SCR-05 Форма блоку-метрики | ui | T24, T22 | screens.md SCR-05 states render |
 | T29 | UI: SCR-06 Підтвердження архівації | ui | T24, T21 | screens.md SCR-06 states render |
-| T30 | Wiring: register life-area-card module | wiring | T25–T29 | app boots, deck reachable |
+| T30 | Wiring: register life-area-card module | wiring | T25–T29, T36, T37 | app boots, deck reachable |
 | T31 | Tests: cross-cutting integration | tests | T30, T11 | cross-user isolation + offline sync e2e pass |
+| T32 | Migration: restore transition + archived index | migration | T5 | migration 06 applies/reverts cleanly |
+| T33 | App: restoreCard use-case | app | T9, T10 | restore + 409-if-not-archived tested |
+| T34 | App: listCards with status filter | app | T10 | archived filter tested, default unchanged |
+| T35 | Ports: restoreCard + archived listCards handlers | ports | T33, T34 | matches contract exactly (200/404/409) |
+| T36 | UI: SCR-07 Архів карток | ui | T24, T35 | screens.md SCR-07 states render |
+| T37 | UI: SCR-02 rename state | ui | T24, T21 | screens.md SCR-02 rename state renders |
+| T38 | Migration: add owner_user_id FK | migration | T1 | FK applies/reverts; enables cascading account deletion |
 
 ## Risks / Hard rules
 
