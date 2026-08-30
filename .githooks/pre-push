@@ -16,7 +16,54 @@
 # функціональності (вона й так не працювала надійно), а приведення коду у відповідність
 # до вже ухваленого правила (D-21): "git hooks лише нагадують, pre-push не блокує".
 #
-# Довідка: .claude/commands/pm-end.md
+# D-92: нагадування тепер прицільне — називає, які Decision: D-NN і які фічі
+# зачепив діапазон комітів, що йде в push, замість завжди однакового тексту.
+# Якщо щось піде не так у розборі (нетипова гілка, злиття) — тихо падаємо назад
+# до старого загального тексту; хук ніколи не має ламатись чи блокувати push.
+#
+# Довідка: .claude/commands/pm-end.md, CLAUDE.md § Звірка з фічею (D-92)
 
-printf "\n📤 Пушимо зміни. Не забудь /pm-end — звірити DELIVERY-PLAN.md і DECISIONS.md.\n\n"
+ROOT=$(git rev-parse --show-toplevel)
+REGISTRY="$ROOT/docs/DECISIONS.md"
+ZERO="0000000000000000000000000000000000000000"
+
+DETAILS=""
+
+while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
+	[ "$LOCAL_SHA" = "$ZERO" ] && continue
+
+	if [ "$REMOTE_SHA" = "$ZERO" ]; then
+		RANGE="-20 $LOCAL_SHA"
+	else
+		RANGE="$REMOTE_SHA..$LOCAL_SHA"
+	fi
+
+	SHAS=$(git log --format=%H $RANGE 2>/dev/null)
+	[ -z "$SHAS" ] && continue
+
+	for SHA in $SHAS; do
+		VALUES=$(git show -s --format=%B "$SHA" 2>/dev/null \
+			| git interpret-trailers --parse 2>/dev/null \
+			| sed -n 's/^[Dd]ecision:[[:space:]]*//p')
+		for VALUE in $VALUES; do
+			[ "$VALUE" = "none" ] && continue
+			[ -f "$REGISTRY" ] || continue
+			ROW=$(grep "^| $VALUE |" "$REGISTRY" 2>/dev/null)
+			[ -z "$ROW" ] && continue
+			SLUGS=$(printf '%s\n' "$ROW" | grep -oE 'features/[a-zA-Z0-9_-]+' | sed -E 's#^features/##' | sort -u)
+			for SLUG in $SLUGS; do
+				DETAILS="$DETAILS $VALUE($SLUG)"
+			done
+		done
+	done
+done
+
+DETAILS=$(printf '%s\n' "$DETAILS" | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ')
+
+printf "\n📤 Пушимо зміни. Не забудь /pm-end — звірити DELIVERY-PLAN.md і DECISIONS.md.\n"
+if [ -n "$DETAILS" ]; then
+	printf "   Ці коміти зачепили рішення для фіч: %s\n" "$DETAILS"
+fi
+printf "\n"
+
 exit 0

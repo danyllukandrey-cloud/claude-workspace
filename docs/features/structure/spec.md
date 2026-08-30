@@ -22,7 +22,7 @@ feature_size: "M"
 
 Ця специфікація описує лише Структуру — не поля самої картки (`life-area-card`) і не поведінку агента (`agent`, D-56). Аналітика **отримує прогрес кожної картки через уже наявний розрахунок картки** (`life-area-card` ADR-0001 — спільна доменна логіка клієнт+бекенд, **не збережене число**) — Структура не реалізує власну формулу підрахунку прогресу картки, лише зводить отримані значення.
 
-Джерела: D-29 (три варіанти групування, вплив лише на аналіз навантаження), D-38 (частка виконання цілі, зведення), D-39 (історія Структури), D-42 (продукт показує і рух, і розрив), D-44 (розрив = заявлене vs реальне), [D-60](../../DECISIONS.md#d-60) (середнє порівну, без вердикту — закриває Q-6), [D-61](../../DECISIONS.md#d-61) (визначення розриву за типом розкладки, зведення карток без відсотка — закриває Q-10), [D-62](../../DECISIONS.md#d-62) (одна клітинка = одна картка).
+Джерела: D-29 (три варіанти групування, вплив лише на аналіз навантаження), D-38 (частка виконання цілі, зведення), D-39 (історія Структури), D-42 (продукт показує і рух, і розрив), D-44 (розрив = заявлене vs реальне), [D-60](../../DECISIONS.md#d-60) (середнє порівну, без вердикту — закриває Q-6), [D-61](../../DECISIONS.md#d-61) (визначення розриву за типом розкладки, зведення карток без відсотка — закриває Q-10), [D-62](../../DECISIONS.md#d-62) (одна клітинка = одна картка), [D-83](../../DECISIONS.md#d-83) (варіант «за логікою» має три підвиди — баланс навколо ядра / фокус і спостереження / причина і наслідок — усі три реальні опції, не один MVP-варіант).
 
 ## 2. Goals
 
@@ -49,7 +49,7 @@ feature_size: "M"
 ### US-02: Обрати спосіб розкладки
 
 **As a** user
-**I want** обрати один із трьох варіантів групування карток (одна картка / вільно без порядку / за логікою)
+**I want** обрати один із трьох варіантів групування карток (одна картка / вільно без порядку / за логікою — сама «за логікою» далі ділиться на три підвиди, US-12)
 **So that** розкладка відповідає тому, як я реально бачу свої пріоритети
 
 ### US-03: Перекласти картки будь-коли
@@ -99,6 +99,12 @@ feature_size: "M"
 **As a** user
 **I want**, щоб перейменування картки й зміна її місця в розкладці «за логікою» записувались автоматично, як і закриття
 **So that** коли з'явиться екран історії, у нього буде що показати — включно з тим, як мінявся заявлений пріоритет, не лише сам факт існування картки
+
+### US-12: Обрати підвид розкладки «за логікою»
+
+**As a** user
+**I want**, обравши варіант групування «за логікою», вибрати один із трьох підвидів — баланс навколо ядра / фокус і спостереження / причина і наслідок
+**So that** розкладка виражає саме той тип зв'язку між картками, який відповідає моїй ситуації, а не змушує мене підлаштовуватись під одну готову схему
 
 ## 5. Acceptance criteria
 
@@ -197,6 +203,18 @@ feature_size: "M"
 **Given** a user renames a card, or moves it to a new position in the logic-based layout
 **When** the action completes
 **Then** the system records it as a Structure-history event with a timestamp, the same way closure is already recorded (AC-12) — regardless of whether a viewing screen exists yet. A card's creation moment is not recorded twice: it is already captured by the card's own history (`life-area-card`); Structure references it rather than duplicating it
+
+### AC-16 (US-12) — happy path
+
+**Given** a user has chosen the "за логікою" layout mode
+**When** the user selects one of the three subvariants — баланс навколо ядра / фокус і спостереження / причина і наслідок ([D-83](../../DECISIONS.md#d-83))
+**Then** the system applies that subvariant's grid of cells and marks one card as the root/main card per the subvariant's own rule, exactly as described for each subvariant in the questionnaire (`PRODUCT-BOOK_OWNER-QUESTIONNAIRE.md` Крок 5)
+
+### AC-16b (US-12) — switching subvariant
+
+**Given** a user has already arranged cards under one "за логікою" subvariant
+**When** the user switches to a different subvariant within "за логікою" (not just between the three top-level modes of US-02)
+**Then** the system treats the switch the same way as AC-11b — every active position moves to a fixed base order under the new subvariant's grid, and the user re-arranges each card into it by dragging
 
 ## 6. Non-functional requirements
 

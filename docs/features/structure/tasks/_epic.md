@@ -26,6 +26,7 @@ flowchart LR
 
     T1 --> T9[T9 infra: backend repo]
     T2 --> T9
+    T27 --> T9
     T3 --> T10[T10 infra: history client]
 
     T4 --> T11[T11 app: updateStructure]
@@ -71,9 +72,11 @@ flowchart LR
     T24 --> T25[T25 tests: cross-cutting]
 
     T1 --> T26[T26 migration: owner FK]
+    T1 --> T27[T27 migration: logic_variant]
 ```
 
 **Доповнено 2026-08-29** ([D-89](../../../DECISIONS.md#d-89)): T26 — крос-фічева FK-міграція, вмикає каскадне видалення акаунта (`agent` AC-17).
+**Доповнено 2026-08-30** ([D-83](../../../DECISIONS.md#d-83), закриває [ISS-7](../../../ISSUES.md)): T27 — три підвиди варіанта «за логікою» (баланс навколо ядра / фокус і спостереження / причина і наслідок) отримали поле в схемі, задачі T4/T9/T11/T15/T20/T21 доповнено відповідними AC-16/AC-16b.
 
 ## Tasks
 
@@ -107,6 +110,7 @@ See [tracker.md](./tracker.md) for status. Machine contract: [tasks.json](../tas
 | T24 | Wiring: register Структура module in app-shell | wiring | T20–T23 | 3 nav tabs boot and navigate |
 | T25 | Tests: cross-cutting integration (AC-05 + offline sync) | tests | T24 | AC-05 + offline-sync e2e pass |
 | T26 | Migration: add owner_user_id FK | migration | T1 | FK applies/reverts; enables cascading account deletion |
+| T27 | Migration: add logic_variant column | migration | T1 | column + CHECK applies/reverts cleanly |
 
 ## Risks / Hard rules
 

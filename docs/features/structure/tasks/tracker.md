@@ -13,7 +13,7 @@
 | T6 | Domain: aggregate progress calculation | domain | TBD | M | — | todo |
 | T7 | Domain: gap + trend calculation | domain | TBD | M | — | todo |
 | T8 | Domain: local history cache model | domain | TBD | S | — | todo |
-| T9 | Infra: backend repository for structure + layout positions | infra | TBD | M | T1, T2 | todo |
+| T9 | Infra: backend repository for structure + layout positions | infra | TBD | M | T1, T2, T27 | todo |
 | T10 | Infra: history service client (write + asOf read) | infra | TBD | M | T3 | todo |
 | T11 | App: updateStructure use-case | app | TBD | M | T4, T9 | todo |
 | T12 | App: moveCard use-case | app | TBD | M | T4, T5, T9, T10 | todo |
@@ -31,5 +31,6 @@
 | T24 | Wiring: register Структура module in app-shell | wiring | TBD | S | T20, T21, T22, T23 | todo |
 | T25 | Tests: cross-cutting integration (AC-05 + offline sync) | tests | TBD | M | T24 | todo |
 | T26 | Migration: add owner_user_id FK | migration | TBD | S | T1 | todo |
+| T27 | Migration: add logic_variant column | migration | TBD | S | T1 | todo |
 
-**Total:** 26 tasks — 10 S + 14 M + 2 L. Доповнено 2026-08-29 (T26, D-89) — крос-фічева FK-міграція для каскадного видалення акаунта. Орієнтовно 1.5–2 «спринти» в термінах size-matrix (M), але в реальному часі значно довше через темп проєкту (~8-12 год/тиждень, уточнено 2026-08-29 — стара оцінка 1-2 год/тиждень застаріла, [D-87](../../../DECISIONS.md#d-87)).
+**Total:** 27 tasks — 11 S + 14 M + 2 L. Доповнено 2026-08-29 (T26, D-89) — крос-фічева FK-міграція для каскадного видалення акаунта. Доповнено 2026-08-30 (T27, [D-83](../../../DECISIONS.md#d-83), закриває [ISS-7](../../../ISSUES.md)) — три підвиди варіанта «за логікою» дійшли до схеми БД. Орієнтовно 1.5–2 «спринти» в термінах size-matrix (M), але в реальному часі значно довше через темп проєкту (~8-12 год/тиждень, уточнено 2026-08-29 — стара оцінка 1-2 год/тиждень застаріла, [D-87](../../../DECISIONS.md#d-87)).

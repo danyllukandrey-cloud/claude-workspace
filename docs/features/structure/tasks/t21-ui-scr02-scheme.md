@@ -3,7 +3,7 @@ id: T21
 title: "UI: SCR-02 Схема screen"
 layer: "ui"
 deps: ["T19", "T16", "T17"]
-acs: ["AC-02", "AC-08", "AC-11b"]
+acs: ["AC-02", "AC-08", "AC-11b", "AC-16b"]
 files_hint: ["plan/app/src/structure/ui/LayoutBoard.tsx"]
 owner: "TBD"
 estimate: "L"
@@ -23,6 +23,7 @@ status: "todo"
 ## Definition of Done
 
 - [ ] Component test на кожен із 6 станів
+- [ ] `reset-basic-order` спрацьовує і при зміні `layoutMode`, і при зміні `logicVariant` за незмінного `layoutMode = 'logic'` (AC-16b) — той самий стан, той самий банер
 - [ ] NFR: перетягування → оновлений стан екрана ≤200ms (spec.md §6, клієнтський таймер-тест)
 - [ ] `error-cell-occupied` показується inline біля клітинки, не toast/alert
 - [ ] lint + vet clean

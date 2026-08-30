@@ -1,13 +1,14 @@
 #!/bin/sh
 #
-# commit-msg — перевіряє мітку Decision у повідомленні коміту.
+# commit-msg — перевіряє мітку Decision у повідомленні коміту, і (D-92) звіряє
+# рішення з файлами фічі, яку воно стосується.
 #
 # Навіщо: реєстр рішень (docs/DECISIONS.md) і історія Git зв'язані рядком
 # "Decision: D-NN". Зв'язок тримається на пам'яті людини, а забуту мітку
 # заднім числом уже не вписати — повідомлення коміту незмінне.
 # Хук закриває саме цю дірку.
 #
-# Правило цілком: CLAUDE.md § Рішення і зміни  (рішення D-19, D-20)
+# Правило цілком: CLAUDE.md § Рішення і зміни (D-19, D-20, D-92)
 #
 # Обійти: git commit --no-verify   (це поручні, не замок)
 
@@ -145,5 +146,89 @@ for VALUE in $VALUES; do
 		exit 1
 	fi
 done
+
+# --- D-92: звірка рішення з файлами фічі, яку воно стосується -------------
+# Мітка вже правильна (пройшли перевірку вище). Тепер дивимось, чи не забули
+# зв'язати рішення з фічею, якої воно реально стосується — правило описане
+# в CLAUDE.md § Звірка з фічею.
+
+STAGED=$(git diff --cached --name-only)
+
+# Слаги фіч, чиї файли реально змінені в ЦЬОМУ коміті (з diff, не здогадка).
+TOUCHED_SLUGS=$(printf '%s\n' "$STAGED" \
+	| grep -oE '^docs/features/[^/]+/' \
+	| sed -E 's#^docs/features/##; s#/$##' \
+	| sort -u)
+
+# Слаги, на які посилається (features/<slug>) хоч одне валідне Decision: D-NN
+# із цього коміту — дивимось повний рядок реєстру, не лише номер.
+MENTIONED_SLUGS=""
+for VALUE in $VALUES; do
+	[ "$VALUE" = "none" ] && continue
+	ROW=$(grep "^| $VALUE |" "$REGISTRY")
+	ROW_SLUGS=$(printf '%s\n' "$ROW" | grep -oE 'features/[a-zA-Z0-9_-]+' | sed -E 's#^features/##')
+	MENTIONED_SLUGS=$(printf '%s\n%s\n' "$MENTIONED_SLUGS" "$ROW_SLUGS")
+done
+MENTIONED_SLUGS=$(printf '%s\n' "$MENTIONED_SLUGS" | sed '/^$/d' | sort -u)
+
+# Чи є в цьому коміті хоч одне реальне (не "none") Decision?
+HAS_REAL_DECISION=0
+for VALUE in $VALUES; do
+	[ "$VALUE" != "none" ] && HAS_REAL_DECISION=1
+done
+
+# --- Блокуюча перевірка: файли фічі змінені, жодне рішення на неї не посилається
+# Спирається на реальний diff коміту, тому хибних спрацювань майже нема — безпечно блокувати.
+if [ "$HAS_REAL_DECISION" = "1" ] && [ -n "$TOUCHED_SLUGS" ]; then
+	MISSING=""
+	for SLUG in $TOUCHED_SLUGS; do
+		if ! printf '%s\n' "$MENTIONED_SLUGS" | grep -qx "$SLUG"; then
+			MISSING="$MISSING $SLUG"
+		fi
+	done
+	if [ -n "$MISSING" ]; then
+		fail_header
+		echo "   Цей коміт міняє файли фічі(-ей):$MISSING — але жодне Decision:"
+		echo "   D-NN у повідомленні на цю фічу не посилається (колонка «Деталі»"
+		echo "   в docs/DECISIONS.md без \`features/<slug>\`)."
+		echo ""
+		echo "   Додай посилання features/<slug>/... у рядок D-NN в реєстрі,"
+		echo "   або, якщо коміт справді про іншу фічу — уточни, яке з Decision"
+		echo "   міток стосується цих файлів."
+		fail_footer
+		exit 1
+	fi
+fi
+
+# --- М'яке попередження: рішення посилається на фічу, ключові файли не мінялись
+# Тут хибні спрацювання можливі (рішення буває навмисно відкладене) — тому лише
+# попереджаємо, коміт усе одно проходить.
+CORE_FILES="spec.md data-model.md tasks.json test-plan.md"
+WARNED=0
+for VALUE in $VALUES; do
+	[ "$VALUE" = "none" ] && continue
+	ROW=$(grep "^| $VALUE |" "$REGISTRY")
+	ROW_SLUGS=$(printf '%s\n' "$ROW" | grep -oE 'features/[a-zA-Z0-9_-]+' | sed -E 's#^features/##' | sort -u)
+	for SLUG in $ROW_SLUGS; do
+		FOUND=0
+		for F in $CORE_FILES; do
+			if printf '%s\n' "$STAGED" | grep -qx "docs/features/$SLUG/$F"; then
+				FOUND=1
+			fi
+		done
+		if [ "$FOUND" = "0" ]; then
+			if [ "$WARNED" = "0" ]; then
+				echo ""
+				echo "⚠️  Попередження (не блокує) — CLAUDE.md § Звірка з фічею:"
+				WARNED=1
+			fi
+			echo "   $VALUE посилається на features/$SLUG, але spec.md/data-model.md/"
+			echo "   tasks.json/test-plan.md цієї фічі в коміті не мінялись."
+			echo "   Навмисно (рішення відкладене)? Ігноруй. Ні? /pm-end зловить,"
+			echo "   але дешевше виправити зараз."
+		fi
+	done
+done
+[ "$WARNED" = "1" ] && echo ""
 
 exit 0

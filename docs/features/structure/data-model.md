@@ -26,6 +26,7 @@ erDiagram
         uuid owner_user_id
         text declaration
         text layout_mode
+        text logic_variant
         timestamptz created_at
         timestamptz updated_at
     }
@@ -52,12 +53,13 @@ erDiagram
 | `owner_user_id` | UUID | NOT NULL, UNIQUE, FK → `app_user(id)` ON DELETE CASCADE | singleton на користувача (AC-03) — UNIQUE забезпечує «рівно одна Структура на власника». FK додано 2026-08-29, міграція 03 — `agent`'s `app_user` (migration 01) тепер існує. Закриває TBD від 2026-08-24; вмикає каскадне видалення акаунта (agent AC-17, D-89) |
 | `declaration` | TEXT | NULL | картина світу / навіщо / пріоритет, вільний текст (AC-10); NULL, доки не написано |
 | `layout_mode` | TEXT | NULL, CHECK (`layout_mode` IN ('single','free','logic')) | один із трьох варіантів групування (D-29); **NULL = ще не обрано** — саме так реалізовано AC-09 («не блокує вибором режиму») |
+| `logic_variant` | TEXT | NULL, CHECK (`logic_variant` IN ('balance','focus','cause_effect')) | підвид розкладки «за логікою» ([D-83](../../DECISIONS.md#d-83), AC-16) — `balance` = баланс навколо ядра, `focus` = фокус і спостереження, `cause_effect` = причина і наслідок. Має сенс лише коли `layout_mode = 'logic'`; NULL і при інших `layout_mode`, і поки підвид ще не обрано (той самий принцип «NULL = не обрано», що й у `layout_mode`) |
 | `created_at` | timestamptz | NOT NULL DEFAULT now() | |
 | `updated_at` | timestamptz | NOT NULL DEFAULT now() | джерело часової мітки для last-write-wins при офлайн-конфлікті (ADR-0002) |
 
 **Aggregate root:** root.
 **Access patterns:** читання/запис Структури власника (AC-03, кожен запит) → UNIQUE-індекс на `owner_user_id` (створюється автоматично разом з обмеженням).
-**Constraints:** UNIQUE на `owner_user_id`; CHECK на `layout_mode`.
+**Constraints:** UNIQUE на `owner_user_id`; CHECK на `layout_mode`; CHECK на `logic_variant`. Немає CHECK-обмеження рівня БД, що змушує `logic_variant IS NULL` при `layout_mode != 'logic'` — узгодженість цієї пари полів тримає app-шар (T4/T11), той самий підхід, що вже прийнятий для решти доменних правил цієї таблиці.
 
 #### `structure_layout_position`
 
@@ -128,7 +130,7 @@ erDiagram
 
 ## Test fixtures
 
-- `buildStructure({ ownerUserId, declaration, layoutMode })` — Структура з дефолтним власником `user-<uuid>@example.test`.
+- `buildStructure({ ownerUserId, declaration, layoutMode, logicVariant })` — Структура з дефолтним власником `user-<uuid>@example.test`; `logicVariant` — тільки коли `layoutMode: 'logic'` ([D-83](../../DECISIONS.md#d-83)).
 - `buildLayoutPosition({ structureId, cardId, cellIndex, status })` — позиція розкладки, за замовчуванням `status: 'active'`.
 - `buildStructureHistoryEvent({ structureId, cardId, eventType, detail })` — подія літопису (окрема база) для тестів AC-07/AC-12/AC-15.
 

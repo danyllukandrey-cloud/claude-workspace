@@ -22,12 +22,12 @@ updated_at: "2026-08-24"
 
 | State | Trigger / condition | Components (from the inventory) | Source-ref |
 |---|---|---|---|
-| default | декларація і/або спосіб розкладки вже збережені | `NEW: TextArea`, `NEW: LayoutModePicker`, `Button` | wireframe нижче |
+| default | декларація і/або спосіб розкладки вже збережені | `NEW: TextArea`, `NEW: LayoutModePicker`, `Button` — плюс `NEW: LogicVariantPicker`, коли обрано «За логікою» (AC-16) | wireframe нижче |
 | empty | перший вхід — декларація не написана, `layoutMode: null` (AC-09) | `NEW: TextArea` (порожнє поле), `NEW: LayoutModePicker` | wireframe нижче |
 | loading | початкове `GET /structure` | `NEW: Spinner` | — |
 | saved | підтвердження після успішного `PATCH /structure` (AC-10, AC-11) | `NEW: Banner` (inline, не toast/alert) | — |
 | offline-queued | запис прийнято офлайн, синхронізується пізніше (spec.md §6 NFR) | `NEW: Banner` | — |
-| confirm-reset | обрано ІНШИЙ `layoutMode`, а картки вже розкладені (AC-11b) | `NEW: ConfirmDialog` | wireframe нижче |
+| confirm-reset | обрано ІНШИЙ `layoutMode` АБО інший підвид «за логікою», а картки вже розкладені (AC-11b, AC-16b) | `NEW: ConfirmDialog` | wireframe нижче |
 | error | `PATCH /structure` повернув помилку (401 / 422 `structure.invalid_layout_mode`) | `NEW: Banner` (inline, ніколи `alert`) | — |
 
 ```text
@@ -42,11 +42,16 @@ updated_at: "2026-08-24"
 | Спосіб розкладки:                    |
 | ( ) Одна картка                      |
 | ( ) Вільно                           |
-| ( ) За логікою                       |
+| (•) За логікою                       |
+|     ( ) Баланс навколо ядра          |
+|     ( ) Фокус і спостереження        |
+|     ( ) Причина і наслідок           |
 |                                       |
 |              [ Зберегти ]            |
 +--------------------------------------+
 ```
+
+`LogicVariantPicker` (три радіо нижче «За логікою») з'являється лише коли `layoutMode` = «За логікою» — сховано для двох інших варіантів (D-83, AC-16).
 
 ```text
 +--------------------------------------+

@@ -2,8 +2,8 @@
 id: T9
 title: "Infra: backend repository for structure + layout positions"
 layer: "infra"
-deps: ["T1", "T2"]
-acs: ["AC-03", "AC-08", "AC-09", "AC-12"]
+deps: ["T1", "T2", "T27"]
+acs: ["AC-03", "AC-08", "AC-09", "AC-12", "AC-16"]
 files_hint: ["plan/app/src/structure/infra/"]
 owner: "TBD"
 estimate: "M"
@@ -18,7 +18,7 @@ status: "todo"
 
 ## What
 
-Репозиторій: `findStructureByOwner`, `upsertStructure`, `listActiveLayoutPositions`, `upsertLayoutPosition`, `closeLayoutPosition`. Кожен запит фільтрує за `owner_user_id` — жодного шляху обійти це (AC-03).
+Репозиторій: `findStructureByOwner`, `upsertStructure`, `listActiveLayoutPositions`, `upsertLayoutPosition`, `closeLayoutPosition`. `upsertStructure` читає/пише й `logicVariant` поряд з `layoutMode` (T27, [D-83](../../../DECISIONS.md#d-83)). Кожен запит фільтрує за `owner_user_id` — жодного шляху обійти це (AC-03).
 
 ## Definition of Done
 

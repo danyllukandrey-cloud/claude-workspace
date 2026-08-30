@@ -42,6 +42,8 @@ feature_size: "M"
 | AC-12 happy | closing an overlapping card offers per-metric transfer | integration | closure recorded as a history event; declined metrics stay behind |
 | AC-13 domain invariant | non-computable cards are excluded from the average, counted separately | unit | excluded count shown, average unaffected by them |
 | AC-15 happy | a rename or logic-layout move is recorded as a history event | integration | timestamped event written to the history-service store |
+| AC-16 happy | picking a logic-layout subvariant applies its grid and root-card rule | integration | subvariant's cell scheme and root-card marking applied |
+| AC-16b happy | switching subvariant resets cards to a fixed base order | integration | every card moved to base order, new subvariant grid shown, atomically (same mechanism as AC-11b) |
 
 ## Edge cases / error paths
 
@@ -52,7 +54,7 @@ feature_size: "M"
 
 ## Test data
 
-- Seed strategy: factories matching `data-model.md` entities (`structure`, `structure_layout_position`, `structure_history_event`) — same shape as the fixtures `life-area-card` already builds (`buildCard`, `buildMetricBlock`, `buildEntry`), reused across both features' integration suites since aggregation reads `life-area-card`'s own domain.
+- Seed strategy: factories matching `data-model.md` entities (`structure` — including `logicVariant`, [D-83](../../DECISIONS.md#d-83) — `structure_layout_position`, `structure_history_event`) — same shape as the fixtures `life-area-card` already builds (`buildCard`, `buildMetricBlock`, `buildEntry`), reused across both features' integration suites since aggregation reads `life-area-card`'s own domain.
 - Integration dependency: two ephemeral real dependencies — the main backend Postgres (structure + layout) and the separate history-service store (ADR-0004) — NOT mocked; each suite spins up both, never one standing in for the other.
 - Cleanup boundary: per-test — Structure is a singleton per user, so tests must reset both stores between runs or a stale row from a previous test silently satisfies a "lazy-create" assertion that should have failed.
 
