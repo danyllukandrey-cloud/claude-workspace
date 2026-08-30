@@ -83,6 +83,12 @@ Copy-Item .env.example .env
 
 Далі відкрий `.env` у редакторі й встав справжній `ANTHROPIC_API_KEY`.
 
+**База даних (з 2026-08-30, [D-96](./DECISIONS.md#d-96)).** База вже існує в хмарі (Neon) — на новій машині її не створюєш заново, лише береш ті самі два рядки:
+
+1. Відкрий [console.neon.tech](https://console.neon.tech), увійди тим самим акаунтом (GitHub).
+2. Проєкт **«ПЛАН»** → вкладка **Connect** / Connection Details.
+3. Скопіюй рядки `DATABASE_URL` і `DATABASE_URL_POOLED` і встав їх у той самий `.env`.
+
 > **`.env` ніколи не потрапляє в git** — він у `.gitignore`. Якщо колись побачиш його у `git status` — стоп, щось зламано.
 
 ---
