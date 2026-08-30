@@ -175,6 +175,8 @@ Select-String docs\DECISIONS.md -Pattern '^\| D-(\d+) \|' | ForEach-Object { [in
 
 **Тригер повернення:** поява автономного агента, що працює довго й без нагляду.
 
+**Термінологічна межа:** це рішення — виключно про мережеву ізоляцію самого Claude Code (агента розробки, firewall навколо контейнера). NOT база даних застосунку ПЛАН — та йде окремим рішенням [ADR-0005](adr/0005-backend-datastore.md) і Docker Desktop не потребує взагалі ([ISS-12](ISSUES.md)). NOT продакшн-деплой готового коду — це третя, ще не ухвалена тема (курс, модуль 11.2, інший Docker Compose для іншої мети).
+
 **Перший крок, коли повернемось:** `(Get-CimInstance Win32_ComputerSystem).HypervisorPresent` → має бути `True`. Далі — покроково у [PROJECT-STATE §13.10](./PROJECT-STATE.md).
 
 ---
