@@ -1,0 +1,46 @@
+#!/bin/sh
+#
+# pre-commit — блокує коміт коду застосунку (plan/app/) прямо в main.
+#
+# Навіщо: і людина, і агент можуть забути перемкнутись на гілку перед
+# комітом коду — це відомий клас помилки (курс, модуль 9.1). Документи
+# (docs/, CLAUDE.md тощо) і далі йдуть прямо в main як завжди — це навмисно,
+# так весь проєкт і працює. Обмежено саме на plan/app/, бо блокувати геть
+# усі коміти в main зламало б звичний робочий процес документів.
+#
+# D-100: чому саме такий обсяг, а не "усі коміти в main" — docs/DECISIONS.md
+#
+# Обійти: git commit --no-verify   (це поручні, не замок)
+
+ROOT=$(git rev-parse --show-toplevel)
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+# Не main — нема що перевіряти
+if [ "$BRANCH" != "main" ]; then
+	exit 0
+fi
+
+# Serед застейджених файлів є хоч один із plan/app/?
+TOUCHES_APP=$(git diff --cached --name-only | grep -c '^plan/app/')
+
+if [ "$TOUCHES_APP" -gt 0 ]; then
+	echo ""
+	echo "❌ Коміт не пройшов."
+	echo ""
+	echo "   Цей коміт міняє код застосунку (plan/app/) прямо в main."
+	echo "   Код застосунку йде тільки через окрему гілку — main лишається"
+	echo "   чистим до злиття готової фічі."
+	echo ""
+	echo "   Створи гілку і повтори коміт:"
+	echo "       git checkout -b <назва-гілки>"
+	echo ""
+	echo "   Документи (docs/, CLAUDE.md тощо) це не стосується — вони"
+	echo "   й далі йдуть прямо в main як завжди."
+	echo ""
+	echo "   Повне правило: docs/DECISIONS.md D-100"
+	echo "   Обійти разово: git commit --no-verify"
+	echo ""
+	exit 1
+fi
+
+exit 0
