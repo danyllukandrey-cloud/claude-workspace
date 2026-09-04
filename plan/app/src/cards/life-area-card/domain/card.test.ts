@@ -22,6 +22,21 @@ describe('createCard', () => {
     expect(card.status).toBe('active');
     expect(card.description).toBeNull();
   });
+
+  // Рев'ю-знахідка 4: перевірка йде по trim(), а зберігалось сире значення —
+  // пробіли з країв просочувались у дані.
+  it('trims leading/trailing whitespace from the name before storing it', () => {
+    const card = createCard({ id: 'card-1', name: '  Здоров’я  ' });
+    expect(card.name).toBe('Здоров’я');
+  });
+
+  // Рев'ю-знахідка 1: тип каже string, але на межі системи (JSON із мережі)
+  // гарантії нема — null/undefined мають впасти як CardValidationError,
+  // не як сирий TypeError від .trim().
+  it('rejects a null/undefined name at runtime despite the string type', () => {
+    expect(() => createCard({ id: 'card-1', name: null as unknown as string })).toThrow(CardValidationError);
+    expect(() => createCard({ id: 'card-1', name: undefined as unknown as string })).toThrow(CardValidationError);
+  });
 });
 
 describe('markFilled', () => {
@@ -45,6 +60,13 @@ describe('markFilled', () => {
     const card = createCard({ id: 'card-1', name: 'Здоров’я' });
     const filled = markFilled(card, 'Хочу бути активнішим');
     expect(filled.description).toBe('Хочу бути активнішим');
+  });
+
+  // Рев'ю-знахідка 1 (дзеркально для опису): та сама межа системи.
+  it('rejects a null/undefined description at runtime despite the string type', () => {
+    const card = createCard({ id: 'card-1', name: 'Здоров’я' });
+    expect(() => markFilled(card, null as unknown as string)).toThrow(CardValidationError);
+    expect(() => markFilled(card, undefined as unknown as string)).toThrow(CardValidationError);
   });
 });
 
@@ -79,5 +101,14 @@ describe('archiveCard', () => {
     const archived = archiveCard(card);
     expect(archived.status).toBe('archived');
     expect(archived).toMatchObject({ id: card.id, name: card.name });
+  });
+
+  // Рев'ю-знахідка 2: T9 сам заявляв "created/filled/in_use/archived" як 4
+  // стани, але getLifecycleState не знав про архівацію взагалі — заповнена
+  // картка з блоками-метриками після архівації й далі показувала "in_use".
+  it('reports archived once the card has been archived, regardless of description/metric-blocks', () => {
+    const filled = markFilled(createCard({ id: 'card-1', name: 'Здоров’я' }), 'опис');
+    const archived = archiveCard(filled);
+    expect(getLifecycleState(archived, 1)).toBe('archived');
   });
 });
