@@ -147,6 +147,7 @@
 - [ ] Покрити тестами (Vitest + React Testing Library)
 - [ ] Валідація вводу даних
 - [ ] Обробка edge cases (порожня Структура, ціль перевищена/«постійний процес»)
+- [ ] Прогнати вбудований `/code-review` на першому реальному дифі після старту `/sdd:implement` і записати, чого йому забракло — лише за наслідками вирішувати, чи потрібна проєктна обгортка ([D-99](DECISIONS.md#d-99))
 
 **Jira:** [ZOTJ-XXX](https://danyllukandrey.atlassian.net/jira/software/projects/ZOTJ/boards/67)
 
