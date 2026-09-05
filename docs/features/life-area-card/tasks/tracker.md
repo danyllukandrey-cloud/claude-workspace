@@ -14,7 +14,7 @@
 | T7 | Domain: entry status model | domain | TBD | M | — | done |
 | T8 | Domain: near-simultaneous conflict detection | domain | TBD | M | — | done |
 | T9 | Domain: card lifecycle states | domain | TBD | S | — | todo |
-| T10 | Infra: Postgres repo | infra | TBD | L | T2, T3, T4, T5 | todo |
+| T10 | Infra: Postgres repo | infra | TBD | L | T2, T3, T4, T5 | done |
 | T11 | Infra: local offline cache | infra | TBD | M | — | done |
 | T12 | Infra: Claude client for suspicious-data check | infra | TBD | M | — | done |
 | T13 | App: createCard use-case | app | TBD | S | T9, T10 | todo |

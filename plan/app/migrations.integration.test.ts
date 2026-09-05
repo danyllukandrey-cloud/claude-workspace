@@ -10,6 +10,21 @@
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import { Client } from 'pg';
+import type { Db } from './src/cards/life-area-card/infra/postgres-repo';
+import {
+  insertCard,
+  findCardById,
+  listCardsByOwner,
+  listActiveCardsByOwner,
+  insertMetricBlock,
+  listMetricBlocksByCard,
+  insertEntry,
+  listEntriesByMetricBlock,
+  listEntriesByCard,
+  listPendingEntriesByCard,
+  insertLifecycleEvent,
+  listLifecycleEventsByCard,
+} from './src/cards/life-area-card/infra/postgres-repo';
 
 beforeAll(() => {
   try {
@@ -240,6 +255,186 @@ describe('migration 05_add_card_status (T5) — проти реальної Neon
       expect(ids).not.toContain(archivedId);
 
       await client.query('DELETE FROM app_user WHERE id = $1', [userId]);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+describe('T10 — Postgres repo (life-area-card) — проти реальної Neon', () => {
+  // Застосунок ходить пуловим підключенням (ADR-0006) -- на відміну від
+  // тестів вище (мігратор/схема), які навмисно ходять непульованим DATABASE_URL.
+  async function withUser<T>(client: Client, run: (db: Db, ownerUserId: string) => Promise<T>): Promise<T> {
+    const ownerUserId = crypto.randomUUID();
+    await client.query('INSERT INTO app_user (id, google_sub, email) VALUES ($1, $2, $3)', [
+      ownerUserId,
+      `test-t10-${ownerUserId}`,
+      't10@example.test',
+    ]);
+    try {
+      return await run(client, ownerUserId);
+    } finally {
+      // каскадно прибирає card/metric_block/entry/card_lifecycle_event цього власника
+      await client.query('DELETE FROM app_user WHERE id = $1', [ownerUserId]);
+    }
+  }
+
+  it('card: запис і читання через репо (insertCard + findCardById)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      await withUser(client, async (db, ownerUserId) => {
+        const created = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'T10 test card' });
+        expect(created.name).toBe('T10 test card');
+        expect(created.status).toBe('active');
+
+        const found = await findCardById(db, ownerUserId, created.id);
+        expect(found).not.toBeNull();
+        expect(found?.id).toBe(created.id);
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('metric_block: запис і читання через репо (insertMetricBlock + listMetricBlocksByCard, AC-09)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      await withUser(client, async (db, ownerUserId) => {
+        const card = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'T10 metric_block card' });
+        const block = await insertMetricBlock(db, {
+          id: crypto.randomUUID(),
+          cardId: card.id,
+          label: 'Книги прочитано',
+          unit: 'книги',
+          targetCount: 12,
+        });
+        expect(block.targetCount).toBe(12);
+
+        const blocks = await listMetricBlocksByCard(db, card.id);
+        expect(blocks.map((b) => b.id)).toEqual([block.id]);
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('entry: запис і читання через репо (усі 3 списки — metric_block/card/pending, AC-11/AC-13)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      await withUser(client, async (db, ownerUserId) => {
+        const card = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'T10 entry card' });
+        const block = await insertMetricBlock(db, {
+          id: crypto.randomUUID(),
+          cardId: card.id,
+          label: 'Пробіжки',
+          unit: 'км',
+          targetCount: 100,
+        });
+
+        // Послідовно (не Promise.all) -- recorded_at мають реально відрізнятись,
+        // інакше ORDER BY recorded_at DESC нема на чому перевірити.
+        const first = await insertEntry(db, { id: crypto.randomUUID(), metricBlockId: block.id, cardId: card.id, amount: 5 });
+        const second = await insertEntry(db, { id: crypto.randomUUID(), metricBlockId: block.id, cardId: card.id, amount: 3 });
+        const pending = await insertEntry(db, {
+          id: crypto.randomUUID(),
+          metricBlockId: block.id,
+          cardId: card.id,
+          amount: 2,
+          status: 'pending',
+        });
+
+        const byBlock = await listEntriesByMetricBlock(db, block.id);
+        expect(byBlock.map((e) => e.id).sort()).toEqual([first.id, second.id, pending.id].sort());
+
+        const byCard = await listEntriesByCard(db, card.id);
+        expect(byCard.map((e) => e.id)).toEqual([pending.id, second.id, first.id]);
+
+        const stillPending = await listPendingEntriesByCard(db, card.id);
+        expect(stillPending.map((e) => e.id)).toEqual([pending.id]);
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('card_lifecycle_event: запис і читання через репо, append-only (spec.md §7 KPI)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      await withUser(client, async (db, ownerUserId) => {
+        const card = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'T10 lifecycle card' });
+
+        const createdEvent = await insertLifecycleEvent(db, { id: crypto.randomUUID(), cardId: card.id, transition: 'created' });
+        const filledEvent = await insertLifecycleEvent(db, { id: crypto.randomUUID(), cardId: card.id, transition: 'filled' });
+
+        expect(createdEvent.transition).toBe('created');
+
+        const events = await listLifecycleEventsByCard(db, card.id);
+        expect(events.map((e) => e.id)).toEqual([createdEvent.id, filledEvent.id]);
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('non-disclosure (AC-04): запит з owner_user_id іншого користувача не повертає жодного рядка', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      await withUser(client, async (db, ownerA) => {
+        const card = await insertCard(db, { id: crypto.randomUUID(), ownerUserId: ownerA, name: 'T10 owner-scoped card' });
+
+        await withUser(client, async (dbB, ownerB) => {
+          expect(await findCardById(dbB, ownerB, card.id)).toBeNull();
+          expect((await listCardsByOwner(dbB, ownerB)).map((c) => c.id)).not.toContain(card.id);
+          expect((await listActiveCardsByOwner(dbB, ownerB)).map((c) => c.id)).not.toContain(card.id);
+        });
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('усі 7 індексів data-model.md §Indexes реально використовуються, не seq scan (EXPLAIN)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SET LOCAL enable_seqscan = off');
+
+      const capturedPlans: string[] = [];
+      const explainDb: Db = {
+        async query<T extends Record<string, unknown>>(text: string, params?: unknown[]) {
+          const { rows } = await client.query(`EXPLAIN ${text}`, params);
+          capturedPlans.push(rows.map((r) => String(r['QUERY PLAN'])).join('\n'));
+          return { rows: [] as T[] };
+        },
+      };
+
+      const dummyOwner = crypto.randomUUID();
+      const dummyCard = crypto.randomUUID();
+      const dummyBlock = crypto.randomUUID();
+
+      await listCardsByOwner(explainDb, dummyOwner); // 0: idx_card_owner
+      await listActiveCardsByOwner(explainDb, dummyOwner); // 1: idx_card_owner_active
+      await listMetricBlocksByCard(explainDb, dummyCard); // 2: idx_metric_block_card
+      await listEntriesByMetricBlock(explainDb, dummyBlock); // 3: idx_entry_metric_block
+      await listEntriesByCard(explainDb, dummyCard); // 4: idx_entry_card_recorded
+      await listPendingEntriesByCard(explainDb, dummyCard); // 5: idx_entry_card_pending
+      await listLifecycleEventsByCard(explainDb, dummyCard); // 6: idx_lifecycle_card_time
+
+      await client.query('ROLLBACK');
+
+      expect(capturedPlans[0]).toContain('idx_card_owner');
+      expect(capturedPlans[1]).toContain('idx_card_owner_active');
+      expect(capturedPlans[2]).toContain('idx_metric_block_card');
+      expect(capturedPlans[3]).toContain('idx_entry_metric_block');
+      expect(capturedPlans[4]).toContain('idx_entry_card_recorded');
+      expect(capturedPlans[5]).toContain('idx_entry_card_pending');
+      expect(capturedPlans[6]).toContain('idx_lifecycle_card_time');
     } finally {
       await client.end();
     }
