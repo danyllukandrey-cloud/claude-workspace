@@ -34,6 +34,13 @@ const TO_PROMOTE = [
   { slug: 'life-area-card', staged: '05_add_card_status', name: 'add-card-status' },
   // Хвиля 4 (T32) -- T10 не потребує промоції, лише T32 (staged-міграція).
   { slug: 'life-area-card', staged: '06_add_card_restore', name: 'add-card-restore' },
+  // D-103: structure's T1/T2/T26 промоучені ПОЗАЧЕРГОВО (structure як фіча ще не
+  // стартувала в /sdd:implement) -- закриває D-69 (архівація картки закриває її
+  // позицію в розкладці, AC-16). 01 перед 02 (FK на structure), 03 (owner FK)
+  // останній -- потребує і structure(01), і agent's app_user (уже вище).
+  { slug: 'structure', staged: 'backend/01_create_structure', name: 'create-structure' },
+  { slug: 'structure', staged: 'backend/02_create_structure_layout_position', name: 'create-structure-layout-position' },
+  { slug: 'structure', staged: 'backend/03_add_owner_fk', name: 'add-structure-owner-fk' },
 ];
 
 function readReadme() {

@@ -32,6 +32,7 @@ import { updateCard } from './src/cards/life-area-card/app/update-card';
 import { archiveCard } from './src/cards/life-area-card/app/archive-card';
 import { restoreCard } from './src/cards/life-area-card/app/restore-card';
 import { listCards } from './src/cards/life-area-card/app/list-cards';
+import { closeActiveLayoutPositionForCard } from './src/structure/infra/postgres-repo';
 
 beforeAll(() => {
   try {
@@ -665,6 +666,180 @@ describe('Хвиля 5, батч A — use-case шар (T13/T14/T15/T33/T34) —
         expect(defaultList.map((c) => c.id)).toContain(active.id);
         expect(defaultList.map((c) => c.id)).not.toContain(archived.id);
       });
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+describe('structure T1/T2/T26 (D-103, промоучено позачергово) — проти реальної Neon', () => {
+  it('T1: UNIQUE на structure.owner_user_id реально відхиляє другий рядок того самого власника', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      const ownerId = crypto.randomUUID();
+      await client.query('INSERT INTO app_user (id, google_sub, email) VALUES ($1, $2, $3)', [
+        ownerId,
+        `test-structure-t1-${ownerId}`,
+        'structure-t1@example.test',
+      ]);
+      try {
+        await client.query('INSERT INTO structure (id, owner_user_id) VALUES ($1, $2)', [crypto.randomUUID(), ownerId]);
+        await expect(
+          client.query('INSERT INTO structure (id, owner_user_id) VALUES ($1, $2)', [crypto.randomUUID(), ownerId])
+        ).rejects.toThrow(/duplicate key value violates unique constraint/);
+      } finally {
+        await client.query('DELETE FROM app_user WHERE id = $1', [ownerId]); // каскадно прибирає structure
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('T2: частковий унікальний індекс — не більше однієї АКТИВНОЇ картки в клітинці (AC-02/D-62)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      const ownerId = crypto.randomUUID();
+      const structureId = crypto.randomUUID();
+      const cardOneId = crypto.randomUUID();
+      const cardTwoId = crypto.randomUUID();
+      await client.query('INSERT INTO app_user (id, google_sub, email) VALUES ($1, $2, $3)', [
+        ownerId,
+        `test-structure-t2-${ownerId}`,
+        'structure-t2@example.test',
+      ]);
+      await client.query('INSERT INTO structure (id, owner_user_id) VALUES ($1, $2)', [structureId, ownerId]);
+      await client.query('INSERT INTO card (id, owner_user_id, name) VALUES ($1, $2, $3)', [cardOneId, ownerId, 'Card 1']);
+      await client.query('INSERT INTO card (id, owner_user_id, name) VALUES ($1, $2, $3)', [cardTwoId, ownerId, 'Card 2']);
+      try {
+        await client.query(
+          'INSERT INTO structure_layout_position (id, structure_id, card_id, cell_index) VALUES ($1, $2, $3, 0)',
+          [crypto.randomUUID(), structureId, cardOneId]
+        );
+        await expect(
+          client.query(
+            'INSERT INTO structure_layout_position (id, structure_id, card_id, cell_index) VALUES ($1, $2, $3, 0)',
+            [crypto.randomUUID(), structureId, cardTwoId]
+          )
+        ).rejects.toThrow(/duplicate key value violates unique constraint/);
+      } finally {
+        await client.query('DELETE FROM app_user WHERE id = $1', [ownerId]); // каскадно прибирає все нижче
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('T2: видалення card каскадно видаляє її structure_layout_position (FK ON DELETE CASCADE)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      const ownerId = crypto.randomUUID();
+      const structureId = crypto.randomUUID();
+      const cardId = crypto.randomUUID();
+      const positionId = crypto.randomUUID();
+      await client.query('INSERT INTO app_user (id, google_sub, email) VALUES ($1, $2, $3)', [
+        ownerId,
+        `test-structure-t2-cascade-${ownerId}`,
+        'structure-t2-cascade@example.test',
+      ]);
+      await client.query('INSERT INTO structure (id, owner_user_id) VALUES ($1, $2)', [structureId, ownerId]);
+      await client.query('INSERT INTO card (id, owner_user_id, name) VALUES ($1, $2, $3)', [cardId, ownerId, 'Card']);
+      await client.query(
+        'INSERT INTO structure_layout_position (id, structure_id, card_id, cell_index) VALUES ($1, $2, $3, 0)',
+        [positionId, structureId, cardId]
+      );
+
+      await client.query('DELETE FROM card WHERE id = $1', [cardId]);
+
+      const { rows } = await client.query('SELECT id FROM structure_layout_position WHERE id = $1', [positionId]);
+      expect(rows).toHaveLength(0);
+
+      await client.query('DELETE FROM app_user WHERE id = $1', [ownerId]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('T26: видалення app_user каскадно видаляє structure (і, транзитивно, її layout positions)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      const ownerId = crypto.randomUUID();
+      const structureId = crypto.randomUUID();
+      await client.query('INSERT INTO app_user (id, google_sub, email) VALUES ($1, $2, $3)', [
+        ownerId,
+        `test-structure-t26-${ownerId}`,
+        'structure-t26@example.test',
+      ]);
+      await client.query('INSERT INTO structure (id, owner_user_id) VALUES ($1, $2)', [structureId, ownerId]);
+
+      await client.query('DELETE FROM app_user WHERE id = $1', [ownerId]);
+
+      const { rows } = await client.query('SELECT id FROM structure WHERE id = $1', [structureId]);
+      expect(rows).toHaveLength(0);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+describe('D-69/D-103 (закриває ISS-26) — archiveCard реально закриває позицію в розкладці, проти реальної Neon', () => {
+  it('архівація картки, розкладеної в Структурі, закриває її активну позицію в тій самій дії', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      const ownerId = crypto.randomUUID();
+      await client.query('INSERT INTO app_user (id, google_sub, email) VALUES ($1, $2, $3)', [
+        ownerId,
+        `test-d103-${ownerId}`,
+        'd103@example.test',
+      ]);
+      try {
+        const db: Db = client;
+        const card = await insertCard(db, { id: crypto.randomUUID(), ownerUserId: ownerId, name: 'D-103 laid-out card' });
+
+        const structureId = crypto.randomUUID();
+        const positionId = crypto.randomUUID();
+        await client.query('INSERT INTO structure (id, owner_user_id) VALUES ($1, $2)', [structureId, ownerId]);
+        await client.query(
+          'INSERT INTO structure_layout_position (id, structure_id, card_id, cell_index) VALUES ($1, $2, $3, 0)',
+          [positionId, structureId, card.id]
+        );
+
+        await archiveCard(db, { ownerUserId: ownerId, cardId: card.id }, closeActiveLayoutPositionForCard);
+
+        const { rows } = await client.query('SELECT status FROM structure_layout_position WHERE id = $1', [positionId]);
+        expect(rows[0].status).toBe('closed');
+      } finally {
+        await client.query('DELETE FROM app_user WHERE id = $1', [ownerId]);
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('картка без жодної позиції в розкладці архівується нормально (нема що закривати)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      const ownerId = crypto.randomUUID();
+      await client.query('INSERT INTO app_user (id, google_sub, email) VALUES ($1, $2, $3)', [
+        ownerId,
+        `test-d103-no-position-${ownerId}`,
+        'd103-no-position@example.test',
+      ]);
+      try {
+        const db: Db = client;
+        const card = await insertCard(db, { id: crypto.randomUUID(), ownerUserId: ownerId, name: 'D-103 unlaid card' });
+
+        await expect(
+          archiveCard(db, { ownerUserId: ownerId, cardId: card.id }, closeActiveLayoutPositionForCard)
+        ).resolves.toMatchObject({ status: 'archived' });
+      } finally {
+        await client.query('DELETE FROM app_user WHERE id = $1', [ownerId]);
+      }
     } finally {
       await client.end();
     }

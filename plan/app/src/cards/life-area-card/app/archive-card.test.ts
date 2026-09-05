@@ -63,4 +63,47 @@ describe('archiveCard use-case', () => {
     expect(query).toHaveBeenCalledTimes(2); // два виклики expect вище -- по одному UPDATE кожен
     expect(query.mock.calls[0][0]).toMatch(/UPDATE card/);
   });
+
+  // D-69/D-103 (закриває ISS-26): успішна архівація викликає інжектований
+  // closeStructurePosition з тим самим db і id архівованої картки.
+  it('calls closeStructurePosition with the archived card id on success', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [ARCHIVED_CARD_ROW] })
+      .mockResolvedValueOnce({ rows: [LIFECYCLE_ROW] });
+    const db: Db = { query };
+    const closeStructurePosition = vi.fn().mockResolvedValue(undefined);
+
+    await archiveCard(db, { ownerUserId: 'user-1', cardId: 'card-1' }, closeStructurePosition);
+
+    expect(closeStructurePosition).toHaveBeenCalledTimes(1);
+    expect(closeStructurePosition).toHaveBeenCalledWith(db, 'card-1');
+  });
+
+  // Без переданого closeStructurePosition (composition root ще не підключив
+  // структуру, чи тест) -- use-case просто не робить цей крок, не падає.
+  it('does not fail when closeStructurePosition is not provided', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [ARCHIVED_CARD_ROW] })
+      .mockResolvedValueOnce({ rows: [LIFECYCLE_ROW] });
+    const db: Db = { query };
+
+    await expect(archiveCard(db, { ownerUserId: 'user-1', cardId: 'card-1' })).resolves.toMatchObject({
+      status: 'archived',
+    });
+  });
+
+  // Non-disclosure: чужа/неіснуюча картка -- closeStructurePosition НЕ
+  // викликається (нема що закривати, помилка кидається раніше).
+  it('never calls closeStructurePosition for a foreign or missing card', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    const db: Db = { query };
+    const closeStructurePosition = vi.fn().mockResolvedValue(undefined);
+
+    await expect(archiveCard(db, { ownerUserId: 'user-1', cardId: 'not-mine' }, closeStructurePosition)).rejects.toThrow(
+      AppError
+    );
+    expect(closeStructurePosition).not.toHaveBeenCalled();
+  });
 });

@@ -5,8 +5,8 @@
 
 | # | Task | Layer | Owner | Estimate | Blocked by | Status |
 |---|---|---|---|---|---|---|
-| T1 | Create structure table (backend DB) | migration | TBD | S | — | todo |
-| T2 | Create structure_layout_position table (backend DB) | migration | TBD | S | T1 | todo |
+| T1 | Create structure table (backend DB) | migration | TBD | S | — | done |
+| T2 | Create structure_layout_position table (backend DB) | migration | TBD | S | T1 | done |
 | T3 | Create structure_history_event table (history-service DB) | migration | TBD | S | — | todo |
 | T4 | Domain: declaration + layout core models | domain | TBD | M | — | todo |
 | T5 | Domain: layout position conflict + last-write-wins resolution | domain | TBD | M | — | todo |
@@ -30,7 +30,9 @@
 | T23 | UI: SCR-04 Закрити напрямок dialog | ui | TBD | M | T19, T18 | todo |
 | T24 | Wiring: register Структура module in app-shell | wiring | TBD | S | T20, T21, T22, T23 | todo |
 | T25 | Tests: cross-cutting integration (AC-05 + offline sync) | tests | TBD | M | T24 | todo |
-| T26 | Migration: add owner_user_id FK | migration | TBD | S | T1 | todo |
+| T26 | Migration: add owner_user_id FK | migration | TBD | S | T1 | done |
 | T27 | Migration: add logic_variant column | migration | TBD | S | T1 | todo |
 
 **Total:** 27 tasks — 11 S + 14 M + 2 L. Доповнено 2026-08-29 (T26, D-89) — крос-фічева FK-міграція для каскадного видалення акаунта. Доповнено 2026-08-30 (T27, [D-83](../../../DECISIONS.md#d-83), закриває [ISS-7](../../../ISSUES.md)) — три підвиди варіанта «за логікою» дійшли до схеми БД. Орієнтовно 1.5–2 «спринти» в термінах size-matrix (M), але в реальному часі значно довше через темп проєкту (~8-12 год/тиждень, уточнено 2026-08-29 — стара оцінка 1-2 год/тиждень застаріла, [D-87](../../../DECISIONS.md#d-87)).
+
+**T1/T2/T26 закриті 2026-09-05 ПОЗАЧЕРГОВО** ([D-103](../../../DECISIONS.md#d-103)) — не з власної черги хвиль `structure` (яка ще не стартувала), а тому що `life-area-card`'s T15 (archiveCard) потребував реальної `structure_layout_position` для [ISS-26](../../../ISSUES.md)/D-69. Решта задач (T3-T25, T27) і далі `todo` — 3/27 done не означає, що `implement structure` розпочато.

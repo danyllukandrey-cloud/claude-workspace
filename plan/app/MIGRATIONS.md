@@ -14,3 +14,6 @@
 | `1788614654217_create-entry.sql` | `life-area-card/migrations/03_create_entry.{up,down}.sql` |
 | `1788614654221_add-card-status.sql` | `life-area-card/migrations/05_add_card_status.{up,down}.sql` |
 | `1788615576576_add-card-restore.sql` | `life-area-card/migrations/06_add_card_restore.{up,down}.sql` |
+| `1788631003265_create-structure.sql` | `structure/migrations/backend/01_create_structure.{up,down}.sql` |
+| `1788631003271_create-structure-layout-position.sql` | `structure/migrations/backend/02_create_structure_layout_position.{up,down}.sql` |
+| `1788631003274_add-structure-owner-fk.sql` | `structure/migrations/backend/03_add_owner_fk.{up,down}.sql` |
