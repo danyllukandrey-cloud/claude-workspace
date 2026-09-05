@@ -7,7 +7,7 @@ acs: ["AC-03"]
 files_hint: ["plan/app/src/cards/life-area-card/app/update-card.ts"]
 owner: "TBD"
 estimate: "S"
-status: "todo"
+status: "done"
 ---
 
 # T14 — App: updateCard use-case
@@ -22,6 +22,6 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Integration test: Опис зберігається окремо від позначення «заповнена»
-- [ ] Integration test: позначення «заповнена» без Опису відхиляється
-- [ ] lint + vet clean
+- [x] Integration test: Опис зберігається окремо від позначення «заповнена»
+- [x] Integration test: позначення «заповнена» без Опису відхиляється
+- [x] lint + vet clean

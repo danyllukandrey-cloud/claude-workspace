@@ -7,7 +7,7 @@ acs: ["AC-16"]
 files_hint: ["plan/app/src/cards/life-area-card/app/archive-card.ts"]
 owner: "TBD"
 estimate: "S"
-status: "todo"
+status: "done"
 ---
 
 # T15 — App: archiveCard use-case
@@ -22,8 +22,8 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Integration test: архівація виключає картку зі списку активних, рядок лишається читомим напряму
-- [ ] lint + vet clean
+- [x] Integration test: архівація виключає картку зі списку активних, рядок лишається читомим напряму
+- [x] lint + vet clean
 
 ## Notes
 

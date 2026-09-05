@@ -17,7 +17,7 @@ import {
   listCardsByOwner,
   listActiveCardsByOwner,
   listArchivedCardsByOwner,
-  updateCard,
+  updateCard as updateCardRow,
   insertMetricBlock,
   listMetricBlocksByCard,
   insertEntry,
@@ -27,6 +27,11 @@ import {
   insertLifecycleEvent,
   listLifecycleEventsByCard,
 } from './src/cards/life-area-card/infra/postgres-repo';
+import { createCard } from './src/cards/life-area-card/app/create-card';
+import { updateCard } from './src/cards/life-area-card/app/update-card';
+import { archiveCard } from './src/cards/life-area-card/app/archive-card';
+import { restoreCard } from './src/cards/life-area-card/app/restore-card';
+import { listCards } from './src/cards/life-area-card/app/list-cards';
 
 beforeAll(() => {
   try {
@@ -393,8 +398,8 @@ describe('T10 — Postgres repo (life-area-card) — проти реальної
           expect(await findCardById(dbB, ownerB, card.id)).toBeNull();
           expect((await listCardsByOwner(dbB, ownerB)).map((c) => c.id)).not.toContain(card.id);
           expect((await listActiveCardsByOwner(dbB, ownerB)).map((c) => c.id)).not.toContain(card.id);
-          // Non-disclosure діє й на update: чужа картка не міняється, updateCard повертає null.
-          expect(await updateCard(dbB, ownerB, card.id, { name: 'hijacked' })).toBeNull();
+          // Non-disclosure діє й на update: чужа картка не міняється, updateCardRow повертає null.
+          expect(await updateCardRow(dbB, ownerB, card.id, { name: 'hijacked' })).toBeNull();
         });
 
         const stillOriginal = await findCardById(db, ownerA, card.id);
@@ -412,15 +417,15 @@ describe('T10 — Postgres repo (life-area-card) — проти реальної
       await withUser(client, async (db, ownerUserId) => {
         const card = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'Original' });
 
-        const withDescription = await updateCard(db, ownerUserId, card.id, { description: 'Навіщо ця картка' });
+        const withDescription = await updateCardRow(db, ownerUserId, card.id, { description: 'Навіщо ця картка' });
         expect(withDescription?.description).toBe('Навіщо ця картка');
         expect(withDescription?.name).toBe('Original'); // name не займали -- лишається як була
 
-        const archived = await updateCard(db, ownerUserId, card.id, { status: 'archived' });
+        const archived = await updateCardRow(db, ownerUserId, card.id, { status: 'archived' });
         expect(archived?.status).toBe('archived');
         expect(archived?.description).toBe('Навіщо ця картка'); // status не займав опис
 
-        const restored = await updateCard(db, ownerUserId, card.id, { status: 'active' });
+        const restored = await updateCardRow(db, ownerUserId, card.id, { status: 'active' });
         expect(restored?.status).toBe('active');
       });
     } finally {
@@ -435,7 +440,7 @@ describe('T10 — Postgres repo (life-area-card) — проти реальної
       await withUser(client, async (db, ownerUserId) => {
         const active = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'Active card' });
         const archived = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'Archived card' });
-        await updateCard(db, ownerUserId, archived.id, { status: 'archived' });
+        await updateCardRow(db, ownerUserId, archived.id, { status: 'archived' });
 
         const archivedList = await listArchivedCardsByOwner(db, ownerUserId);
         expect(archivedList.map((c) => c.id)).toEqual([archived.id]);
@@ -483,6 +488,183 @@ describe('T10 — Postgres repo (life-area-card) — проти реальної
       expect(capturedPlans[4]).toContain('idx_entry_card_recorded');
       expect(capturedPlans[5]).toContain('idx_entry_card_pending');
       expect(capturedPlans[6]).toContain('idx_lifecycle_card_time');
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+describe('Хвиля 5, батч A — use-case шар (T13/T14/T15/T33/T34) — проти реальної Neon', () => {
+  async function withUser<T>(client: Client, run: (db: Db, ownerUserId: string) => Promise<T>): Promise<T> {
+    const ownerUserId = crypto.randomUUID();
+    await client.query('INSERT INTO app_user (id, google_sub, email) VALUES ($1, $2, $3)', [
+      ownerUserId,
+      `test-wave5-${ownerUserId}`,
+      'wave5@example.test',
+    ]);
+    try {
+      return await run(client, ownerUserId);
+    } finally {
+      await client.query('DELETE FROM app_user WHERE id = $1', [ownerUserId]);
+    }
+  }
+
+  it('T13 createCard: щасливий шлях створює картку + подію "created" (AC-02)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      await withUser(client, async (db, ownerUserId) => {
+        const record = await createCard(db, { ownerUserId, name: 'T13 integration card' });
+        expect(record.status).toBe('active');
+
+        const events = await listLifecycleEventsByCard(db, record.id);
+        expect(events.map((e) => e.transition)).toEqual(['created']);
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('T13 createCard: порожня назва відхиляється БЕЗ жодного запису (AC-02)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      await withUser(client, async (db, ownerUserId) => {
+        await expect(createCard(db, { ownerUserId, name: '' })).rejects.toThrow();
+        expect(await listCardsByOwner(db, ownerUserId)).toEqual([]);
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('T14 updateCard: Опис зберігається окремо від позначення "заповнена" (AC-03)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      await withUser(client, async (db, ownerUserId) => {
+        const card = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'T14 integration card' });
+
+        const result = await updateCard(db, { ownerUserId, cardId: card.id, description: 'Навіщо ця картка' });
+        expect(result.description).toBe('Навіщо ця картка');
+
+        // Опис збережено, але картка НЕ позначена "заповненою" -- жодної lifecycle-події.
+        expect(await listLifecycleEventsByCard(db, card.id)).toEqual([]);
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('T14 updateCard: позначення "заповнена" без Опису відхиляється (AC-03)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      await withUser(client, async (db, ownerUserId) => {
+        const card = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'T14 no-description card' });
+
+        await expect(updateCard(db, { ownerUserId, cardId: card.id, markFilled: true })).rejects.toThrow();
+
+        const stillNoDescription = await findCardById(db, ownerUserId, card.id);
+        expect(stillNoDescription?.description).toBeNull();
+        expect(await listLifecycleEventsByCard(db, card.id)).toEqual([]);
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('T15 archiveCard: архівація виключає картку зі списку активних, рядок лишається читомим напряму (AC-16)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      await withUser(client, async (db, ownerUserId) => {
+        const card = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'T15 integration card' });
+
+        const archived = await archiveCard(db, { ownerUserId, cardId: card.id });
+        expect(archived.status).toBe('archived');
+
+        const activeList = await listActiveCardsByOwner(db, ownerUserId);
+        expect(activeList.map((c) => c.id)).not.toContain(card.id);
+
+        const readDirectly = await findCardById(db, ownerUserId, card.id);
+        expect(readDirectly?.status).toBe('archived');
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('T33 restoreCard: розархівація активної (не архівованої) картки -- card.not_archived, нічого не пишеться (AC-17)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      await withUser(client, async (db, ownerUserId) => {
+        const card = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'T33 active card' });
+
+        await expect(restoreCard(db, ownerUserId, card.id)).rejects.toMatchObject({ code: 'card.not_archived' });
+
+        const stillActive = await findCardById(db, ownerUserId, card.id);
+        expect(stillActive?.status).toBe('active');
+        expect(await listLifecycleEventsByCard(db, card.id)).toEqual([]);
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('T33 restoreCard: розархівація архівованої картки -- status active, знову в listCards за замовчуванням (AC-17)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      await withUser(client, async (db, ownerUserId) => {
+        const card = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'T33 archived card' });
+        await updateCardRow(db, ownerUserId, card.id, { status: 'archived' });
+
+        const restored = await restoreCard(db, ownerUserId, card.id);
+        expect(restored.status).toBe('active');
+
+        const defaultList = await listCards(db, ownerUserId);
+        expect(defaultList.map((c) => c.id)).toContain(card.id);
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('T34 listCards: status=archived повертає лише архівовані, найновіші зверху (AC-18)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      await withUser(client, async (db, ownerUserId) => {
+        const active = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'T34 active' });
+        const archivedOlder = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'T34 archived older' });
+        await updateCardRow(db, ownerUserId, archivedOlder.id, { status: 'archived' });
+        const archivedNewer = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'T34 archived newer' });
+        await updateCardRow(db, ownerUserId, archivedNewer.id, { status: 'archived' });
+
+        const archivedList = await listCards(db, ownerUserId, 'archived');
+        expect(archivedList.map((c) => c.id)).toEqual([archivedNewer.id, archivedOlder.id]);
+        expect(archivedList.map((c) => c.id)).not.toContain(active.id);
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('T34 listCards: виклик без параметра поводиться як і раніше -- лише активні (AC-04 не зламано)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      await withUser(client, async (db, ownerUserId) => {
+        const active = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'T34 default active' });
+        const archived = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'T34 default archived' });
+        await updateCardRow(db, ownerUserId, archived.id, { status: 'archived' });
+
+        const defaultList = await listCards(db, ownerUserId);
+        expect(defaultList.map((c) => c.id)).toContain(active.id);
+        expect(defaultList.map((c) => c.id)).not.toContain(archived.id);
+      });
     } finally {
       await client.end();
     }

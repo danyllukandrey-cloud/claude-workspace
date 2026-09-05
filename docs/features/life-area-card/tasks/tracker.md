@@ -17,9 +17,9 @@
 | T10 | Infra: Postgres repo | infra | TBD | L | T2, T3, T4, T5 | done |
 | T11 | Infra: local offline cache | infra | TBD | M | — | done |
 | T12 | Infra: Claude client for suspicious-data check | infra | TBD | M | — | done |
-| T13 | App: createCard use-case | app | TBD | S | T9, T10 | todo |
-| T14 | App: updateCard use-case | app | TBD | S | T9, T10 | todo |
-| T15 | App: archiveCard use-case | app | TBD | S | T9, T10 | todo |
+| T13 | App: createCard use-case | app | TBD | S | T9, T10 | done |
+| T14 | App: updateCard use-case | app | TBD | S | T9, T10 | done |
+| T15 | App: archiveCard use-case | app | TBD | S | T9, T10 | done |
 | T16 | App: createMetricBlock use-case | app | TBD | M | T9, T10 | todo |
 | T17 | App: transferMetricBlock use-case | app | TBD | M | T9, T10 | todo |
 | T18 | App: createEntry use-case | app | TBD | M | T7, T8, T10 | todo |
@@ -37,8 +37,8 @@
 | T30 | Wiring: register life-area-card module | wiring | TBD | S | T25, T26, T27, T28, T29, T36, T37 | todo |
 | T31 | Tests: cross-cutting integration | tests | TBD | M | T30, T11 | todo |
 | T32 | Migration: restore transition + archived index | migration | TBD | S | T5 | done |
-| T33 | App: restoreCard use-case | app | TBD | S | T9, T10 | todo |
-| T34 | App: listCards with status filter | app | TBD | S | T10 | todo |
+| T33 | App: restoreCard use-case | app | TBD | S | T9, T10 | done |
+| T34 | App: listCards with status filter | app | TBD | S | T10 | done |
 | T35 | Ports: restoreCard + archived listCards handlers | ports | TBD | S | T33, T34 | todo |
 | T36 | UI: SCR-07 Архів карток | ui | TBD | M | T24, T35 | todo |
 | T37 | UI: SCR-02 rename state | ui | TBD | S | T24, T21 | todo |

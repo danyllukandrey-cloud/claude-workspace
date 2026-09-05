@@ -7,7 +7,7 @@ acs: ["AC-02"]
 files_hint: ["plan/app/src/cards/life-area-card/app/create-card.ts"]
 owner: "TBD"
 estimate: "S"
-status: "todo"
+status: "done"
 ---
 
 # T13 — App: createCard use-case
@@ -22,6 +22,6 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Integration test: щасливий шлях створює картку + подію життєвого циклу
-- [ ] Integration test: порожня назва відхиляється без запису
-- [ ] lint + vet clean
+- [x] Integration test: щасливий шлях створює картку + подію життєвого циклу
+- [x] Integration test: порожня назва відхиляється без запису
+- [x] lint + vet clean
