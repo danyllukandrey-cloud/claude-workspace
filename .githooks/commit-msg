@@ -1,14 +1,16 @@
 #!/bin/sh
 #
-# commit-msg — перевіряє мітку Decision у повідомленні коміту, і (D-92) звіряє
-# рішення з файлами фічі, яку воно стосується.
+# commit-msg — перевіряє мітку Decision у повідомленні коміту, (D-92) звіряє
+# рішення з файлами фічі, яку воно стосується, і (D-101) звіряє SDD-Task
+# із tracker.md задачі.
 #
 # Навіщо: реєстр рішень (docs/DECISIONS.md) і історія Git зв'язані рядком
 # "Decision: D-NN". Зв'язок тримається на пам'яті людини, а забуту мітку
-# заднім числом уже не вписати — повідомлення коміту незмінне.
-# Хук закриває саме цю дірку.
+# заднім числом уже не вписати — повідомлення коміту незмінне. Той самий
+# принцип поширено на задачі (SDD-Task -> tracker.md, D-101) — обіцянка
+# протоколу skill-а теж тримається на пам'яті в моменті, а не звірена.
 #
-# Правило цілком: CLAUDE.md § Рішення і зміни (D-19, D-20, D-92)
+# Правило цілком: CLAUDE.md § Рішення і зміни (D-19, D-20, D-92, D-101)
 #
 # Обійти: git commit --no-verify   (це поручні, не замок)
 
@@ -230,5 +232,84 @@ for VALUE in $VALUES; do
 	done
 done
 [ "$WARNED" = "1" ] && echo ""
+
+# --- D-101: SDD-Task <-> tracker.md -----------------------------------------
+# Крок 9 протоколу skill-а sdd:implement (Definition of Done) обіцяє: коміт,
+# що завершує задачу, тим самим комітом оновлює tasks/tracker.md -> done.
+# Знайдено 2026-09-05 (ISS-20): коміти T9 (58ad01a, 16220a9) несуть трейлер
+# SDD-Task: T9, але tracker.md жодного разу не торкнулись -- обіцянка була
+# лише текстом протоколу, ніхто її не звіряв у моменті. Той самий підхід, що
+# й D-92 вище, застосований до задач замість рішень.
+#
+# Свідомо НЕ перевіряємо тут per-task .md файл (tasks/t<id>-*.md) --
+# чи його теж має оновлювати `implement`, лишається відкритим питанням
+# самого ISS-20; хук звіряє лише те, що DoD skill-а обіцяє явно.
+
+SDD_TASK_VALUES=$(printf '%s\n' "$CLEAN" \
+	| git interpret-trailers --parse \
+	| sed -n 's/^SDD-[Tt]ask:[[:space:]]*//p' \
+	| sort -u)
+
+for TASK_ID in $SDD_TASK_VALUES; do
+	# Формат неочікуваний -- не вгадуємо, пропускаємо мовчки
+	printf '%s' "$TASK_ID" | grep -qE '^[A-Za-z0-9_-]+$' || continue
+
+	# У яких tasks.json взагалі є задача з таким id?
+	CANDIDATE_SLUGS=""
+	for TJ in "$ROOT"/docs/features/*/tasks.json; do
+		[ -f "$TJ" ] || continue
+		if grep -q "\"id\":[[:space:]]*\"$TASK_ID\"" "$TJ"; then
+			CANDIDATE_SLUGS="$CANDIDATE_SLUGS $(basename "$(dirname "$TJ")")"
+		fi
+	done
+
+	if [ -z "$CANDIDATE_SLUGS" ]; then
+		echo ""
+		echo "⚠️  Попередження (не блокує): SDD-Task: $TASK_ID не знайдено в"
+		echo "   жодному docs/features/*/tasks.json -- одруківка чи tasks.json"
+		echo "   уже змінився?"
+		continue
+	fi
+
+	# Код фічі лежить поза docs/features/ (plan/app/src/...), тож із кандидатів
+	# лишаємо ті, чий слаг реально зустрічається серед застейджених шляхів.
+	CONFIRMED_SLUGS=""
+	for SLUG in $CANDIDATE_SLUGS; do
+		if printf '%s\n' "$STAGED" | grep -q "/$SLUG/"; then
+			CONFIRMED_SLUGS="$CONFIRMED_SLUGS $SLUG"
+		fi
+	done
+
+	if [ -z "$CONFIRMED_SLUGS" ]; then
+		echo ""
+		echo "⚠️  Попередження (не блокує): SDD-Task: $TASK_ID є в tasks.json"
+		echo "   ($CANDIDATE_SLUGS), але жоден шлях коміту не вказує однозначно"
+		echo "   на цю фічу -- перевір tracker.md вручну."
+		continue
+	fi
+
+	MISSING_TRACKER=""
+	for SLUG in $CONFIRMED_SLUGS; do
+		if ! printf '%s\n' "$STAGED" | grep -qx "docs/features/$SLUG/tasks/tracker.md"; then
+			MISSING_TRACKER="$MISSING_TRACKER $SLUG"
+		fi
+	done
+
+	if [ -n "$MISSING_TRACKER" ]; then
+		fail_header
+		echo "   Коміт завершує SDD-Task: $TASK_ID (фіча(-і):$MISSING_TRACKER),"
+		echo "   але docs/features/<slug>/tasks/tracker.md у цьому коміті не"
+		echo "   змінювався."
+		echo ""
+		echo "   Протокол skill-а sdd:implement (крок 9, Definition of Done)"
+		echo "   вимагає оновити рядок $TASK_ID у tracker.md -> done в тому ж"
+		echo "   коміті, що завершує задачу."
+		echo ""
+		echo "   Онови tracker.md і повтори коміт (git commit --amend, якщо"
+		echo "   коміт іще нікуди не пішов далі)."
+		fail_footer
+		exit 1
+	fi
+done
 
 exit 0

@@ -1,5 +1,7 @@
 # API sync report — structure — 2026-08-24
 
+> **Reconcile pass 2026-09-05** ([ISS-14](../../../ISSUES.md), [ISS-16](../../../ISSUES.md)) — `logicVariant` додано в контракт услід за `data-model.md`/`spec.md` (D-83/D-93), доданий одразу нижче в Section A/B, решта звіту від 2026-08-24 лишається без змін.
+
 ## Section A — field-origins
 
 | schema_path | origin | confidence |
@@ -7,6 +9,7 @@
 | Structure.id | data-model.md → `structure.id` | high |
 | Structure.declaration | data-model.md → `structure.declaration` | high |
 | Structure.layoutMode | data-model.md → `structure.layout_mode` (CHECK enum) | high |
+| Structure.logicVariant | data-model.md → `structure.logic_variant` (CHECK enum, D-83) | high |
 | Structure.createdAt | data-model.md → `structure.created_at` | high |
 | Structure.updatedAt | data-model.md → `structure.updated_at` | high |
 | LayoutPosition.cardId | data-model.md → `structure_layout_position.card_id` | high |
@@ -27,8 +30,8 @@
 
 1. **Endpoint ↔ data-model** *(core)* — ✓. Кожен ендпоінт читає/пише `structure` чи `structure_layout_position`: `GET/PATCH /structure` → `structure`; `GET/PUT/POST /structure/layout*` → `structure_layout_position`. `GET /structure/layout/history` читає `structure_history_event` (База 2, окрема схема, ADR-0004) — те саме джерело, що Потік 9.
 2. **Error code ↔ repo error definition** *(core)* — no error registry found — codes are the contract's proposal; reconcile when the repo defines them (проєкт ще не має живого коду бекенда — `architecture-map.md` §Migrations: «бекенд жодного разу не піднімався»).
-3. **Validation ↔ constraint** *(core)* — ✓. `layoutMode` enum `[single, free, logic, null]` = `data-model.md` CHECK; `status` enum `[active, closed]` = `data-model.md` CHECK; `cellIndex` — `data-model.md` не задає верхньої межі (лише `INTEGER NOT NULL`) → контракт узяв `minimum: 0`, без `maximum` (щільність поля — «запас вільних клітинок», sad.md §5.2, конкретне число не зафіксовано жодним джерелом; не вигадую).
-4. **OpenAPI ↔ sequence** *(supporting)* — ✓ з одним зафіксованим винятком нижче.
+3. **Validation ↔ constraint** *(core)* — ✓. `layoutMode` enum `[single, free, logic, null]` = `data-model.md` CHECK; `logicVariant` enum `[balance, focus, cause_effect, null]` = `data-model.md` CHECK (D-83); `status` enum `[active, closed]` = `data-model.md` CHECK; `cellIndex` — `data-model.md` не задає верхньої межі (лише `INTEGER NOT NULL`) → контракт узяв `minimum: 0`, без `maximum` (щільність поля — «запас вільних клітинок», sad.md §5.2, конкретне число не зафіксовано жодним джерелом; не вигадую). Крос-польовий інваріант `logic_variant IS NULL` при `layout_mode != 'logic'` — `data-model.md` прямо каже, що на рівні БД CHECK на цю пару нема, тримає app-шар (T4/T11); контракт відображає це окремим кодом помилки `structure.logic_variant_requires_logic_mode` (422), не покладається на БД.
+4. **OpenAPI ↔ sequence** *(supporting)* — ✓ з одним зафіксованим винятком нижче. **Примітка (2026-09-05):** `sad.md §6` не має окремої діаграми на US-12/AC-16/AC-16b (вибір і зміна підвиду «за логікою») — сам `spec.md` AC-16b каже «treats the switch the same way as AC-11b», тобто це той самий механізм, що вже намальований у «Critical flow 11» (зміна `layoutMode` скидає розкладку), лише без окремого зображення для `logicVariant`. Не Save-as-OQ: поведінка описана, механізм той самий, дублювати діаграму заради іншого імені поля сенсу нема.
 
 ### Зафіксований виняток (не помилка, свідома межа контракту)
 
@@ -44,4 +47,4 @@
 
 0 core-помилок, 0 flags ≥3 — запуск не призупинявся. Один `medium`-кластер полів (`MetricTransfer.*`, чужа сутність) і два внутрішні побічні ефекти `life-area-card` (перейменування картки, авто-розміщення нової картки) — задокументовані, не приховані. Перший (перейменування) мав Save-as-OQ, **закритий 2026-08-27** — `/sdd:api life-area-card` тепер існує.
 
-**Наступний крок:** `/sdd:screens structure` (декларовано `web-frontend` у `target_surfaces`).
+**Наступний крок (знімок 2026-08-24, застаріло):** `/sdd:screens structure` (декларовано `web-frontend` у `target_surfaces`) — **виконано 2026-08-24**, як і `/sdd:ux-flows`/`/sdd:tasks`/`/sdd:plan-tests` (`DELIVERY-PLAN.md` §Частина 2). Реальний наступний крок на 2026-09-05 — `/sdd:implement structure`, коли до нього дійде черга (зараз у роботі `life-area-card`).
