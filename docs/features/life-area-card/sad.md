@@ -167,17 +167,27 @@ sequenceDiagram
     Note over PWA: postcondition: картка не створена, доки немає назви
 ```
 
-**Critical flow 2: Позначення «заповнена» без Опису — блокується (AC-03)**
+**Critical flow 2: Оновлення картки — назва/Опис/позначення «заповнена» (AC-03, AC-19)**
 
 ```mermaid
 sequenceDiagram
     actor User
     participant PWA
+    participant Backend
+    participant Store as База бекенда
 
-    User->>PWA: намагається позначити картку заповненою, Опис порожній
-    PWA->>PWA: перевіряє наявність Опису
-    PWA-->>User: блокує позначення «заповнена», пояснює, що потрібен короткий «навіщо»
-    Note over PWA: postcondition: картка лишається у стані «створена», не «заповнена»
+    User->>PWA: змінює назву, Опис, чи намагається позначити картку заповненою
+    PWA->>Backend: запит на оновлення (name/description/markFilled)
+    alt markFilled=true, Опис порожній (ні збережений раніше, ні переданий зараз)
+        Backend->>Backend: перевіряє наявність Опису (T9, AC-03) -- ДО будь-якого запису
+        Backend-->>PWA: блокує, пояснює, що потрібен короткий «навіщо»
+        PWA-->>User: бачить пояснення, картка лишається «створена»
+    else Опис є (чи не запитували markFilled)
+        Backend->>Store: оновлює назву/Опис; якщо markFilled -- пише подію "filled"
+        Store-->>Backend: ok
+        Backend-->>PWA: оновлена картка
+        PWA-->>User: бачить нову назву/Опис одразу (AC-19 -- зміна назви відображається в колоді)
+    end
 ```
 
 **Critical flow 3: Запис події з підтвердженням (happy path, AC-01)**
@@ -417,16 +427,62 @@ sequenceDiagram
     User->>PWA: підтверджує
     PWA->>Backend: запит на видалення картки
     Backend->>Store: позначає картку архівованою (status=archived), не видаляє фізично
+    Backend->>Store: закриває активну позицію картки в розкладці Структури, якщо є (D-69/D-103, та сама дія)
     Store-->>Backend: ok
     Backend-->>PWA: картка архівована
     PWA-->>User: картка зникає з колоди й розкладки Структури, лишається відновлюваною
 ```
 
+**Critical flow 14: Розархівація картки (AC-17)**
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant PWA
+    participant Backend
+    participant Store as База бекенда
+
+    User->>PWA: відкриває список архівованих карток, обирає розархівувати
+    PWA->>Backend: запит на розархівацію
+    Backend->>Store: читає картку
+    Store-->>Backend: картка
+    alt картка вже active (не в архіві)
+        Backend-->>PWA: помилка card.not_archived, нічого не змінено
+        PWA-->>User: бачить, що картка не в архіві
+    else картка archived
+        Backend->>Store: позначає картку active, пише подію "restored"
+        Store-->>Backend: ok
+        Backend-->>PWA: картка розархівована
+        PWA-->>User: картка знову в колоді; позиція в розкладці Структури НЕ відновлюється автоматично (D-69) -- розкладає заново
+    end
+```
+
+**Critical flow 15: Перегляд архівованих карток (AC-18)**
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant PWA
+    participant Backend
+    participant Store as База бекенда
+
+    User->>PWA: відкриває список архівованих карток
+    PWA->>Backend: запит списку зі status=archived
+    Backend->>Store: читає картки власника зі status=archived, найновіші зверху
+    Store-->>Backend: список
+    Backend-->>PWA: архівовані картки
+    PWA-->>User: бачить архів окремо від активної колоди, кожну можна відкрити в режимі перегляду
+```
+
 **Coverage check (`/sdd:sequences`, крок 7).**
 
-*Use-case pass (§4):* усі 14 US мають ≥1 потік — US-01→Flow 1, US-02→Flow 2, US-03→Flow 3, US-04→Flow 4, US-05→Flow 5, US-06→Flow 6, US-07→Flow 7, US-08→Flow 8, US-09→Flow 9, US-10→Flow 10, US-11→Flow 7 (AC-11), US-12→Flow 11, US-13→Flow 12, US-14→Flow 13.
+*Use-case pass (§4):* усі 16 US мають ≥1 потік — US-01→Flow 1, US-02→Flow 2, US-03→Flow 3, US-04→Flow 4, US-05→Flow 5, US-06→Flow 6, US-07→Flow 7, US-08→Flow 8, US-09→Flow 9, US-10→Flow 10, US-11→Flow 7 (AC-11), US-12→Flow 11, US-13→Flow 12, US-14→Flow 13, US-15→Flow 14, US-16→Flow 15.
 
-*AC pass (§5):* усі 17 AC показані — AC-01→Flow 3, AC-02→Flow 1, AC-03→Flow 2, AC-04→Flow 10, AC-05→Flow 6, AC-06→Flow 7, AC-07→Flow 8, AC-08→Flow 9, AC-09/AC-09b→Flow 4, AC-10→Flow 5, AC-11→Flow 7, AC-12/AC-13→Flow 11, AC-14/AC-15→Flow 12, AC-16→Flow 13.
+*AC pass (§5):* усі 20 AC показані — AC-01→Flow 3, AC-02→Flow 1, AC-03→Flow 2, AC-04→Flow 10, AC-05→Flow 6, AC-06→Flow 7, AC-07→Flow 8, AC-08→Flow 9, AC-09/AC-09b→Flow 4, AC-10→Flow 5, AC-11→Flow 7, AC-12/AC-13→Flow 11, AC-14/AC-15→Flow 12, AC-16→Flow 13, AC-17→Flow 14, AC-18→Flow 15, AC-19→Flow 2.
+
+**Оновлено 2026-09-05 ([D-103](../../DECISIONS.md#d-103)), закриває [ISS-27](../../ISSUES.md):** Flow 2 (client-only), Flow 13 (без кроку закриття позиції) і відсутність Flow 14/15 — застаріле з хвилі D-89 (2026-08-29), коли AC-17/18/19 додались у spec.md, а `sad.md` не звірили. Виявив критик хвилі 5 writer+critic (Flow 2), решту знайдено при цій же перевірці.
+
+**Відкрита прогалина, НЕ вирішена цим оновленням:** AC-19 (перейменування) у spec.md прямо каже, що зміна фіксується «подією в Літописі Структури» (`structure/spec.md` AC-15) — окремий сервіс літопису (`structure/adr/0004`, власна база, ще не існує жодним рядком коду). Поточний `update-card.ts` (T14) цього виклику не робить. Не той самий клас прогалини, що D-103 (там бракувало таблиці в тій самій базі; тут бракує цілого окремого сервісу) — записано окремо, не виправлено тут.
 
 **Flagged for review:** жодного нового учасника поза §5 не знадобилось (`Cache` — те саме, що вже задекларований контейнер «Локальний кеш» у C4 Container).
 
