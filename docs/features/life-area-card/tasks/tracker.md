@@ -36,7 +36,7 @@
 | T29 | UI: SCR-06 Підтвердження архівації | ui | TBD | S | T24, T21 | todo |
 | T30 | Wiring: register life-area-card module | wiring | TBD | S | T25, T26, T27, T28, T29, T36, T37 | todo |
 | T31 | Tests: cross-cutting integration | tests | TBD | M | T30, T11 | todo |
-| T32 | Migration: restore transition + archived index | migration | TBD | S | T5 | todo |
+| T32 | Migration: restore transition + archived index | migration | TBD | S | T5 | done |
 | T33 | App: restoreCard use-case | app | TBD | S | T9, T10 | todo |
 | T34 | App: listCards with status filter | app | TBD | S | T10 | todo |
 | T35 | Ports: restoreCard + archived listCards handlers | ports | TBD | S | T33, T34 | todo |

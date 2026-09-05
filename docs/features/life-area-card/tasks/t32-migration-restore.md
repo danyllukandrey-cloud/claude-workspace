@@ -7,7 +7,7 @@ acs: ["AC-17", "AC-18"]
 files_hint: ["docs/features/life-area-card/migrations/06_add_card_restore.up.sql", "docs/features/life-area-card/migrations/06_add_card_restore.down.sql"]
 owner: "TBD"
 estimate: "S"
-status: "todo"
+status: "done"
 ---
 
 # T32 — Migration: restore transition + archived-cards index
@@ -22,8 +22,8 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Staged migration 06 promoted to live `migrations/`, applies and reverts cleanly
-- [ ] lint + vet clean
+- [x] Staged migration 06 promoted to live `migrations/`, applies and reverts cleanly
+- [x] lint + vet clean
 
 ## Notes
 

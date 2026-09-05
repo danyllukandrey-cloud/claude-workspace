@@ -32,6 +32,8 @@ const TO_PROMOTE = [
   // Хвиля 3 (T3, T5)
   { slug: 'life-area-card', staged: '03_create_entry', name: 'create-entry' },
   { slug: 'life-area-card', staged: '05_add_card_status', name: 'add-card-status' },
+  // Хвиля 4 (T32) -- T10 не потребує промоції, лише T32 (staged-міграція).
+  { slug: 'life-area-card', staged: '06_add_card_restore', name: 'add-card-restore' },
 ];
 
 function readReadme() {

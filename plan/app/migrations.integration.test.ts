@@ -161,6 +161,53 @@ describe('migration 03_create_entry (T3) — проти реальної Neon', 
   });
 });
 
+describe('migration 06_add_card_restore (T32) — проти реальної Neon', () => {
+  it('card_lifecycle_event.transition CHECK реально приймає \'restored\' (AC-17)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      const userId = crypto.randomUUID();
+      const cardId = crypto.randomUUID();
+      const eventId = crypto.randomUUID();
+      await client.query('INSERT INTO app_user (id, google_sub, email) VALUES ($1, $2, $3)', [
+        userId,
+        `test-t32-${userId}`,
+        't32@example.test',
+      ]);
+      await client.query('INSERT INTO card (id, owner_user_id, name) VALUES ($1, $2, $3)', [
+        cardId,
+        userId,
+        'T32 test card',
+      ]);
+
+      await expect(
+        client.query("INSERT INTO card_lifecycle_event (id, card_id, transition) VALUES ($1, $2, 'restored')", [
+          eventId,
+          cardId,
+        ]),
+      ).resolves.not.toThrow();
+
+      await client.query('DELETE FROM app_user WHERE id = $1', [userId]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('частковий індекс idx_card_owner_archived реально існує (AC-18)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      const { rows } = await client.query(
+        `SELECT indexdef FROM pg_indexes WHERE tablename = 'card' AND indexname = 'idx_card_owner_archived'`,
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].indexdef).toMatch(/WHERE \(?status = 'archived'::text\)?/);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
 describe('migration 05_add_card_status (T5) — проти реальної Neon', () => {
   it('частковий індекс WHERE status=active реально виключає архівовані картки зі списку активних', async () => {
     const client = new Client({ connectionString: process.env.DATABASE_URL });
