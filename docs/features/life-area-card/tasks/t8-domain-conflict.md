@@ -7,7 +7,7 @@ acs: ["AC-06"]
 files_hint: ["plan/app/src/cards/life-area-card/domain/conflict.ts"]
 owner: "TBD"
 estimate: "M"
-status: "todo"
+status: "done"
 ---
 
 # T8 — Domain: near-simultaneous conflict detection
@@ -22,10 +22,10 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Unit test: два записи того самого блоку з різних пристроїв у межах вікна → конфлікт
-- [ ] Unit test: той самий випадок поза вікном → не конфлікт
-- [ ] Unit test: той самий пристрій, будь-який інтервал → не конфлікт (це не conflict-кейс, а звичайне уточнення)
-- [ ] lint + vet clean
+- [x] Unit test: два записи того самого блоку з різних пристроїв у межах вікна → конфлікт
+- [x] Unit test: той самий випадок поза вікном → не конфлікт
+- [x] Unit test: той самий пристрій, будь-який інтервал → не конфлікт (це не conflict-кейс, а звичайне уточнення)
+- [x] lint + vet clean
 
 ## Notes
 
