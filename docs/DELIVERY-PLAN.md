@@ -138,19 +138,19 @@
 
 **Хвиля 4 розпочата 2026-09-05.** T32 (restore transition CHECK + archived-cards частковий індекс) промоучено й застосовано проти Neon (`up → down 1 → up`), 9/9 інтеграційних тестів зелені, коміт `98a7113`. T10 (`layer: infra`, estimate L — CRUD-репозиторій проти всіх 4 таблиць) лишається — сесія перервалась на запитаннях про Neon/хостинг перед стартом, на межі 71% тарифу; код чекає оновлення ліміту.
 
-#### Рецепт для нового вікна сесії — як продовжити хвилю 4 (T10, T32)
+#### Рецепт для нового вікна сесії — як продовжити хвилю 4 (лишився T10; T32 готово)
 
 1. `git checkout proof/sdd-life-area-card` (якщо не там), `git log --oneline -3` — звірити з хешами вище.
 2. Прочитати `docs/adr/0006-backend-http-and-migration-tool.md` — архітектурне рішення, чому саме так.
-3. Прочитати задачі: `docs/features/life-area-card/tasks/t10-infra-postgres-repo.md`, `t32-migration-restore.md`.
+3. Прочитати задачу: `docs/features/life-area-card/tasks/t10-infra-postgres-repo.md`.
 4. **Як реально гонити міграції (уже працює, не вигадувати заново):**
    - `.env` лежить у **корені репозиторію** (`claude-workspace/.env`), НЕ в `plan/app/` — заблокований від прямого читання (`Read`/`grep`), це навмисно.
    - `cd plan/app && npm run migrate` (up) / `node --env-file=../../.env node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations down N` (down N) — **не** `--envPath` самого `node-pg-migrate` (не працює, ECONNREFUSED на localhost — з'ясовано дослідним шляхом).
    - Нову staged-міграцію → додати в `TO_PROMOTE` масив на початку `plan/app/scripts/promote-migrations.mjs`, запустити `node scripts/promote-migrations.mjs` — сам призначить timestamp-номер і допише `plan/app/MIGRATIONS.md`.
    - `plan/app/MIGRATIONS.md`, НЕ `migrations/README.md` — `node-pg-migrate` трактує кожен файл усередині `migrations/` як саму міграцію.
 5. **Тести:** звичайний `npm test` — швидкий, без мережі, не займай мережевими тестами. Мережеві/БД-тести → `plan/app/migrations.integration.test.ts` (розростається, не новий файл на кожну задачу), команда `npm run test:integration` (окремий `vitest.integration.config.ts`).
-6. Т10 — **`layer: infra`, estimate L** — найбільша задача поки що (CRUD проти всіх 5 таблиць life-area-card, non-disclosure 404 через `owner_user_id` у кожному запиті — сама суть ADR-0006 обґрунтування). Очікуй, що забере суттєво більше контексту/токенів, ніж міграції хвиль 1-3.
-7. Закривши хвилю 4 — той самий ритуал: `tracker.md` + файл задачі → `[x]`, окремий коміт, `SDD-Task`/`SDD-AC`/`Decision: none` трейлери (D-101-хук перевірить `tracker.md` автоматично).
+6. Т10 — **`layer: infra`, estimate L** — найбільша задача поки що (CRUD проти всіх 4 таблиць life-area-card — `card`, `metric_block`, `entry`, `card_lifecycle_event` — non-disclosure 404 через `owner_user_id` у кожному запиті, один запит на кожен із 7 індексів `data-model.md §Indexes`, EXPLAIN-тест на використання кожного). Очікуй, що забере суттєво більше контексту/токенів, ніж міграції хвиль 1-3.
+7. Закривши T10 (і тим самим хвилю 4) — той самий ритуал: `tracker.md` + файл задачі → `[x]`, окремий коміт, `SDD-Task`/`SDD-AC`/`Decision: none` трейлери (D-101-хук перевірить `tracker.md` автоматично).
 
 **Технічний урок (важливо при запуску паралельних хвиль 5/7):** `Workflow` з `isolation: 'worktree'` створює worktree від гілки `main`, НЕ від поточної гілки сесії — після прогону треба вручну `git merge` кожну worktree-гілку назад у `proof/sdd-life-area-card` (перевірено на хвилі T8/T11/T12/T24 — 4 злиття, 1 реальний конфлікт у `tracker.md`, вирішено вручну).
 
