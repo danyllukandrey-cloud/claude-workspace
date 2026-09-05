@@ -40,7 +40,8 @@ export interface CardWithProgress {
   card: CardRecord;
   metricBlocks: MetricBlockProgress[];
   /**
-   * Агрегат картки (AC-09): середнє `share` серед bounded-блоків. Ongoing-блоки
+   * Агрегат картки (AC-09, формула затверджена D-105, закриває ISS-33):
+   * середнє `share` серед bounded-блоків. Ongoing-блоки
    * не мають частки (Critical flow 6 -- показуються як накопичена кількість,
    * не відсоток), тож у середнє не входять. Немає жодного bounded-блоку
    * (декларативна картка без метрики, AC-08, чи лише ongoing-блоки) -- агрегат null.

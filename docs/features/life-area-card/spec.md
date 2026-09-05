@@ -193,6 +193,8 @@ feature_size: "M"
 **When** the user opens the card
 **Then** the system shows the computed share of completion per metric-block and the card's aggregated progress
 
+**Aggregate formula (confirmed 2026-09-06, closes ISS-33):** the arithmetic mean of the share of every bounded metric-block on the card. Ongoing metric-blocks (AC-05, no share, only an accumulated count) are excluded from the average — a card with no bounded metric-block has no aggregate at all (`null`), not zero.
+
 ### AC-09b (US-04) — domain invariant (concurrent edge of AC-09)
 
 **Given** a user's metric-block count exceeds its stated goal
