@@ -411,6 +411,19 @@ export async function insertEntry(
   return toEntryRecord(rows[0]);
 }
 
+/**
+ * Знаходить запис лише за власним id, без прив'язки до картки (T19, ISS-32) --
+ * PATCH /entries/{entryId} контракту передає лише entryId, не картку -- бекенд
+ * сам визначає, якій картці він належить (record.cardId), не довіряючи
+ * заявленому викликачем значенню (той самий підхід, що findMetricBlockById для T17).
+ * Без власного owner_user_id (лише через card) -- перевірку власності над
+ * карткою робить use-case, ПІСЛЯ цього виклику.
+ */
+export async function findEntryById(db: Db, entryId: string): Promise<EntryRecord | null> {
+  const { rows } = await db.query<RawEntryRow>(`SELECT ${ENTRY_COLUMNS} FROM entry WHERE id = $1`, [entryId]);
+  return rows[0] ? toEntryRecord(rows[0]) : null;
+}
+
 /** idx_entry_metric_block -- сирі записи блоку для перерахунку прогресу (ADR-0001). */
 export async function listEntriesByMetricBlock(db: Db, metricBlockId: string): Promise<EntryRecord[]> {
   const { rows } = await db.query<RawEntryRow>(`SELECT ${ENTRY_COLUMNS} FROM entry WHERE metric_block_id = $1`, [

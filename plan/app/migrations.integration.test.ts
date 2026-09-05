@@ -1308,8 +1308,8 @@ describe('Хвиля 5, батч B — use-case шар (T16/T17/T18/T19/T20) —
         const beforeResolution = await listEntriesByMetricBlock(db, block.id);
         expect(beforeResolution.every((e) => e.status === 'pending')).toBe(true); // обидва pending -- конфлікт
 
-        const confirmed = await resolveEntry(db, { ownerUserId, cardId: card.id, entryId: first.id, resolution: 'confirm' });
-        const rejected = await resolveEntry(db, { ownerUserId, cardId: card.id, entryId: second.id, resolution: 'reject' });
+        const confirmed = await resolveEntry(db, { ownerUserId, entryId: first.id, status: 'confirmed' });
+        const rejected = await resolveEntry(db, { ownerUserId, entryId: second.id, status: 'rejected' });
 
         expect(confirmed.status).toBe('confirmed');
         expect(rejected.status).toBe('rejected');
@@ -1346,7 +1346,7 @@ describe('Хвиля 5, батч B — use-case шар (T16/T17/T18/T19/T20) —
         });
         expect(entry.status).toBe('pending');
 
-        const confirmed = await resolveEntry(db, { ownerUserId, cardId: card.id, entryId: entry.id, resolution: 'confirm' });
+        const confirmed = await resolveEntry(db, { ownerUserId, entryId: entry.id, status: 'confirmed' });
         expect(confirmed.status).toBe('confirmed');
       });
     } finally {
@@ -1378,12 +1378,46 @@ describe('Хвиля 5, батч B — use-case шар (T16/T17/T18/T19/T20) —
         });
         expect(entry.status).toBe('confirmed');
 
-        const rejected = await resolveEntry(db, { ownerUserId, cardId: card.id, entryId: entry.id, resolution: 'reject' });
+        const rejected = await resolveEntry(db, { ownerUserId, entryId: entry.id, status: 'rejected' });
         expect(rejected.status).toBe('rejected');
 
         const historyRow = (await listEntriesByCard(db, card.id)).find((e) => e.id === entry.id);
         expect(historyRow).not.toBeUndefined(); // рядок лишається читомим, не видалений
         expect(historyRow?.status).toBe('rejected');
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('T19 resolveEntry: чужий entryId (інший власник) відхиляється тим самим entry.not_found (ISS-32)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      await withUser(client, async (db, ownerUserId) => {
+        await withUser(client, async (_otherDb, otherOwnerUserId) => {
+          const foreignCard = await insertCard(db, { id: crypto.randomUUID(), ownerUserId: otherOwnerUserId, name: 'T19 foreign card' });
+          const foreignBlock = await insertMetricBlock(db, {
+            id: crypto.randomUUID(),
+            cardId: foreignCard.id,
+            label: 'Чужий блок',
+            unit: 'разів',
+          });
+          const foreignEntry = await insertEntry(db, {
+            id: crypto.randomUUID(),
+            metricBlockId: foreignBlock.id,
+            cardId: foreignCard.id,
+            amount: 1,
+          });
+
+          await expect(resolveEntry(db, { ownerUserId, entryId: foreignEntry.id, status: 'confirmed' })).rejects.toMatchObject({
+            code: 'entry.not_found',
+            httpStatus: 404,
+          });
+
+          const stillConfirmed = (await listEntriesByCard(db, foreignCard.id)).find((e) => e.id === foreignEntry.id);
+          expect(stillConfirmed?.status).toBe('confirmed'); // нічого не змінено
+        });
       });
     } finally {
       await client.end();

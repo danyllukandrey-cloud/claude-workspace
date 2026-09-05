@@ -29,4 +29,4 @@ status: "done"
 
 ## Notes
 
-Критик: PASS. Should-fix НЕ виправлено тут (архітектурне, записано [ISS-32](../../../ISSUES.md)): `ResolveEntryInput.cardId` не має відповідника в locked `PATCH /entries/{entryId}` (лише `entryId` у шляху) — майбутньому T23 нема звідки взяти `cardId` без додаткового запиту.
+Критик: PASS. Should-fix (`ResolveEntryInput.cardId` не мав відповідника в locked `PATCH /entries/{entryId}`) записано [ISS-32](../../../ISSUES.md), закрито того ж дня тим самим підходом, що ISS-30 (T17): `findEntryById` у `postgres-repo.ts`, `cardId` виводиться з `entry.cardId`, не приймається від викликача. Заразом [ISS-36](../../../ISSUES.md) — поле входу перейменовано з `resolution: 'confirm'/'reject'` на `status: 'confirmed'/'rejected'`, точно за `EntryResolve` контракту.
