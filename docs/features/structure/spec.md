@@ -216,6 +216,12 @@ feature_size: "M"
 **When** the user switches to a different subvariant within "за логікою" (not just between the three top-level modes of US-02)
 **Then** the system treats the switch the same way as AC-11b — every active position moves to a fixed base order under the new subvariant's grid, and the user re-arranges each card into it by dragging
 
+### AC-17 (US-03) — restored card has no cell
+
+**Given** a card is restored from `life-area-card`'s archive (`life-area-card/spec.md` AC-17, D-104) — its old position was closed at archival time and is never reopened
+**When** the restore completes
+**Then** the card appears at the bottom of the layout screen without an assigned cell, the same way a card without a position appears after a mode switch (AC-11b) — the user drags it onto a free cell themself, no automatic placement
+
 ## 6. Non-functional requirements
 
 | Aspect | Target | Measurement |
