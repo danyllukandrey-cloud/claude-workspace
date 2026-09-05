@@ -6,9 +6,9 @@
 | # | Task | Layer | Owner | Estimate | Blocked by | Status |
 |---|---|---|---|---|---|---|
 | T1 | Create card table | migration | TBD | S | — | done |
-| T2 | Create metric_block table | migration | TBD | S | T1 | todo |
+| T2 | Create metric_block table | migration | TBD | S | T1 | done |
 | T3 | Create entry table | migration | TBD | S | T1, T2 | todo |
-| T4 | Create card_lifecycle_event table | migration | TBD | S | T1 | todo |
+| T4 | Create card_lifecycle_event table | migration | TBD | S | T1 | done |
 | T5 | Add card.status column (soft archival) | migration | TBD | S | T1, T4 | todo |
 | T6 | Domain: progress calculation from raw events | domain | TBD | M | — | done |
 | T7 | Domain: entry status model | domain | TBD | M | — | done |
@@ -42,6 +42,6 @@
 | T35 | Ports: restoreCard + archived listCards handlers | ports | TBD | S | T33, T34 | todo |
 | T36 | UI: SCR-07 Архів карток | ui | TBD | M | T24, T35 | todo |
 | T37 | UI: SCR-02 rename state | ui | TBD | S | T24, T21 | todo |
-| T38 | Migration: add owner_user_id FK | migration | TBD | S | T1 | todo |
+| T38 | Migration: add owner_user_id FK | migration | TBD | S | T1 | done |
 
 **Total:** 38 tasks — 17 S + 18 M + 3 L. Доповнено 2026-08-29 (T32-T38, D-89) — 6 задач на розархівацію/архів/перейменування + 1 крос-фічева FK-міграція. Порівнянно з `agent` (30 задач до доповнення) — реалістично довше за одну сесію навіть у термінах size-matrix (M); у реальному часі — значно довше через темп проєкту (~8-12 год/тиждень, уточнено 2026-08-29 — стара оцінка 1-2 год/тиждень застаріла, [D-87](../../../DECISIONS.md#d-87)).

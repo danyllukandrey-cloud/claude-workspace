@@ -24,6 +24,11 @@ const README_PATH = join(__dirname, '..', 'MIGRATIONS.md');
 const TO_PROMOTE = [
   { slug: 'agent', staged: '01_create_app_user', name: 'create-app-user' },
   { slug: 'life-area-card', staged: '01_create_card', name: 'create-card' },
+  // Хвиля 2 (T2, T4, T38) -- T38 (07_add_owner_fk) іде ОСТАННІМ у цій групі: потребує
+  // і card (вище), і app_user (вище) уже застосованими.
+  { slug: 'life-area-card', staged: '02_create_metric_block', name: 'create-metric-block' },
+  { slug: 'life-area-card', staged: '04_create_card_lifecycle_event', name: 'create-card-lifecycle-event' },
+  { slug: 'life-area-card', staged: '07_add_owner_fk', name: 'add-card-owner-fk' },
 ];
 
 function readReadme() {

@@ -61,3 +61,86 @@ describe('migration 01_create_app_user (agent T1) — проти реально�
     }
   });
 });
+
+describe('migration 02_create_metric_block (T2) — проти реальної Neon', () => {
+  it('видалення card каскадно видаляє її metric_block (FK ON DELETE CASCADE)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      // card.owner_user_id має FK на app_user (T38) -- потрібен реальний рядок,
+      // "просто випадковий UUID" тепер відхилиться fk_card_owner_user.
+      const userId = crypto.randomUUID();
+      const cardId = crypto.randomUUID();
+      const blockId = crypto.randomUUID();
+      await client.query('INSERT INTO app_user (id, google_sub, email) VALUES ($1, $2, $3)', [
+        userId,
+        `test-t2-${userId}`,
+        't2@example.test',
+      ]);
+      await client.query('INSERT INTO card (id, owner_user_id, name) VALUES ($1, $2, $3)', [
+        cardId,
+        userId,
+        'T2 test card',
+      ]);
+      await client.query('INSERT INTO metric_block (id, card_id, label, unit) VALUES ($1, $2, $3, $4)', [
+        blockId,
+        cardId,
+        'Test block',
+        'items',
+      ]);
+
+      await client.query('DELETE FROM card WHERE id = $1', [cardId]);
+
+      const { rows } = await client.query('SELECT id FROM metric_block WHERE id = $1', [blockId]);
+      expect(rows).toHaveLength(0);
+
+      await client.query('DELETE FROM app_user WHERE id = $1', [userId]);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+describe('migration 04_create_card_lifecycle_event (T4) — проти реальної Neon', () => {
+  it('індекс idx_lifecycle_card_time на (card_id, occurred_at) реально існує', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      const { rows } = await client.query(
+        `SELECT indexdef FROM pg_indexes WHERE tablename = 'card_lifecycle_event' AND indexname = 'idx_lifecycle_card_time'`,
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].indexdef).toMatch(/\(card_id, occurred_at\)/);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+describe('migration 07_add_owner_fk (T38) — проти реальної Neon', () => {
+  it('видалення app_user каскадно видаляє його card (вмикає видалення акаунта, agent AC-17/D-89)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      const userId = crypto.randomUUID();
+      const cardId = crypto.randomUUID();
+      await client.query('INSERT INTO app_user (id, google_sub, email) VALUES ($1, $2, $3)', [
+        userId,
+        `test-t38-${userId}`,
+        't38@example.test',
+      ]);
+      await client.query('INSERT INTO card (id, owner_user_id, name) VALUES ($1, $2, $3)', [
+        cardId,
+        userId,
+        'T38 test card',
+      ]);
+
+      await client.query('DELETE FROM app_user WHERE id = $1', [userId]);
+
+      const { rows } = await client.query('SELECT id FROM card WHERE id = $1', [cardId]);
+      expect(rows).toHaveLength(0);
+    } finally {
+      await client.end();
+    }
+  });
+});
