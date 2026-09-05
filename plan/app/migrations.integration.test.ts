@@ -20,10 +20,14 @@ import {
   updateCard as updateCardRow,
   insertMetricBlock,
   listMetricBlocksByCard,
+  updateMetricBlock,
+  findMetricBlockByCardLabelUnit,
   insertEntry,
   listEntriesByMetricBlock,
   listEntriesByCard,
   listPendingEntriesByCard,
+  updateEntryStatus,
+  reassignEntriesToCard,
   insertLifecycleEvent,
   listLifecycleEventsByCard,
 } from './src/cards/life-area-card/infra/postgres-repo';
@@ -489,6 +493,114 @@ describe('T10 — Postgres repo (life-area-card) — проти реальної
       expect(capturedPlans[4]).toContain('idx_entry_card_recorded');
       expect(capturedPlans[5]).toContain('idx_entry_card_pending');
       expect(capturedPlans[6]).toContain('idx_lifecycle_card_time');
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('updateMetricBlock: перенесення на іншу картку + перейменування — готує T17', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      await withUser(client, async (db, ownerUserId) => {
+        const cardA = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'T17 source card' });
+        const cardB = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'T17 destination card' });
+        const block = await insertMetricBlock(db, { id: crypto.randomUUID(), cardId: cardA.id, label: 'Книги', unit: 'шт' });
+
+        const moved = await updateMetricBlock(db, block.id, { cardId: cardB.id, label: 'Книги (перенесено)' });
+        expect(moved?.cardId).toBe(cardB.id);
+        expect(moved?.label).toBe('Книги (перенесено)');
+        expect(moved?.unit).toBe('шт'); // unit не займали -- лишається як була
+
+        const onDestination = await listMetricBlocksByCard(db, cardB.id);
+        expect(onDestination.map((b) => b.id)).toContain(block.id);
+        const onSource = await listMetricBlocksByCard(db, cardA.id);
+        expect(onSource.map((b) => b.id)).not.toContain(block.id);
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('findMetricBlockByCardLabelUnit: реально знаходить колізію назва+одиниця (AC-15, готує T17)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      await withUser(client, async (db, ownerUserId) => {
+        const card = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'T17 collision card' });
+        const existing = await insertMetricBlock(db, { id: crypto.randomUUID(), cardId: card.id, label: 'Пробіжки', unit: 'км' });
+
+        const collision = await findMetricBlockByCardLabelUnit(db, card.id, 'Пробіжки', 'км');
+        expect(collision?.id).toBe(existing.id);
+
+        const noCollision = await findMetricBlockByCardLabelUnit(db, card.id, 'Пробіжки', 'милі');
+        expect(noCollision).toBeNull();
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('reassignEntriesToCard: перенесення блоку рухає й усі його записи (AC-14, готує T17)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      await withUser(client, async (db, ownerUserId) => {
+        const cardA = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'T17 entries source' });
+        const cardB = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'T17 entries destination' });
+        const block = await insertMetricBlock(db, { id: crypto.randomUUID(), cardId: cardA.id, label: 'Відтискання', unit: 'раз' });
+        const entry = await insertEntry(db, { id: crypto.randomUUID(), metricBlockId: block.id, cardId: cardA.id, amount: 10 });
+
+        await updateMetricBlock(db, block.id, { cardId: cardB.id });
+        await reassignEntriesToCard(db, block.id, cardB.id);
+
+        const onDestination = await listEntriesByCard(db, cardB.id);
+        expect(onDestination.map((e) => e.id)).toContain(entry.id);
+        const onSource = await listEntriesByCard(db, cardA.id);
+        expect(onSource.map((e) => e.id)).not.toContain(entry.id);
+        // idx_entry_metric_block і далі бачить запис під тим самим блоком, незалежно від картки.
+        expect((await listEntriesByMetricBlock(db, block.id)).map((e) => e.id)).toContain(entry.id);
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('updateEntryStatus: переводить pending -> confirmed/rejected, виставляє confirmed_at (готує T19)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      await withUser(client, async (db, ownerUserId) => {
+        const card = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'T19 card' });
+        const block = await insertMetricBlock(db, { id: crypto.randomUUID(), cardId: card.id, label: 'Читання', unit: 'сторінки' });
+        const entryA = await insertEntry(db, {
+          id: crypto.randomUUID(),
+          metricBlockId: block.id,
+          cardId: card.id,
+          amount: 5,
+          status: 'pending',
+        });
+        const entryB = await insertEntry(db, {
+          id: crypto.randomUUID(),
+          metricBlockId: block.id,
+          cardId: card.id,
+          amount: 5,
+          status: 'pending',
+        });
+
+        const confirmed = await updateEntryStatus(db, entryA.id, 'confirmed');
+        expect(confirmed?.status).toBe('confirmed');
+        expect(confirmed?.confirmedAt).not.toBeNull();
+
+        const rejected = await updateEntryStatus(db, entryB.id, 'rejected');
+        expect(rejected?.status).toBe('rejected');
+        expect(rejected?.confirmedAt).not.toBeNull();
+
+        // Запис лишається читомим напряму (AC-12), ніколи фізично не видаляється.
+        expect((await listEntriesByMetricBlock(db, block.id)).map((e) => e.id)).toEqual(
+          expect.arrayContaining([entryA.id, entryB.id])
+        );
+      });
     } finally {
       await client.end();
     }

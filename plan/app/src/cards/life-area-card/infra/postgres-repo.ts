@@ -262,6 +262,80 @@ export async function listMetricBlocksByCard(db: Db, cardId: string): Promise<Me
   return rows.map(toMetricBlockRecord);
 }
 
+/**
+ * Часткове оновлення блоку-метрики (T17 -- переносить на іншу картку через
+ * cardId, і/або перейменовує через label при колізії, AC-15). Той самий
+ * підхід, що й card.updateCard: лише передані поля міняються.
+ *
+ * Non-disclosure тут НЕ репозиторію відповідальність -- metric_block не має
+ * власного owner_user_id (лише через card), тому перевірку власності обох
+ * карток (джерела й призначення) робить use-case (T17) через findCardById
+ * ДО виклику цієї функції.
+ */
+export async function updateMetricBlock(
+  db: Db,
+  metricBlockId: string,
+  patch: {
+    cardId?: string;
+    label?: string;
+    unit?: string;
+    frequency?: string | null;
+    targetCount?: number | null;
+    isOngoing?: boolean;
+    targetDate?: string | null;
+  }
+): Promise<MetricBlockRecord | null> {
+  const sets: string[] = [];
+  const values: unknown[] = [];
+
+  const assign = (column: string, value: unknown) => {
+    values.push(value);
+    sets.push(`${column} = $${values.length}`);
+  };
+
+  if (patch.cardId !== undefined) assign('card_id', patch.cardId);
+  if (patch.label !== undefined) assign('label', patch.label);
+  if (patch.unit !== undefined) assign('unit', patch.unit);
+  if (patch.frequency !== undefined) assign('frequency', patch.frequency);
+  if (patch.targetCount !== undefined) assign('target_count', patch.targetCount);
+  if (patch.isOngoing !== undefined) assign('is_ongoing', patch.isOngoing);
+  if (patch.targetDate !== undefined) assign('target_date', patch.targetDate);
+
+  if (sets.length === 0) {
+    const { rows } = await db.query<RawMetricBlockRow>(
+      `SELECT ${METRIC_BLOCK_COLUMNS} FROM metric_block WHERE id = $1`,
+      [metricBlockId]
+    );
+    return rows[0] ? toMetricBlockRecord(rows[0]) : null;
+  }
+  sets.push('updated_at = now()');
+
+  values.push(metricBlockId);
+  const { rows } = await db.query<RawMetricBlockRow>(
+    `UPDATE metric_block SET ${sets.join(', ')} WHERE id = $${values.length} RETURNING ${METRIC_BLOCK_COLUMNS}`,
+    values
+  );
+  return rows[0] ? toMetricBlockRecord(rows[0]) : null;
+}
+
+/**
+ * Перевірка колізії назва+одиниця серед блоків картки-призначення (T17, AC-15) --
+ * "без newLabel при колізії відхиляє, не зливає мовчки" перевіряється саме цим
+ * читанням ДО перенесення.
+ */
+export async function findMetricBlockByCardLabelUnit(
+  db: Db,
+  cardId: string,
+  label: string,
+  unit: string
+): Promise<MetricBlockRecord | null> {
+  const { rows } = await db.query<RawMetricBlockRow>(
+    `SELECT ${METRIC_BLOCK_COLUMNS} FROM metric_block WHERE card_id = $1 AND label = $2 AND unit = $3`,
+    [cardId, label, unit]
+  );
+  return rows[0] ? toMetricBlockRecord(rows[0]) : null;
+}
+
 // --- entry -----------------------------------------------------------------
 
 interface RawEntryRow extends QueryResultRow {
@@ -346,6 +420,33 @@ export async function listPendingEntriesByCard(db: Db, cardId: string): Promise<
     [cardId]
   );
   return rows.map(toEntryRecord);
+}
+
+/**
+ * Переводить статус запису (T19 -- вирішення конфлікту AC-06, підтвердження
+ * після повернення агента AC-11, виправлення з історії AC-12). confirmed_at
+ * виставляється, коли статус переходить у confirmed чи rejected
+ * (data-model.md) -- НІКОЛИ не видаляє рядок, лише позначає (ADR-0002).
+ */
+export async function updateEntryStatus(db: Db, entryId: string, status: EntryStatusRow): Promise<EntryRecord | null> {
+  const { rows } = await db.query<RawEntryRow>(
+    `UPDATE entry
+     SET status = $1, confirmed_at = CASE WHEN $1 IN ('confirmed', 'rejected') THEN now() ELSE confirmed_at END
+     WHERE id = $2 RETURNING ${ENTRY_COLUMNS}`,
+    [status, entryId]
+  );
+  return rows[0] ? toEntryRecord(rows[0]) : null;
+}
+
+/**
+ * Переносить ВСІ записи блоку-метрики на нову картку (T17, AC-14) --
+ * entry.card_id денормалізовано для швидкого читання історії (data-model.md),
+ * тому перенесення блоку саме по собі НЕ рухає його записи: цей виклик
+ * обов'язковий у парі з updateMetricBlock({cardId}), інакше історія й
+ * прогрес на новій картці не побачать перенесені дані.
+ */
+export async function reassignEntriesToCard(db: Db, metricBlockId: string, newCardId: string): Promise<void> {
+  await db.query(`UPDATE entry SET card_id = $1 WHERE metric_block_id = $2`, [newCardId, metricBlockId]);
 }
 
 // --- card_lifecycle_event ----------------------------------------------
