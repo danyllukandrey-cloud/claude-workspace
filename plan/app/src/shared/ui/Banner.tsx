@@ -1,4 +1,4 @@
-// ЗАГОТОВКА (T24). Інлайн-повідомлення (успіх / помилка / офлайн).
+// Інлайн-повідомлення (успіх / помилка / офлайн) (T24).
 //
 // Ніколи alert/confirm — вони блокують інтерфейс (plan/app/CLAUDE.md
 // §Конвенції, design-system.md §Interaction & writing conventions, "Errors").
