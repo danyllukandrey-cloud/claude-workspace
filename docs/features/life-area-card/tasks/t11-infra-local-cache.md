@@ -7,7 +7,7 @@ acs: []
 files_hint: ["plan/app/src/cards/life-area-card/infra/local-cache.ts"]
 owner: "TBD"
 estimate: "M"
-status: "todo"
+status: "done"
 ---
 
 # T11 — Infra: local offline cache
@@ -22,10 +22,10 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Integration test: картка й історія відкриваються з кешу без мережі
-- [ ] Integration test: запис офлайн приймається, лишається «в очікуванні» до підключення й підтвердження
-- [ ] Integration test: локальний розрахунок прогресу з кешу дає той самий результат, що бекенд над тими самими подіями
-- [ ] lint + vet clean
+- [x] Integration test: картка й історія відкриваються з кешу без мережі
+- [x] Integration test: запис офлайн приймається, лишається «в очікуванні» до підключення й підтвердження
+- [x] Integration test: локальний розрахунок прогресу з кешу дає той самий результат, що бекенд над тими самими подіями
+- [x] lint + vet clean
 
 ## Notes
 
