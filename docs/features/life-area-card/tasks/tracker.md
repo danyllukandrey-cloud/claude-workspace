@@ -16,7 +16,7 @@
 | T9 | Domain: card lifecycle states | domain | TBD | S | — | todo |
 | T10 | Infra: Postgres repo | infra | TBD | L | T2, T3, T4, T5 | todo |
 | T11 | Infra: local offline cache | infra | TBD | M | — | todo |
-| T12 | Infra: Claude client for suspicious-data check | infra | TBD | M | — | todo |
+| T12 | Infra: Claude client for suspicious-data check | infra | TBD | M | — | done |
 | T13 | App: createCard use-case | app | TBD | S | T9, T10 | todo |
 | T14 | App: updateCard use-case | app | TBD | S | T9, T10 | todo |
 | T15 | App: archiveCard use-case | app | TBD | S | T9, T10 | todo |
