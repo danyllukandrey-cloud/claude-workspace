@@ -5,7 +5,7 @@
 
 | # | Task | Layer | Owner | Estimate | Blocked by | Status |
 |---|---|---|---|---|---|---|
-| T1 | Create card table | migration | TBD | S | — | todo |
+| T1 | Create card table | migration | TBD | S | — | done |
 | T2 | Create metric_block table | migration | TBD | S | T1 | todo |
 | T3 | Create entry table | migration | TBD | S | T1, T2 | todo |
 | T4 | Create card_lifecycle_event table | migration | TBD | S | T1 | todo |

@@ -7,7 +7,7 @@ acs: ["AC-06"]
 files_hint: ["docs/features/agent/migrations/01_create_app_user.up.sql", "docs/features/agent/migrations/01_create_app_user.down.sql"]
 owner: "TBD"
 estimate: "S"
-status: "todo"
+status: "done"
 ---
 
 # T1 — Create app_user table
@@ -22,9 +22,9 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Міграція застосовується й відкатується без помилок на локальному PostgreSQL
-- [ ] `UNIQUE` на `google_sub` перевірено тестом (дублікат `google_sub` відхиляється)
-- [ ] lint + vet clean
+- [x] Міграція застосовується й відкатується без помилок (проти реальної Neon, не локального PostgreSQL — Docker свідомо не піднімаємо, D-12/ADR-0006)
+- [x] `UNIQUE` на `google_sub` перевірено тестом (дублікат `google_sub` відхиляється)
+- [x] lint + vet clean
 
 ## Notes
 

@@ -10,5 +10,8 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    // *.integration.test.ts потребує мережі й реальної БД (ADR-0006) -- окрема команда
+    // npm run test:integration, не звичайний npm test (домен лишається швидким).
+    exclude: ['**/node_modules/**', '**/*.integration.test.ts'],
   },
 });

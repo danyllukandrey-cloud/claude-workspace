@@ -71,7 +71,7 @@ C4Container
 
 ## Migrations
 
-СУБД — PostgreSQL ([D-59](./DECISIONS.md#d-59), [ADR-0005](./adr/0005-backend-datastore.md)). Інструмент міграцій — **`node-pg-migrate`, без ORM** ([ADR-0006](adr/0006-backend-http-and-migration-tool.md), 2026-09-05). Скіли, що генерують SQL-міграції (`sdd:data-model`), **staging-ують** їх у `docs/features/<slug>/migrations/` з фіче-локальною нумерацією; живе дерево — **одне пласке `plan/app/migrations/` з наскрізною нумерацією через усі фічі** (крос-фічеві FK між `agent`/`life-area-card`/`structure` вимагають єдиного порядку promote, який фіче-локальні дерева виразити не можуть), мапа «живий номер ← застейджений файл» — `plan/app/migrations/README.md`.
+СУБД — PostgreSQL ([D-59](./DECISIONS.md#d-59), [ADR-0005](./adr/0005-backend-datastore.md)). Інструмент міграцій — **`node-pg-migrate`, без ORM** ([ADR-0006](adr/0006-backend-http-and-migration-tool.md), 2026-09-05). Скіли, що генерують SQL-міграції (`sdd:data-model`), **staging-ують** їх у `docs/features/<slug>/migrations/` з фіче-локальною нумерацією; живе дерево — **одне пласке `plan/app/migrations/` з наскрізною нумерацією через усі фічі** (крос-фічеві FK між `agent`/`life-area-card`/`structure` вимагають єдиного порядку promote, який фіче-локальні дерева виразити не можуть), мапа «живий номер ← застейджений файл» — `plan/app/MIGRATIONS.md` (не `migrations/README.md`, як спершу планував ADR-0006 — `node-pg-migrate` трактує кожен файл усередині `migrations/` як саму міграцію, тож мапа-документ мусить жити поза цією папкою; виявлено при першому реальному запуску, T1, 2026-09-05).
 
 ## Frontend / UI foundation (цільовий — тільки-но починаємо)
 

@@ -5,7 +5,7 @@
 
 | # | Task | Layer | Owner | Estimate | Blocked by | Status |
 |---|---|---|---|---|---|---|
-| T1 | Create app_user table | migration | TBD | S | — | todo |
+| T1 | Create app_user table | migration | TBD | S | — | done |
 | T2 | Create agent_proposal table | migration | TBD | S | T1 | todo |
 | T3 | Create imperative_rule table | migration | TBD | S | T1 | todo |
 | T4 | Create long_term_memory_fact table | migration | TBD | S | T1 | todo |
