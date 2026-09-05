@@ -58,16 +58,21 @@ paths:
       tags: [Structure]
       summary: Оновити декларацію та/або спосіб розкладки
       description: |
-        Частковий запис — можна передати лише `declaration`, лише `layoutMode`, чи обидва (AC-10,
-        AC-11). Конфлікт офлайн-синхронізації (два пристрої редагували одночасно) вирішується
-        last-write-wins за `updatedAt` клієнта проти збереженого значення (ADR-0002) — сервер
-        мовчки приймає останній за часом запис, явного прапорця конфлікту немає.
+        Частковий запис — можна передати `declaration`, `layoutMode`, `logicVariant`, чи будь-яку
+        комбінацію (AC-10, AC-11, AC-16). `logicVariant` має сенс лише коли (збережений або цим-таки
+        запитом установлений) `layoutMode = 'logic'` — той самий інваріант, що в `data-model.md`,
+        перевіряється тут, у app-шарі, не на рівні БД. Конфлікт офлайн-синхронізації (два пристрої
+        редагували одночасно) вирішується last-write-wins за `updatedAt` клієнта проти збереженого
+        значення (ADR-0002) — сервер мовчки приймає останній за часом запис, явного прапорця
+        конфлікту немає.
 
-        **Побічна дія (AC-11b):** якщо `layoutMode` змінюється на ЗНАЧЕННЯ, ВІДМІННЕ від
-        збереженого, сервер автоматично переміщує кожну активну позицію розкладки в базовий
-        (фіксований) порядок під нову схему клітинок — без окремого виклику клієнта. Клієнт після
-        відповіді читає `GET /structure/layout` і показує користувачу нову схему для повторного
-        розкладання перетягуванням.
+        **Побічна дія (AC-11b, AC-16b):** якщо `layoutMode` змінюється на ЗНАЧЕННЯ, ВІДМІННЕ від
+        збереженого, АБО якщо `logicVariant` змінюється на нове значення за незмінного
+        `layoutMode = 'logic'` (D-83) — сервер автоматично переміщує
+        кожну активну позицію розкладки в базовий (фіксований) порядок під нову схему клітинок —
+        без окремого виклику клієнта. Клієнт після відповіді читає `GET /structure/layout` і показує
+        користувачу нову схему для повторного розкладання перетягуванням. Той самий запис, що не
+        змінює жодного з двох полів, скидання не запускає.
       operationId: updateMyStructure
       requestBody:
         required: true
@@ -77,6 +82,7 @@ paths:
             example:
               declaration: "Навчання й здоров'я зараз важливіші за кар'єру."
               layoutMode: "logic"
+              logicVariant: "focus"
       responses:
         "200":
           description: OK
@@ -86,7 +92,12 @@ paths:
         "401":
           $ref: "#/components/responses/Error"
         "422":
-          description: невалідне значення layoutMode (не одне з трьох дозволених)
+          description: |
+            невалідне значення поля. Три окремі випадки, той самий статус і той самий envelope:
+            - `structure.invalid_layout_mode` — `layoutMode` не одне з `single`/`free`/`logic`/`null`
+            - `structure.invalid_logic_variant` — `logicVariant` не одне з `balance`/`focus`/`cause_effect`/`null`
+            - `structure.logic_variant_requires_logic_mode` — `logicVariant` задано (не `null`), а
+              результуючий `layoutMode` (збережений або цим запитом) не `logic` (AC-16)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -293,6 +304,13 @@ components:
           type: [string, "null"]
           enum: [single, free, logic, null]
           description: "null = ще не обрано (AC-09) — три варіанти групування, D-29"
+        logicVariant:
+          type: [string, "null"]
+          enum: [balance, focus, cause_effect, null]
+          description: |
+            підвид розкладки "за логікою" (US-12, AC-16, D-83) — balance = баланс навколо ядра,
+            focus = фокус і спостереження, cause_effect = причина і наслідок. Має сенс лише коли
+            layoutMode = 'logic'; null і при інших layoutMode, і поки підвид ще не обрано
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
@@ -302,6 +320,7 @@ components:
       properties:
         declaration: { type: [string, "null"] }
         layoutMode: { type: [string, "null"], enum: [single, free, logic, null] }
+        logicVariant: { type: [string, "null"], enum: [balance, focus, cause_effect, null] }
 
     LayoutPosition:
       type: object
