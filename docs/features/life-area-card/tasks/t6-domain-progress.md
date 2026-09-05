@@ -7,7 +7,7 @@ acs: ["AC-05", "AC-09", "AC-09b"]
 files_hint: ["plan/app/src/cards/life-area-card/domain/progress.ts"]
 owner: "TBD"
 estimate: "M"
-status: "todo"
+status: "done"
 ---
 
 # T6 — Domain: progress calculation from raw events
@@ -22,10 +22,10 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Unit test: частка = сума confirmed-записів / ціль
-- [ ] Unit test: перевищення цілі обмежується 1.0, надлишок повертається окремим полем
-- [ ] Unit test: `is_ongoing` без `target_count` повертає лише накопичену суму
-- [ ] lint + vet clean
+- [x] Unit test: частка = сума confirmed-записів / ціль
+- [x] Unit test: перевищення цілі обмежується 1.0, надлишок повертається окремим полем
+- [x] Unit test: `is_ongoing` без `target_count` повертає лише накопичену суму
+- [x] lint + vet clean
 
 ## Notes
 

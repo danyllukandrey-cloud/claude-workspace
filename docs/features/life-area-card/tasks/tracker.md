@@ -10,7 +10,7 @@
 | T3 | Create entry table | migration | TBD | S | T1, T2 | todo |
 | T4 | Create card_lifecycle_event table | migration | TBD | S | T1 | todo |
 | T5 | Add card.status column (soft archival) | migration | TBD | S | T1, T4 | todo |
-| T6 | Domain: progress calculation from raw events | domain | TBD | M | — | todo |
+| T6 | Domain: progress calculation from raw events | domain | TBD | M | — | done |
 | T7 | Domain: entry status model | domain | TBD | M | — | todo |
 | T8 | Domain: near-simultaneous conflict detection | domain | TBD | M | — | todo |
 | T9 | Domain: card lifecycle states | domain | TBD | S | — | todo |
