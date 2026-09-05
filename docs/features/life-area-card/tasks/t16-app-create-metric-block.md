@@ -7,7 +7,7 @@ acs: ["AC-05", "AC-07", "AC-08"]
 files_hint: ["plan/app/src/cards/life-area-card/app/create-metric-block.ts"]
 owner: "TBD"
 estimate: "M"
-status: "todo"
+status: "done"
 ---
 
 # T16 — App: createMetricBlock use-case
@@ -22,7 +22,7 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Integration test: блок з фіксованою ціллю створюється
-- [ ] Integration test: `is_ongoing: true` створюється без `target_date`
-- [ ] Integration test: картка без жодного виклику цього use-case лишається декларативною (T9)
-- [ ] lint + vet clean
+- [x] Integration test: блок з фіксованою ціллю створюється
+- [x] Integration test: `is_ongoing: true` створюється без `target_date`
+- [x] Integration test: картка без жодного виклику цього use-case лишається декларативною (T9)
+- [x] lint + vet clean

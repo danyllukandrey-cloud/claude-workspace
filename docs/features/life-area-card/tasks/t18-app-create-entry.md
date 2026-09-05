@@ -7,7 +7,7 @@ acs: ["AC-01", "AC-06", "AC-11"]
 files_hint: ["plan/app/src/cards/life-area-card/app/create-entry.ts"]
 owner: "TBD"
 estimate: "M"
-status: "todo"
+status: "done"
 ---
 
 # T18 — App: createEntry use-case
@@ -22,6 +22,10 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Integration test: щасливий шлях → `confirmed`, прогрес оновлюється
-- [ ] Integration test: конфліктний запис → обидва `pending`, прогрес не змінюється
-- [ ] lint + vet clean
+- [x] Integration test: щасливий шлях → `confirmed`, прогрес оновлюється
+- [x] Integration test: конфліктний запис → обидва `pending`, прогрес не змінюється
+- [x] lint + vet clean
+
+## Notes
+
+Критик знайшов blocker, виправлено в тому ж коміті: не було перевірки, що `metricBlockId` справді належить переданій картці — власник валідної картки міг підсунути чужий/довільний блок (діра в межі авторизації AC-04). Додано `listMetricBlocksByCard(cardId).find()`, той самий підхід, що T17. Заразом виправлено should-fix (конфлікт враховував уже `rejected` записи) і вирівняно код помилки на контракт (`metric_block.not_found`, єдиний код для обох 404-причин цього ендпоінту).

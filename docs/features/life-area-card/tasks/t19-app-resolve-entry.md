@@ -7,7 +7,7 @@ acs: ["AC-06", "AC-11", "AC-12"]
 files_hint: ["plan/app/src/cards/life-area-card/app/resolve-entry.ts"]
 owner: "TBD"
 estimate: "M"
-status: "todo"
+status: "done"
 ---
 
 # T19 — App: resolveEntry use-case
@@ -22,7 +22,11 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Integration test: вирішення конфлікту → один `confirmed`, інший `rejected`, прогрес перераховується
-- [ ] Integration test: підтвердження pending-запису після повернення агента → `confirmed`
-- [ ] Integration test: виправлення з історії → `rejected`, запис лишається читомим
-- [ ] lint + vet clean
+- [x] Integration test: вирішення конфлікту → один `confirmed`, інший `rejected`, прогрес перераховується
+- [x] Integration test: підтвердження pending-запису після повернення агента → `confirmed`
+- [x] Integration test: виправлення з історії → `rejected`, запис лишається читомим
+- [x] lint + vet clean
+
+## Notes
+
+Критик: PASS. Should-fix НЕ виправлено тут (архітектурне, записано [ISS-32](../../../ISSUES.md)): `ResolveEntryInput.cardId` не має відповідника в locked `PATCH /entries/{entryId}` (лише `entryId` у шляху) — майбутньому T23 нема звідки взяти `cardId` без додаткового запиту.
