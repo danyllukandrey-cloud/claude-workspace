@@ -2,6 +2,12 @@
 // канонічні рядки-обʼєкти (як реальний pg.Pool.query). Інтеграційний тест проти
 // справжньої Neon додасть орхестратор після злиття хвилі (спільний
 // migrations.integration.test.ts, щоб уникнути конфлікту).
+//
+// Порядок запитів use-case (ISS-30): findMetricBlockById + findCardById(target)
+// паралельно (Promise.all, метричний блок оцінюється першим за порядком у
+// масиві -- тому query[0] завжди SELECT metric_block, query[1] завжди SELECT
+// card WHERE id = targetCardId), потім findCardById(source) окремо, лише якщо
+// блок знайдено (query[2]).
 
 import { describe, it, expect, vi } from 'vitest';
 import { transferMetricBlock } from './transfer-metric-block';
@@ -51,15 +57,14 @@ function updatedBlockRow(overrides: Partial<typeof METRIC_BLOCK_ROW> = {}) {
 }
 
 describe('transferMetricBlock use-case', () => {
-  // AC-14 happy path: обидві картки належать власнику, колізії немає --
-  // updateMetricBlock({cardId, label}) виконується ПЕРЕД reassignEntriesToCard,
-  // з правильними id/targetCardId.
+  // AC-14 happy path: блок і обидві картки належать власнику, колізії немає --
+  // updateMetricBlock({cardId, label}) виконується ПЕРЕД reassignEntriesToCard.
   it('transfers the block and its entries when there is no label+unit collision', async () => {
     const query = vi
       .fn()
-      .mockResolvedValueOnce({ rows: [SOURCE_CARD_ROW] }) // findCardById(source)
+      .mockResolvedValueOnce({ rows: [METRIC_BLOCK_ROW] }) // findMetricBlockById
       .mockResolvedValueOnce({ rows: [TARGET_CARD_ROW] }) // findCardById(target)
-      .mockResolvedValueOnce({ rows: [METRIC_BLOCK_ROW] }) // listMetricBlocksByCard(source)
+      .mockResolvedValueOnce({ rows: [SOURCE_CARD_ROW] }) // findCardById(source, з block.cardId)
       .mockResolvedValueOnce({ rows: [] }) // findMetricBlockByCardLabelUnit -- no collision
       .mockResolvedValueOnce({ rows: [updatedBlockRow()] }) // updateMetricBlock
       .mockResolvedValueOnce({ rows: [] }); // reassignEntriesToCard
@@ -67,7 +72,6 @@ describe('transferMetricBlock use-case', () => {
 
     const result = await transferMetricBlock(db, {
       ownerUserId: 'user-1',
-      sourceCardId: 'card-source',
       targetCardId: 'card-target',
       metricBlockId: 'block-1',
     });
@@ -75,6 +79,12 @@ describe('transferMetricBlock use-case', () => {
     expect(result.cardId).toBe('card-target');
     expect(result.label).toBe('Пробіжка');
     expect(query).toHaveBeenCalledTimes(6);
+
+    expect(query.mock.calls[0][0]).toMatch(/FROM metric_block WHERE id = \$1/);
+    expect(query.mock.calls[1][0]).toMatch(/FROM card WHERE/);
+    expect(query.mock.calls[1][1]).toEqual(['card-target', 'user-1']);
+    expect(query.mock.calls[2][0]).toMatch(/FROM card WHERE/);
+    expect(query.mock.calls[2][1]).toEqual(['card-source', 'user-1']);
 
     // findMetricBlockByCardLabelUnit -- перевіряємо під поточною назвою блоку (newLabel не передано).
     expect(query.mock.calls[3][0]).toMatch(/FROM metric_block WHERE card_id = \$1 AND label = \$2 AND unit = \$3/);
@@ -94,19 +104,14 @@ describe('transferMetricBlock use-case', () => {
   it('rejects with a collision error and never writes when the target card already has the same label+unit and no newLabel is given', async () => {
     const query = vi
       .fn()
-      .mockResolvedValueOnce({ rows: [SOURCE_CARD_ROW] }) // findCardById(source)
+      .mockResolvedValueOnce({ rows: [METRIC_BLOCK_ROW] }) // findMetricBlockById
       .mockResolvedValueOnce({ rows: [TARGET_CARD_ROW] }) // findCardById(target)
-      .mockResolvedValueOnce({ rows: [METRIC_BLOCK_ROW] }) // listMetricBlocksByCard(source)
+      .mockResolvedValueOnce({ rows: [SOURCE_CARD_ROW] }) // findCardById(source)
       .mockResolvedValueOnce({ rows: [OTHER_METRIC_BLOCK_ROW] }); // findMetricBlockByCardLabelUnit -- collision
     const db: Db = { query };
 
     await expect(
-      transferMetricBlock(db, {
-        ownerUserId: 'user-1',
-        sourceCardId: 'card-source',
-        targetCardId: 'card-target',
-        metricBlockId: 'block-1',
-      })
+      transferMetricBlock(db, { ownerUserId: 'user-1', targetCardId: 'card-target', metricBlockId: 'block-1' })
     ).rejects.toMatchObject({ code: 'metric_block.name_collision', httpStatus: 409 });
 
     expect(query).toHaveBeenCalledTimes(4); // жодного UPDATE після колізії
@@ -118,9 +123,9 @@ describe('transferMetricBlock use-case', () => {
   it('completes the transfer under newLabel when the caller already resolved the collision', async () => {
     const query = vi
       .fn()
-      .mockResolvedValueOnce({ rows: [SOURCE_CARD_ROW] }) // findCardById(source)
+      .mockResolvedValueOnce({ rows: [METRIC_BLOCK_ROW] }) // findMetricBlockById
       .mockResolvedValueOnce({ rows: [TARGET_CARD_ROW] }) // findCardById(target)
-      .mockResolvedValueOnce({ rows: [METRIC_BLOCK_ROW] }) // listMetricBlocksByCard(source)
+      .mockResolvedValueOnce({ rows: [SOURCE_CARD_ROW] }) // findCardById(source)
       .mockResolvedValueOnce({ rows: [] }) // findMetricBlockByCardLabelUnit(newLabel) -- no collision under new name
       .mockResolvedValueOnce({ rows: [updatedBlockRow({ label: 'Пробіжка (2)' })] }) // updateMetricBlock
       .mockResolvedValueOnce({ rows: [] }); // reassignEntriesToCard
@@ -128,7 +133,6 @@ describe('transferMetricBlock use-case', () => {
 
     const result = await transferMetricBlock(db, {
       ownerUserId: 'user-1',
-      sourceCardId: 'card-source',
       targetCardId: 'card-target',
       metricBlockId: 'block-1',
       newLabel: 'Пробіжка (2)',
@@ -148,16 +152,15 @@ describe('transferMetricBlock use-case', () => {
   it('rejects even when the given newLabel itself collides in the target card', async () => {
     const query = vi
       .fn()
-      .mockResolvedValueOnce({ rows: [SOURCE_CARD_ROW] })
-      .mockResolvedValueOnce({ rows: [TARGET_CARD_ROW] })
       .mockResolvedValueOnce({ rows: [METRIC_BLOCK_ROW] })
+      .mockResolvedValueOnce({ rows: [TARGET_CARD_ROW] })
+      .mockResolvedValueOnce({ rows: [SOURCE_CARD_ROW] })
       .mockResolvedValueOnce({ rows: [OTHER_METRIC_BLOCK_ROW] }); // collision under newLabel too
     const db: Db = { query };
 
     await expect(
       transferMetricBlock(db, {
         ownerUserId: 'user-1',
-        sourceCardId: 'card-source',
         targetCardId: 'card-target',
         metricBlockId: 'block-1',
         newLabel: 'Плавання',
@@ -165,63 +168,55 @@ describe('transferMetricBlock use-case', () => {
     ).rejects.toMatchObject({ code: 'metric_block.name_collision', httpStatus: 409 });
   });
 
-  // Non-disclosure (AC-04): чужа/неіснуюча картка-джерело -- AppError('card.not_found', 404),
-  // і жодного подальшого читання блоків.
-  it('throws card.not_found for a foreign or missing source card', async () => {
+  // Non-disclosure (ISS-30): metricBlockId, що взагалі не існує -- ОДИН код
+  // 404 (card.not_found), не окремий metric_block.not_found -- контракт не
+  // розрізняє причину. findCardById(target) все одно виконується паралельно
+  // (Promise.all), findCardById(source) НЕ викликається (блоку немає -- нема
+  // з чиєю карткою звіряти).
+  it('throws card.not_found when the metric block does not exist at all', async () => {
     const query = vi
       .fn()
-      .mockResolvedValueOnce({ rows: [] }) // findCardById(source) -- not found
+      .mockResolvedValueOnce({ rows: [] }) // findMetricBlockById -- not found
       .mockResolvedValueOnce({ rows: [TARGET_CARD_ROW] }); // findCardById(target)
     const db: Db = { query };
 
     await expect(
-      transferMetricBlock(db, {
-        ownerUserId: 'user-1',
-        sourceCardId: 'not-mine',
-        targetCardId: 'card-target',
-        metricBlockId: 'block-1',
-      })
+      transferMetricBlock(db, { ownerUserId: 'user-1', targetCardId: 'card-target', metricBlockId: 'block-does-not-exist' })
     ).rejects.toMatchObject({ code: 'card.not_found', httpStatus: 404 });
-    expect(query).toHaveBeenCalledTimes(2); // обидва findCardById виконались (Promise.all), далі нічого
+    expect(query).toHaveBeenCalledTimes(2); // без третього виклику (findCardById(source))
   });
 
-  // Non-disclosure (AC-04): чужа/неіснуюча картка-призначення -- та сама форма помилки.
+  // Non-disclosure (ISS-30): блок існує, але належить картці ІНШОГО власника --
+  // findCardById(source) з block.cardId поверне null (non-disclosure), той
+  // самий код card.not_found, що й для неіснуючого блоку -- не можна
+  // розрізнити ці два випадки ззовні.
+  it('throws card.not_found when the metric block belongs to a foreign card', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [METRIC_BLOCK_ROW] }) // findMetricBlockById -- існує
+      .mockResolvedValueOnce({ rows: [TARGET_CARD_ROW] }) // findCardById(target)
+      .mockResolvedValueOnce({ rows: [] }); // findCardById(source) -- чужа картка, non-disclosure null
+    const db: Db = { query };
+
+    await expect(
+      transferMetricBlock(db, { ownerUserId: 'user-1', targetCardId: 'card-target', metricBlockId: 'block-1' })
+    ).rejects.toMatchObject({ code: 'card.not_found', httpStatus: 404 });
+  });
+
+  // Non-disclosure: чужа/неіснуюча картка-призначення -- та сама форма помилки.
+  // Блок і картка-джерело в порядку (findCardById(source) усе одно викликається
+  // паралельно з чеканням на targetCard -- Promise.all не зупиняється завчасно),
+  // лише targetCard відсутня.
   it('throws card.not_found for a foreign or missing target card', async () => {
     const query = vi
       .fn()
-      .mockResolvedValueOnce({ rows: [SOURCE_CARD_ROW] })
-      .mockResolvedValueOnce({ rows: [] }); // findCardById(target) -- not found
+      .mockResolvedValueOnce({ rows: [METRIC_BLOCK_ROW] }) // findMetricBlockById
+      .mockResolvedValueOnce({ rows: [] }) // findCardById(target) -- not found
+      .mockResolvedValueOnce({ rows: [SOURCE_CARD_ROW] }); // findCardById(source) -- своя, не причина помилки
     const db: Db = { query };
 
     await expect(
-      transferMetricBlock(db, {
-        ownerUserId: 'user-1',
-        sourceCardId: 'card-source',
-        targetCardId: 'not-mine',
-        metricBlockId: 'block-1',
-      })
+      transferMetricBlock(db, { ownerUserId: 'user-1', targetCardId: 'not-mine', metricBlockId: 'block-1' })
     ).rejects.toMatchObject({ code: 'card.not_found', httpStatus: 404 });
-    expect(query).toHaveBeenCalledTimes(2);
-  });
-
-  // Блок, що переноситься, не знайдено серед блоків картки-джерела -- окрема
-  // помилка (не card.not_found), бо обидві картки коректні, бракує саме блоку.
-  it('throws metric_block.not_found when the block does not belong to the source card', async () => {
-    const query = vi
-      .fn()
-      .mockResolvedValueOnce({ rows: [SOURCE_CARD_ROW] })
-      .mockResolvedValueOnce({ rows: [TARGET_CARD_ROW] })
-      .mockResolvedValueOnce({ rows: [OTHER_METRIC_BLOCK_ROW] }); // listMetricBlocksByCard -- no matching id
-    const db: Db = { query };
-
-    await expect(
-      transferMetricBlock(db, {
-        ownerUserId: 'user-1',
-        sourceCardId: 'card-source',
-        targetCardId: 'card-target',
-        metricBlockId: 'block-does-not-exist',
-      })
-    ).rejects.toMatchObject({ code: 'metric_block.not_found', httpStatus: 404 });
-    expect(query).toHaveBeenCalledTimes(3);
   });
 });

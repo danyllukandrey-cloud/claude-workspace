@@ -1059,7 +1059,6 @@ describe('Хвиля 5, батч B — use-case шар (T16/T17/T18/T19/T20) —
 
         const result = await transferMetricBlock(db, {
           ownerUserId,
-          sourceCardId: sourceCard.id,
           targetCardId: targetCard.id,
           metricBlockId: block.id,
         });
@@ -1093,7 +1092,6 @@ describe('Хвиля 5, батч B — use-case шар (T16/T17/T18/T19/T20) —
         await expect(
           transferMetricBlock(db, {
             ownerUserId,
-            sourceCardId: sourceCard.id,
             targetCardId: targetCard.id,
             metricBlockId: block.id,
           })
@@ -1101,6 +1099,39 @@ describe('Хвиля 5, батч B — use-case шар (T16/T17/T18/T19/T20) —
 
         const stillInSource = await listMetricBlocksByCard(db, sourceCard.id);
         expect(stillInSource.map((b) => b.id)).toContain(block.id);
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('T17 transferMetricBlock: чужий metricBlockId (інший власник) відхиляється тим самим card.not_found (ISS-30)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      await withUser(client, async (db, ownerUserId) => {
+        const targetCard = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'T17 target (foreign block)' });
+
+        await withUser(client, async (otherDb, otherOwnerUserId) => {
+          const foreignSourceCard = await insertCard(otherDb, {
+            id: crypto.randomUUID(),
+            ownerUserId: otherOwnerUserId,
+            name: 'T17 foreign source card',
+          });
+          const foreignBlock = await insertMetricBlock(otherDb, {
+            id: crypto.randomUUID(),
+            cardId: foreignSourceCard.id,
+            label: 'Чужий блок',
+            unit: 'разів',
+          });
+
+          await expect(
+            transferMetricBlock(db, { ownerUserId, targetCardId: targetCard.id, metricBlockId: foreignBlock.id })
+          ).rejects.toMatchObject({ code: 'card.not_found', httpStatus: 404 });
+
+          const stillOnForeignCard = await listMetricBlocksByCard(otherDb, foreignSourceCard.id);
+          expect(stillOnForeignCard.map((b) => b.id)).toContain(foreignBlock.id); // нічого не перенесено
+        });
       });
     } finally {
       await client.end();
@@ -1119,7 +1150,6 @@ describe('Хвиля 5, батч B — use-case шар (T16/T17/T18/T19/T20) —
 
         const result = await transferMetricBlock(db, {
           ownerUserId,
-          sourceCardId: sourceCard.id,
           targetCardId: targetCard.id,
           metricBlockId: block.id,
           newLabel: 'Йога (2)',

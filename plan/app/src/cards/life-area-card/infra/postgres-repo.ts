@@ -319,6 +319,21 @@ export async function updateMetricBlock(
 }
 
 /**
+ * Знаходить блок-метрику лише за власним id, без прив'язки до картки (T17, ISS-30) --
+ * MetricBlockTransferRequest контракту передає лише sourceMetricBlockId, не картку,
+ * з якої переносимо (бекенд сам визначає джерело, не довіряє заявленому викликачем --
+ * саме так і задумано з самого початку, api-sync-report.md). Без власного
+ * owner_user_id (лише через card, як і решта функцій цього блоку) -- перевірку
+ * власності над карткою-джерелом (record.cardId) робить use-case, ПІСЛЯ цього виклику.
+ */
+export async function findMetricBlockById(db: Db, metricBlockId: string): Promise<MetricBlockRecord | null> {
+  const { rows } = await db.query<RawMetricBlockRow>(`SELECT ${METRIC_BLOCK_COLUMNS} FROM metric_block WHERE id = $1`, [
+    metricBlockId,
+  ]);
+  return rows[0] ? toMetricBlockRecord(rows[0]) : null;
+}
+
+/**
  * Перевірка колізії назва+одиниця серед блоків картки-призначення (T17, AC-15) --
  * "без newLabel при колізії відхиляє, не зливає мовчки" перевіряється саме цим
  * читанням ДО перенесення.

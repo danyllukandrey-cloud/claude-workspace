@@ -31,4 +31,6 @@ status: "done"
 
 Критик (окремий агент, читав diff) знайшов blocker, виправлено в тому ж коміті: код помилки колізії розходився з уже зафіксованим `contracts/openapi.yaml` (`metric_block.label_unit_collision` замість документованого `metric_block.name_collision`) — вирівняно на контракт.
 
-Критик знайшов ще одну прогалину, НЕ виправлену тут (записано [ISS-30](../../../ISSUES.md)): сигнатура вимагає `sourceCardId`, якого немає в `MetricBlockTransferRequest` контракту — майбутньому T21/T22 нема звідки його взяти без нового репо-lookup чи зміни контракту. Self-transfer edge case (`sourceCardId === targetCardId`) теж не оброблено — [ISS-31](../../../ISSUES.md).
+Критик знайшов ще одну прогалину — сигнатура вимагала `sourceCardId`, якого немає в `MetricBlockTransferRequest` контракту. Записано [ISS-30](../../../ISSUES.md), закрито того ж дня: `api-sync-report.md` показав задум із самого початку (бекенд сам визначає джерело через `findMetricBlockById`, не довіряє викликачу) — `sourceCardId` прибрано з сигнатури, усі 404-гілки вирівняно на єдиний контрактний код `card.not_found`.
+
+Self-transfer edge case (`metricBlockId`, чия картка збігається з `targetCardId`) досі не оброблено й не покрито тестом — [ISS-31](../../../ISSUES.md), відкрито.
