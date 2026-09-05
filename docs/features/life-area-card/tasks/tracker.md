@@ -28,7 +28,7 @@
 | T21 | Ports: cards handlers | ports | TBD | M | T13, T14, T15, T20 | todo |
 | T22 | Ports: metric-blocks handlers | ports | TBD | S | T16, T17 | todo |
 | T23 | Ports: entries handlers | ports | TBD | S | T18, T19 | todo |
-| T24 | UI: shared CardShell primitives | ui | TBD | M | — | todo |
+| T24 | UI: shared CardShell primitives | ui | TBD | M | — | done |
 | T25 | UI: SCR-01 Колода карток | ui | TBD | M | T24, T21 | todo |
 | T26 | UI: SCR-02/SCR-03 Картка (face+back) | ui | TBD | L | T24, T21, T22, T23 | todo |
 | T27 | UI: SCR-04 Форма створення | ui | TBD | S | T24, T21 | todo |
