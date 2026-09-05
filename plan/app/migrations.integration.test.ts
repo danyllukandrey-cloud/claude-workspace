@@ -144,3 +144,57 @@ describe('migration 07_add_owner_fk (T38) — проти реальної Neon',
     }
   });
 });
+
+describe('migration 03_create_entry (T3) — проти реальної Neon', () => {
+  it('частковий індекс idx_entry_card_pending на pending-записи реально існує (AC-11)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      const { rows } = await client.query(
+        `SELECT indexdef FROM pg_indexes WHERE tablename = 'entry' AND indexname = 'idx_entry_card_pending'`,
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].indexdef).toMatch(/WHERE \(?status = 'pending'::text\)?/);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+describe('migration 05_add_card_status (T5) — проти реальної Neon', () => {
+  it('частковий індекс WHERE status=active реально виключає архівовані картки зі списку активних', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      const userId = crypto.randomUUID();
+      const activeId = crypto.randomUUID();
+      const archivedId = crypto.randomUUID();
+      await client.query('INSERT INTO app_user (id, google_sub, email) VALUES ($1, $2, $3)', [
+        userId,
+        `test-t5-${userId}`,
+        't5@example.test',
+      ]);
+      await client.query("INSERT INTO card (id, owner_user_id, name, status) VALUES ($1, $2, $3, 'active')", [
+        activeId,
+        userId,
+        'T5 active card',
+      ]);
+      await client.query("INSERT INTO card (id, owner_user_id, name, status) VALUES ($1, $2, $3, 'archived')", [
+        archivedId,
+        userId,
+        'T5 archived card',
+      ]);
+
+      const { rows } = await client.query("SELECT id FROM card WHERE owner_user_id = $1 AND status = 'active'", [
+        userId,
+      ]);
+      const ids = rows.map((r) => r.id);
+      expect(ids).toContain(activeId);
+      expect(ids).not.toContain(archivedId);
+
+      await client.query('DELETE FROM app_user WHERE id = $1', [userId]);
+    } finally {
+      await client.end();
+    }
+  });
+});

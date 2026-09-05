@@ -7,9 +7,9 @@
 |---|---|---|---|---|---|---|
 | T1 | Create card table | migration | TBD | S | — | done |
 | T2 | Create metric_block table | migration | TBD | S | T1 | done |
-| T3 | Create entry table | migration | TBD | S | T1, T2 | todo |
+| T3 | Create entry table | migration | TBD | S | T1, T2 | done |
 | T4 | Create card_lifecycle_event table | migration | TBD | S | T1 | done |
-| T5 | Add card.status column (soft archival) | migration | TBD | S | T1, T4 | todo |
+| T5 | Add card.status column (soft archival) | migration | TBD | S | T1, T4 | done |
 | T6 | Domain: progress calculation from raw events | domain | TBD | M | — | done |
 | T7 | Domain: entry status model | domain | TBD | M | — | done |
 | T8 | Domain: near-simultaneous conflict detection | domain | TBD | M | — | done |

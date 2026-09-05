@@ -29,6 +29,9 @@ const TO_PROMOTE = [
   { slug: 'life-area-card', staged: '02_create_metric_block', name: 'create-metric-block' },
   { slug: 'life-area-card', staged: '04_create_card_lifecycle_event', name: 'create-card-lifecycle-event' },
   { slug: 'life-area-card', staged: '07_add_owner_fk', name: 'add-card-owner-fk' },
+  // Хвиля 3 (T3, T5)
+  { slug: 'life-area-card', staged: '03_create_entry', name: 'create-entry' },
+  { slug: 'life-area-card', staged: '05_add_card_status', name: 'add-card-status' },
 ];
 
 function readReadme() {

@@ -11,3 +11,5 @@
 | `1788614120296_create-metric-block.sql` | `life-area-card/migrations/02_create_metric_block.{up,down}.sql` |
 | `1788614120302_create-card-lifecycle-event.sql` | `life-area-card/migrations/04_create_card_lifecycle_event.{up,down}.sql` |
 | `1788614120305_add-card-owner-fk.sql` | `life-area-card/migrations/07_add_owner_fk.{up,down}.sql` |
+| `1788614654217_create-entry.sql` | `life-area-card/migrations/03_create_entry.{up,down}.sql` |
+| `1788614654221_add-card-status.sql` | `life-area-card/migrations/05_add_card_status.{up,down}.sql` |
