@@ -1511,4 +1511,28 @@ describe('Хвиля 5, батч B — use-case шар (T16/T17/T18/T19/T20) —
       await client.end();
     }
   });
+
+  it('T20 getCardWithProgress: чисто частотна ціль (target_count NULL, не ongoing) не падає, показує накопичену кількість (ISS-34)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
+    await client.connect();
+    try {
+      await withUser(client, async (db, ownerUserId) => {
+        const card = await insertCard(db, { id: crypto.randomUUID(), ownerUserId, name: 'T20 frequency-only card' });
+        // Свідомо: targetCount не передано (NULL у базі), isOngoing теж не передано (false) --
+        // data-model.md документує саме цю комбінацію як валідний стан ("чисто частотна ціль").
+        const block = await createMetricBlock(db, { ownerUserId, cardId: card.id, label: 'Медитація', unit: 'хвилини', frequency: 'daily' });
+        expect(block.targetCount).toBeNull();
+        expect(block.isOngoing).toBe(false);
+
+        await insertEntry(db, { id: crypto.randomUUID(), metricBlockId: block.id, cardId: card.id, amount: 10 });
+
+        const result = await getCardWithProgress(db, { ownerUserId, cardId: card.id });
+
+        expect(result.metricBlocks[0].progress).toMatchObject({ kind: 'ongoing', accumulated: 10 });
+        expect(result.aggregateProgress).toBeNull(); // єдиний блок без цілі -- не входить у середнє
+      });
+    } finally {
+      await client.end();
+    }
+  });
 });

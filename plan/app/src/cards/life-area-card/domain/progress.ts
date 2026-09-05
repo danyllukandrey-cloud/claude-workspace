@@ -38,14 +38,23 @@ function sumConfirmed(entries: RawEntry[]): number {
 export function computeProgress(goal: MetricBlockGoal, entries: RawEntry[]): Progress {
   const accumulated = sumConfirmed(entries);
 
-  if (goal.isOngoing) {
+  // Немає фіксованої цілі -- нема з чим рахувати частку, показуємо накопичену
+  // кількість як є (той самий вигляд відповіді, що й "постійний процес").
+  // Дві різні причини ведуть сюди (ISS-34, data-model.md target_count):
+  //   - isOngoing: true -- явний "постійний процес" (AC-05, без кінцевої дати);
+  //   - targetCount: null сам по собі -- "чисто частотна" ціль без підсумку
+  //     (data-model.md: "NULL для чисто частотних цілей без фіксованого
+  //     підсумку"), незалежно від isOngoing.
+  if (goal.isOngoing || goal.targetCount == null) {
     return { kind: 'ongoing', accumulated };
   }
 
-  if (goal.targetCount == null || goal.targetCount <= 0) {
+  // targetCount заданий (не null) -- залишається лише відкинути некоректне
+  // число (0 чи від'ємне), яке ділило б на неробочий знаменник.
+  if (goal.targetCount <= 0) {
     throw new ProgressValidationError(
-      'progress.target_count_required',
-      'targetCount обовʼязковий (додатне число) для цілі, що не є постійним процесом',
+      'progress.target_count_invalid',
+      'targetCount має бути додатним числом, якщо він заданий',
     );
   }
 

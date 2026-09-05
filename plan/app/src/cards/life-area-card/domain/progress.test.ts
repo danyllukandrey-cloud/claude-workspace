@@ -29,11 +29,11 @@ describe('computeProgress — bounded goal (targetCount set)', () => {
     expect(progress).toMatchObject({ kind: 'bounded', share: 1, overGoal: 4 });
   });
 
-  // Межа системи (та сама дисципліна, що й T9): бекенд/PWA можуть передати
-  // metric-block без targetCount і без isOngoing — ділити накопичену суму
-  // на null/0 дало б Infinity/NaN замість чіткої помилки.
-  it('rejects a bounded goal with no positive targetCount instead of dividing by a missing denominator', () => {
-    const goal: MetricBlockGoal = { targetCount: null, isOngoing: false };
+  // Межа системи (та сама дисципліна, що й T9): targetCount справді заданий,
+  // але некоректний (0 чи від'ємне число) — ділити накопичену суму на такий
+  // знаменник дало б Infinity/NaN замість чіткої помилки.
+  it('rejects a bounded goal whose targetCount is zero or negative instead of dividing by it', () => {
+    const goal: MetricBlockGoal = { targetCount: 0, isOngoing: false };
     expect(() => computeProgress(goal, [])).toThrow(ProgressValidationError);
   });
 });
@@ -52,5 +52,23 @@ describe('computeProgress — ongoing goal (no deadline)', () => {
     ];
     const progress = computeProgress(goal, entries);
     expect(progress).toMatchObject({ kind: 'ongoing', accumulated: 6 });
+  });
+});
+
+describe('computeProgress — purely frequency-based goal (ISS-34)', () => {
+  // data-model.md: "target_count NULL для чисто частотних цілей без
+  // фіксованого підсумку" -- ця комбінація (targetCount: null, isOngoing:
+  // false) раніше кидала ProgressValidationError, хоча база даних її прямо
+  // дозволяє (createMetricBlock, T16, нічим її не забороняє). Виправлено:
+  // немає числа, з яким рахувати частку -- показуємо накопичену кількість,
+  // той самий вигляд відповіді, що й для isOngoing.
+  it('returns only the accumulated count, never a share, when targetCount is null even without isOngoing', () => {
+    const goal: MetricBlockGoal = { targetCount: null, isOngoing: false };
+    const entries: RawEntry[] = [
+      { amount: 3, status: 'confirmed' },
+      { amount: 1, status: 'confirmed' },
+    ];
+    const progress = computeProgress(goal, entries);
+    expect(progress).toMatchObject({ kind: 'ongoing', accumulated: 4 });
   });
 });
