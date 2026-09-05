@@ -128,6 +128,46 @@ export async function findCardById(db: Db, ownerUserId: string, cardId: string):
   return rows[0] ? toCardRecord(rows[0]) : null;
 }
 
+/**
+ * Часткове оновлення картки (T14 name/description, T15/T33 status archived<->active) --
+ * лише передані поля міняються, решта лишається як була. Non-disclosure (AC-04):
+ * чужа картка й неіснуюча повертають однаковий null, нічого не пишеться.
+ */
+export async function updateCard(
+  db: Db,
+  ownerUserId: string,
+  cardId: string,
+  patch: { name?: string; description?: string | null; status?: CardStatusRow }
+): Promise<CardRecord | null> {
+  const sets: string[] = [];
+  const values: unknown[] = [];
+
+  if (patch.name !== undefined) {
+    values.push(patch.name);
+    sets.push(`name = $${values.length}`);
+  }
+  if (patch.description !== undefined) {
+    values.push(patch.description);
+    sets.push(`description = $${values.length}`);
+  }
+  if (patch.status !== undefined) {
+    values.push(patch.status);
+    sets.push(`status = $${values.length}`);
+  }
+  if (sets.length === 0) {
+    // Нічого змінювати -- non-disclosure все одно діє через звичайне читання.
+    return findCardById(db, ownerUserId, cardId);
+  }
+  sets.push('updated_at = now()');
+
+  values.push(cardId, ownerUserId);
+  const { rows } = await db.query<RawCardRow>(
+    `UPDATE card SET ${sets.join(', ')} WHERE id = $${values.length - 1} AND owner_user_id = $${values.length} RETURNING ${CARD_COLUMNS}`,
+    values
+  );
+  return rows[0] ? toCardRecord(rows[0]) : null;
+}
+
 /** idx_card_owner -- усі картки власника (AC-04). */
 export async function listCardsByOwner(db: Db, ownerUserId: string): Promise<CardRecord[]> {
   const { rows } = await db.query<RawCardRow>(`SELECT ${CARD_COLUMNS} FROM card WHERE owner_user_id = $1`, [ownerUserId]);
@@ -138,6 +178,15 @@ export async function listCardsByOwner(db: Db, ownerUserId: string): Promise<Car
 export async function listActiveCardsByOwner(db: Db, ownerUserId: string): Promise<CardRecord[]> {
   const { rows } = await db.query<RawCardRow>(
     `SELECT ${CARD_COLUMNS} FROM card WHERE owner_user_id = $1 AND status = 'active'`,
+    [ownerUserId]
+  );
+  return rows.map(toCardRecord);
+}
+
+/** idx_card_owner_archived (T32) -- перегляд архіву, найновіші зверху (AC-18, T34). */
+export async function listArchivedCardsByOwner(db: Db, ownerUserId: string): Promise<CardRecord[]> {
+  const { rows } = await db.query<RawCardRow>(
+    `SELECT ${CARD_COLUMNS} FROM card WHERE owner_user_id = $1 AND status = 'archived' ORDER BY updated_at DESC`,
     [ownerUserId]
   );
   return rows.map(toCardRecord);
