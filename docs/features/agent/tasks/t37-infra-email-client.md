@@ -4,7 +4,7 @@ title: "Infra: outbound email client"
 layer: "infra"
 deps: []
 acs: ["AC-20", "AC-20b"]
-files_hint: ["plan/backend/src/agent/infra/email-client.ts"]
+files_hint: ["plan/app/src/agent/infra/email-client.ts"]
 owner: "TBD"
 estimate: "M"
 status: "todo"

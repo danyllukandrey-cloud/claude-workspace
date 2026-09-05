@@ -4,7 +4,7 @@ title: "Infra: Google OAuth + app_user provisioning"
 layer: "infra"
 deps: ["T1"]
 acs: ["AC-06", "AC-13"]
-files_hint: ["plan/backend/src/agent/infra/auth.ts"]
+files_hint: ["plan/app/src/agent/infra/auth.ts"]
 owner: "TBD"
 estimate: "M"
 status: "todo"

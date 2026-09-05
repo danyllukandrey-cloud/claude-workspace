@@ -113,10 +113,12 @@ C4Context
 
 Шарова/гексагональна архітектура — той самий принцип, що вже діє на фронтенді (`domain/` + `ui/`, [ADR-0004 scaffold architecture](../../adr/0004-scaffold-architecture.md)): чиста доменна логіка окремо від доставки. На бекенді — `domain/app/infra/ports` ([ADR-0005](adr/0005-layered-domain-app-infra-ports-backend.md)), перша фіча, що реально встановлює цю конвенцію для «мінімального бекенда» (D-24). `worker` — окремий топ-рівень модуль коду, дзеркалить власний C4-контейнер ([ADR-0001](adr/0001-split-agent-across-three-surfaces.md)), за зразком того, як `structure` окремо від `cards/`.
 
-**Internal decomposition (backend, `plan/backend/src/`):**
+**Internal decomposition (backend, `plan/app/src/`):**
+
+> **Шлях виправлено 2026-09-05 ([D-102](../../DECISIONS.md#d-102), [ADR-0006](../../adr/0006-backend-http-and-migration-tool.md)).** Раніше тут стояло `plan/backend/src/` — окремий пакет, якого жодне рішення насправді не ухвалювало (та сама «практика без рішення», D-46, механізм 5). ADR-0006 обрав один пакет `plan/app/` для всього бекенда трьох фіч; `agent-worker` лишається окремим топ-рівневим модулем усередині нього, не окремим пакетом.
 
 ```
-plan/backend/src/
+plan/app/src/
 ├── agent/
 │   ├── domain/
 │   │   ├── proposal.ts       # стан пропозиції: одна активна, оновлення уточненням (AC-02b), без TTL

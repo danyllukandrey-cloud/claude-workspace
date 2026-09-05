@@ -4,7 +4,7 @@ title: "Wiring: register agent module in app-shell + backend composition root"
 layer: "wiring"
 deps: ["T14", "T26", "T27", "T28"]
 acs: []
-files_hint: ["plan/backend/src/agent/index.ts", "plan/app/src/agent/index.ts", "plan/app/src/app/main.tsx"]
+files_hint: ["plan/app/src/agent/index.ts", "plan/app/src/agent/index.ts", "plan/app/src/app/main.tsx"]
 owner: "TBD"
 estimate: "S"
 status: "todo"

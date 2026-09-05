@@ -4,7 +4,7 @@ title: "Ports: GET/POST /messages handlers"
 layer: "ports"
 deps: ["T16"]
 acs: ["AC-01", "AC-02b", "AC-03", "AC-04", "AC-05", "AC-09", "AC-10", "AC-10b", "AC-15"]
-files_hint: ["plan/backend/src/agent/ports/chat-handler.ts"]
+files_hint: ["plan/app/src/agent/ports/chat-handler.ts"]
 owner: "TBD"
 estimate: "M"
 status: "todo"

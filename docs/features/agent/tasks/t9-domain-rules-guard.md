@@ -4,7 +4,7 @@ title: "Domain: imperative rule model + guard-check enforcement"
 layer: "domain"
 deps: []
 acs: ["AC-07", "AC-08", "AC-12", "AC-14"]
-files_hint: ["plan/backend/src/agent/domain/rules.ts", "plan/backend/src/agent/domain/guard.ts"]
+files_hint: ["plan/app/src/agent/domain/rules.ts", "plan/app/src/agent/domain/guard.ts"]
 owner: "TBD"
 estimate: "M"
 status: "todo"

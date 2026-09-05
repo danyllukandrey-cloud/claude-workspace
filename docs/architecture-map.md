@@ -1,5 +1,5 @@
 ---
-status: current mode: greenfield-bootstrap updated_at: "2026-08-24" reflects_commit: "bb0863d"
+status: current mode: greenfield-bootstrap updated_at: "2026-09-05" reflects_commit: "bb0863d"
 ---
 
 # Architecture map — ПЛАН (claude-workspace)
@@ -16,7 +16,8 @@ status: current mode: greenfield-bootstrap updated_at: "2026-08-24" reflects_com
 - Тести: Vitest + React Testing Library (стандартна пара тестових інструментів для проєктів на Vite)
 - Лінтер / форматер: ESLint + Prettier (автоматично ловлять помилки стилю коду та вирівнюють форматування)
 - Дані: `localStorage` як локальний кеш (~2 МБ, через окремий шар абстракції) + мінімальний бекенд-сервер, що ховає ключ Claude API, веде синхронізацію між пристроями й Google-вхід ([D-24](./DECISIONS.md), оновлено 2026-08-16 — раніше тут стояло «без бекенду на старті»)
-- База бекенда: PostgreSQL ([D-59](./DECISIONS.md#d-59), [ADR-0005](./adr/0005-backend-datastore.md), оновлено 2026-08-23) — джерело правди для даних карток і синхронізації, поверх безкоштовного хостингу (Supabase/Neon/Render) на цьому етапі (Docker тут не потрібен — [D-12](DECISIONS.md#d-12) стосується виключно ізоляції агента розробки, не цієї бази)
+- База бекенда: PostgreSQL ([D-59](./DECISIONS.md#d-59), [ADR-0005](./adr/0005-backend-datastore.md), оновлено 2026-08-23) — джерело правди для даних карток і синхронізації, поверх [Neon](DECISIONS.md#d-96) (регіон Frankfurt, D-96 — обрано з трьох безкоштовних варіантів, Supabase/Render відхилені) (Docker тут не потрібен — [D-12](DECISIONS.md#d-12) стосується виключно ізоляції агента розробки, не цієї бази)
+- HTTP-шар бекенда: Express 5 + TypeScript, один пакет `plan/app` з композиційним коренем `plan/app/server/` ([ADR-0006](adr/0006-backend-http-and-migration-tool.md), оновлено 2026-09-05) — раніше цей рядок був порожній, бекенд не існував узагалі
 
 ## C4 — цільова система (що будуємо)
 
@@ -26,7 +27,7 @@ C4Container
     Person(user, "Користувач", "Людина, що планує сфери свого життя з телефону/браузера")
     Container(pwa, "ПЛАН (PWA Frontend)", "React + TypeScript + Vite", "Показує картки й Структуру, вбудований чат з агентом, рахує прогрес")
     ContainerDb(cache, "Локальний кеш", "Browser localStorage, ~2 МБ", "Кеш останнього стану в межах одного браузера/пристрою — не єдине сховище")
-    Container(backend, "Мінімальний бекенд", "сервер-проксі", "Ховає ключ Claude API, веде синхронізацію даних між пристроями, Google-вхід, OAuth конекторів")
+    Container(backend, "Мінімальний бекенд", "Node.js + Express 5 + TypeScript, ADR-0006", "Ховає ключ Claude API, веде синхронізацію даних між пристроями, Google-вхід, OAuth конекторів")
     Container(historySvc, "Сервіс літопису Структури", "окремий деплой-юніт", "Пише події зміни картини світу (перейменовано/переміщено/закрито; заведення картки тут не дублюється) — feature-scoped, ADR-0004 structure, не поширюється на решту продукту")
     System_Ext(claude, "Claude API", "Anthropic", "Агент: розбирає вільний текст, підтверджує запис, пояснює помилки")
     System_Ext(connectors, "Зовнішні сервіси", "Google Fit, Goodreads тощо (майбутнє)", "Джерела даних для блоків-метрик через конектори")
@@ -70,7 +71,7 @@ C4Container
 
 ## Migrations
 
-СУБД — PostgreSQL ([D-59](./DECISIONS.md#d-59), [ADR-0005](./adr/0005-backend-datastore.md)). Конкретний інструмент міграцій (наприклад `node-pg-migrate`, `Prisma Migrate`, `golang-migrate` тощо) ще не обраний — бекенд жодного разу не піднімався (DELIVERY-PLAN «Розробка» 5%). Скіли, що генерують SQL-міграції (`sdd:data-model`), поки що **staging-ують** їх у `docs/features/<slug>/migrations/` з фіче-локальною нумерацією — `implement` призначить реальний номер і підключить конкретний інструмент, коли бекенд вперше scaffold-иться.
+СУБД — PostgreSQL ([D-59](./DECISIONS.md#d-59), [ADR-0005](./adr/0005-backend-datastore.md)). Інструмент міграцій — **`node-pg-migrate`, без ORM** ([ADR-0006](adr/0006-backend-http-and-migration-tool.md), 2026-09-05). Скіли, що генерують SQL-міграції (`sdd:data-model`), **staging-ують** їх у `docs/features/<slug>/migrations/` з фіче-локальною нумерацією; живе дерево — **одне пласке `plan/app/migrations/` з наскрізною нумерацією через усі фічі** (крос-фічеві FK між `agent`/`life-area-card`/`structure` вимагають єдиного порядку promote, який фіче-локальні дерева виразити не можуть), мапа «живий номер ← застейджений файл» — `plan/app/migrations/README.md`.
 
 ## Frontend / UI foundation (цільовий — тільки-но починаємо)
 

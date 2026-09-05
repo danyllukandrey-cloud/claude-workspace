@@ -4,7 +4,7 @@ title: "Infra: Postgres repo (proposal, rules, memory, chat, audit)"
 layer: "infra"
 deps: ["T2", "T3", "T4", "T5", "T6"]
 acs: ["AC-01", "AC-02", "AC-07", "AC-08", "AC-09", "AC-12", "AC-14", "AC-15"]
-files_hint: ["plan/backend/src/agent/infra/postgres-repo.ts"]
+files_hint: ["plan/app/src/agent/infra/postgres-repo.ts"]
 owner: "TBD"
 estimate: "L"
 status: "todo"

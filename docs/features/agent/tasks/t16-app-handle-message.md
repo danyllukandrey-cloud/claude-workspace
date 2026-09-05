@@ -4,7 +4,7 @@ title: "App: handle-message use-case"
 layer: "app"
 deps: ["T8", "T10", "T13", "T18"]
 acs: ["AC-01", "AC-04", "AC-05", "AC-06", "AC-09", "AC-10", "AC-10b", "AC-15"]
-files_hint: ["plan/backend/src/agent/app/handle-message.ts"]
+files_hint: ["plan/app/src/agent/app/handle-message.ts"]
 owner: "TBD"
 estimate: "L"
 status: "todo"

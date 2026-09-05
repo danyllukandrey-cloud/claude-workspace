@@ -4,7 +4,7 @@ title: "Domain: hybrid memory model (short-term window + long-term facts)"
 layer: "domain"
 deps: []
 acs: ["AC-06", "AC-09", "AC-15"]
-files_hint: ["plan/backend/src/agent/domain/memory.ts"]
+files_hint: ["plan/app/src/agent/domain/memory.ts"]
 owner: "TBD"
 estimate: "M"
 status: "todo"

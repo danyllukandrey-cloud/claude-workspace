@@ -4,7 +4,7 @@ title: "Infra (agent-worker): schedule + report persistence"
 layer: "infra"
 deps: ["T7", "T13"]
 acs: ["AC-11"]
-files_hint: ["plan/backend/src/agent-worker/infra/schedule.ts"]
+files_hint: ["plan/app/src/agent-worker/infra/schedule.ts"]
 owner: "TBD"
 estimate: "M"
 status: "todo"

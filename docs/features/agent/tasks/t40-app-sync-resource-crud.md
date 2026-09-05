@@ -4,7 +4,7 @@ title: "App: sync-resource CRUD use-cases"
 layer: "app"
 deps: ["T35", "T13"]
 acs: ["AC-18"]
-files_hint: ["plan/backend/src/agent/app/sync-resources.ts"]
+files_hint: ["plan/app/src/agent/app/sync-resources.ts"]
 owner: "TBD"
 estimate: "S"
 status: "todo"

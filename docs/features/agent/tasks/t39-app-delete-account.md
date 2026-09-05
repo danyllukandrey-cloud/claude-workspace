@@ -4,7 +4,7 @@ title: "App: deleteAccount use-case"
 layer: "app"
 deps: ["T34", "T13"]
 acs: ["AC-17", "AC-17b"]
-files_hint: ["plan/backend/src/agent/app/delete-account.ts"]
+files_hint: ["plan/app/src/agent/app/delete-account.ts"]
 owner: "TBD"
 estimate: "M"
 status: "todo"

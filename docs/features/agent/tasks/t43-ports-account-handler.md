@@ -4,7 +4,7 @@ title: "Ports: DELETE /account handler"
 layer: "ports"
 deps: ["T39"]
 acs: ["AC-17", "AC-17b"]
-files_hint: ["plan/backend/src/agent/ports/account-handler.ts"]
+files_hint: ["plan/app/src/agent/ports/account-handler.ts"]
 owner: "TBD"
 estimate: "S"
 status: "todo"

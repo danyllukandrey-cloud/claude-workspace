@@ -4,7 +4,7 @@ title: "Infra (agent-worker): external resource writer"
 layer: "infra"
 deps: []
 acs: ["AC-18", "AC-18b"]
-files_hint: ["plan/backend/src/agent-worker/infra/resource-writer.ts"]
+files_hint: ["plan/app/src/agent-worker/infra/resource-writer.ts"]
 owner: "TBD"
 estimate: "M"
 status: "todo"

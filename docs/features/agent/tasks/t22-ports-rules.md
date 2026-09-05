@@ -4,7 +4,7 @@ title: "Ports: GET/POST /rules handlers"
 layer: "ports"
 deps: ["T9", "T13"]
 acs: ["AC-07", "AC-08", "AC-12", "AC-14"]
-files_hint: ["plan/backend/src/agent/ports/rules-handler.ts"]
+files_hint: ["plan/app/src/agent/ports/rules-handler.ts"]
 owner: "TBD"
 estimate: "S"
 status: "todo"

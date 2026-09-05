@@ -4,7 +4,7 @@ title: "Ports: proposal confirm handlers"
 layer: "ports"
 deps: ["T17"]
 acs: ["AC-02", "AC-03"]
-files_hint: ["plan/backend/src/agent/ports/proposal-handler.ts"]
+files_hint: ["plan/app/src/agent/ports/proposal-handler.ts"]
 owner: "TBD"
 estimate: "S"
 status: "todo"

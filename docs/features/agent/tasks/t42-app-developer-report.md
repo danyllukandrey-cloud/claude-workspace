@@ -4,7 +4,7 @@ title: "App: developer-report use-case"
 layer: "app"
 deps: ["T36", "T37"]
 acs: ["AC-20", "AC-20b"]
-files_hint: ["plan/backend/src/agent/app/developer-report.ts"]
+files_hint: ["plan/app/src/agent/app/developer-report.ts"]
 owner: "TBD"
 estimate: "S"
 status: "todo"

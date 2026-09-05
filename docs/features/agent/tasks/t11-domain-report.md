@@ -4,7 +4,7 @@ title: "Domain (agent-worker): activity-report model"
 layer: "domain"
 deps: []
 acs: ["AC-11"]
-files_hint: ["plan/backend/src/agent-worker/domain/report.ts"]
+files_hint: ["plan/app/src/agent-worker/domain/report.ts"]
 owner: "TBD"
 estimate: "S"
 status: "todo"

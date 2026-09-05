@@ -4,7 +4,7 @@ title: "Tests: cascading account deletion across features"
 layer: "tests"
 deps: ["T39"]
 acs: ["AC-17"]
-files_hint: ["plan/backend/src/agent/"]
+files_hint: ["plan/app/src/agent/"]
 owner: "TBD"
 estimate: "M"
 status: "todo"
