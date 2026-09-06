@@ -116,6 +116,11 @@ function writeStoredSession(session: StoredSession): void {
   localStorage.setItem(JWT_STORAGE_KEY, JSON.stringify(session));
 }
 
+/** Стирає сесію зі сховища (кнопка "Вийти", ISS-58). */
+function clearStoredSession(): void {
+  localStorage.removeItem(JWT_STORAGE_KEY);
+}
+
 function now(): Date {
   return new Date();
 }
@@ -339,6 +344,7 @@ createRoot(root).render(
     <App
       readStoredSession={readStoredSession}
       writeStoredSession={writeStoredSession}
+      clearStoredSession={clearStoredSession}
       now={now}
       requestSession={requestSession}
       renderGoogleButton={renderGoogleButton}

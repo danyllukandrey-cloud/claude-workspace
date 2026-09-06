@@ -22,6 +22,8 @@ export interface AppProps {
   readStoredSession: () => StoredSession | null;
   /** Пише сесію у сховище після успішного входу. */
   writeStoredSession: (session: StoredSession) => void;
+  /** Стирає сесію зі сховища (кнопка "Вийти", ISS-58). */
+  clearStoredSession: () => void;
   /** Поточний час -- ін'єктовано для детермінованого порівняння з expiresAt. */
   now: () => Date;
   /** Обмінює Google ID-токен на сесію (POST /api/v1/session). */
@@ -62,6 +64,7 @@ function isSessionValid(session: StoredSession | null, now: () => Date): boolean
 export function App({
   readStoredSession,
   writeStoredSession,
+  clearStoredSession,
   now,
   requestSession,
   renderGoogleButton,
@@ -117,6 +120,10 @@ export function App({
             onOpenCard={(cardId) => setScreen({ screen: 'detail', cardId })}
             onCreateCard={() => setScreen({ screen: 'create' })}
             onOpenArchive={() => setScreen({ screen: 'archive' })}
+            onLogout={() => {
+              clearStoredSession();
+              setSession(null);
+            }}
           />
         )}
       </main>

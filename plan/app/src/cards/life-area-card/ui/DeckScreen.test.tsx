@@ -18,6 +18,9 @@ import { DeckScreen } from './DeckScreen';
 // (той самий стиль DI, що onCreateCard, ISS-55 stage 1). Усі наявні тести
 // нижче оновлені додаванням onOpenArchive={vi.fn()} до render(), той самий
 // підхід, що застосували stage 1 для onCreateCard.
+//
+// ISS-58: ще один required проп -- onLogout (кнопка "Вийти"). Той самий
+// підхід -- усі наявні тести оновлені додаванням onLogout={vi.fn()}.
 
 test('loading: показує Spinner одразу після монтування, поки loadCards ще не резолвнувся', () => {
   // Promise навмисно ніколи не резолвиться в цьому тесті -- перевіряємо лише
@@ -25,7 +28,8 @@ test('loading: показує Spinner одразу після монтуванн
   const pending = new Promise<never>(() => {});
   const loadCards = vi.fn().mockReturnValue(pending);
 
-  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={vi.fn()} />);
+  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={vi.fn()}
+      onLogout={vi.fn()} />);
 
   expect(screen.getByRole('status')).toBeTruthy();
   expect(loadCards).toHaveBeenCalledTimes(1);
@@ -40,7 +44,8 @@ test('default: після резолву loadCards із картками рен�
   const onOpenCard = vi.fn();
 
   render(
-    <DeckScreen loadCards={loadCards} onOpenCard={onOpenCard} onCreateCard={vi.fn()} onOpenArchive={vi.fn()} />,
+    <DeckScreen loadCards={loadCards} onOpenCard={onOpenCard} onCreateCard={vi.fn()} onOpenArchive={vi.fn()}
+      onLogout={vi.fn()} />,
   );
 
   const tile = await screen.findByText('Спорт');
@@ -54,7 +59,8 @@ test('default: після резолву loadCards із картками рен�
 test('empty: після резолву loadCards із порожнім масивом рендерить EmptyState', async () => {
   const loadCards = vi.fn().mockResolvedValue([]);
 
-  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={vi.fn()} />);
+  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={vi.fn()}
+      onLogout={vi.fn()} />);
 
   expect(await screen.findByText('Тут ще немає жодної картки')).toBeTruthy();
 });
@@ -62,7 +68,8 @@ test('empty: після резолву loadCards із порожнім маси�
 test('error: після реджекту loadCards рендерить Banner із текстом помилки', async () => {
   const loadCards = vi.fn().mockRejectedValue(new Error('Мережа недоступна'));
 
-  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={vi.fn()} />);
+  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={vi.fn()}
+      onLogout={vi.fn()} />);
 
   expect(await screen.findByText('Мережа недоступна')).toBeTruthy();
 });
@@ -70,7 +77,8 @@ test('error: після реджекту loadCards рендерить Banner і�
 test('error: реджект без Error-повідомлення падає назад на дефолтний текст', async () => {
   const loadCards = vi.fn().mockRejectedValue('щось пішло не так');
 
-  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={vi.fn()} />);
+  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={vi.fn()}
+      onLogout={vi.fn()} />);
 
   expect(await screen.findByText('Не вдалося завантажити колоду карток')).toBeTruthy();
 });
@@ -80,7 +88,8 @@ test('ISS-55: empty-стан показує кнопку "+ Створити к�
   const onCreateCard = vi.fn();
 
   render(
-    <DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={onCreateCard} onOpenArchive={vi.fn()} />,
+    <DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={onCreateCard} onOpenArchive={vi.fn()}
+      onLogout={vi.fn()} />,
   );
 
   await screen.findByText('Тут ще немає жодної картки');
@@ -97,7 +106,8 @@ test('ISS-55: default-стан (DeckGrid з картками) показує к�
   const onCreateCard = vi.fn();
 
   render(
-    <DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={onCreateCard} onOpenArchive={vi.fn()} />,
+    <DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={onCreateCard} onOpenArchive={vi.fn()}
+      onLogout={vi.fn()} />,
   );
 
   await screen.findByText('Спорт');
@@ -116,7 +126,7 @@ test('ISS-55 stage 3: empty-стан показує кнопку "Архів", �
   const onOpenArchive = vi.fn();
 
   render(
-    <DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={onOpenArchive} />,
+    <DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={onOpenArchive} onLogout={vi.fn()} />,
   );
 
   await screen.findByText('Тут ще немає жодної картки');
@@ -133,7 +143,7 @@ test('ISS-55 stage 3: default-стан (DeckGrid з картками) показ
   const onOpenArchive = vi.fn();
 
   render(
-    <DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={onOpenArchive} />,
+    <DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={onOpenArchive} onLogout={vi.fn()} />,
   );
 
   await screen.findByText('Спорт');
@@ -142,4 +152,30 @@ test('ISS-55 stage 3: default-стан (DeckGrid з картками) показ
   fireEvent.click(button);
 
   expect(onOpenArchive).toHaveBeenCalledTimes(1);
+});
+
+// ISS-58: кнопка "Вийти" -- та сама відсутність, що знайшов Андрій живим
+// тестуванням ("а як мені вийти з акаунту?"). Той самий патерн розміщення,
+// що onCreateCard/onOpenArchive.
+
+test('ISS-58: empty-стан показує кнопку "Вийти", клік викликає onLogout', async () => {
+  const loadCards = vi.fn().mockResolvedValue([]);
+  const onLogout = vi.fn();
+
+  render(
+    <DeckScreen
+      loadCards={loadCards}
+      onOpenCard={vi.fn()}
+      onCreateCard={vi.fn()}
+      onOpenArchive={vi.fn()}
+      onLogout={onLogout}
+    />,
+  );
+
+  await screen.findByText('Тут ще немає жодної картки');
+  const button = screen.getByRole('button', { name: 'Вийти' });
+
+  fireEvent.click(button);
+
+  expect(onLogout).toHaveBeenCalledTimes(1);
 });

@@ -24,7 +24,7 @@
 // "now" теж ін'єктовано -- порівняння expiresAt з поточним часом інакше
 // недетерміноване між прогонами тесту (сьогодні збігається, за рік -- ні).
 
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { App } from './App';
 import type { DeckGridItem, EntryViewModel } from '../cards/life-area-card';
 
@@ -34,6 +34,9 @@ function baseProps() {
   return {
     readStoredSession: vi.fn().mockReturnValue(null),
     writeStoredSession: vi.fn(),
+    // ISS-58: кнопка "Вийти" (DeckScreen.onLogout) стирає сесію -- реальний
+    // localStorage.removeItem (main.tsx).
+    clearStoredSession: vi.fn(),
     loadCards: vi.fn().mockReturnValue(new Promise<DeckGridItem[]>(() => {})),
     requestSession: vi.fn(),
     renderGoogleButton: vi.fn(),
@@ -325,4 +328,18 @@ test('ISS-56: архівування картки в деталях виклик
   // вдруге (перший раз при первинному відкритті Колоди).
   expect(await screen.findByRole('button', { name: 'Спорт' })).toBeTruthy();
   expect(props.loadCards).toHaveBeenCalledTimes(2);
+});
+
+test('ISS-58: клік "Вийти" в Колоді стирає сесію і повертає на LoginScreen', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([]);
+
+  render(<App {...props} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Вийти' }));
+
+  expect(props.clearStoredSession).toHaveBeenCalledTimes(1);
+  // Той самий контракт, що тест "без токена в сховищі" вище -- LoginScreen
+  // єдиний, хто монтує GIS-кнопку; DeckScreen більше не на екрані.
+  await waitFor(() => expect(props.renderGoogleButton).toHaveBeenCalledTimes(1));
 });
