@@ -34,7 +34,7 @@
 | T27 | UI: SCR-04 Форма створення | ui | TBD | S | T24, T21 | done |
 | T28 | UI: SCR-05 Форма блоку-метрики | ui | TBD | M | T24, T22 | done |
 | T29 | UI: SCR-06 Підтвердження архівації | ui | TBD | S | T24, T21 | done |
-| T30 | Wiring: register life-area-card module | wiring | TBD | S | T25, T26, T27, T28, T29, T36, T37 | todo |
+| T30 | Wiring: register life-area-card module + backend transport (Express) | wiring | TBD | M | T25, T26, T27, T28, T29, T36, T37 | todo |
 | T31 | Tests: cross-cutting integration | tests | TBD | M | T30, T11 | todo |
 | T32 | Migration: restore transition + archived index | migration | TBD | S | T5 | done |
 | T33 | App: restoreCard use-case | app | TBD | S | T9, T10 | done |
