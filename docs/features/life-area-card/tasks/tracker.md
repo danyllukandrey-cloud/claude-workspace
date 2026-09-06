@@ -41,7 +41,7 @@
 | T34 | App: listCards with status filter | app | TBD | S | T10 | done |
 | T35 | Ports: restoreCard + archived listCards handlers | ports | TBD | S | T33, T34, T21 | done |
 | T36 | UI: SCR-07 Архів карток | ui | TBD | M | T24, T35 | done |
-| T37 | UI: SCR-02 rename state | ui | TBD | S | T24, T21 | todo |
+| T37 | UI: SCR-02 rename state | ui | TBD | S | T24, T21 | done |
 | T38 | Migration: add owner_user_id FK | migration | TBD | S | T1 | done |
 
 **Total:** 38 tasks — 17 S + 18 M + 3 L. Доповнено 2026-08-29 (T32-T38, D-89) — 6 задач на розархівацію/архів/перейменування + 1 крос-фічева FK-міграція. Порівнянно з `agent` (30 задач до доповнення) — реалістично довше за одну сесію навіть у термінах size-matrix (M); у реальному часі — значно довше через темп проєкту (~8-12 год/тиждень, уточнено 2026-08-29 — стара оцінка 1-2 год/тиждень застаріла, [D-87](../../../DECISIONS.md#d-87)).

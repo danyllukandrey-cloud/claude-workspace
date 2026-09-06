@@ -7,7 +7,7 @@ acs: ["AC-19"]
 files_hint: ["plan/app/src/cards/life-area-card/ui/CardFace.tsx"]
 owner: "TBD"
 estimate: "S"
-status: "todo"
+status: "done"
 ---
 
 # T37 — UI: SCR-02 rename state (inline edit)
@@ -22,6 +22,6 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Component test: рендерить стан `rename` per screens.md SCR-02
-- [ ] Component test: «Зберегти» оновлює назву в колоді й пише подію в Літопис Структури (structure AC-15); «Скасувати» відкидає зміну
-- [ ] lint + vet clean
+- [x] Component test: рендерить стан `rename` per screens.md SCR-02
+- [x] Component test: «Зберегти» оновлює назву в колоді й викликає ін'єктований `onRename`; «Скасувати» відкидає зміну без виклику ([ISS-41](../../../ISSUES.md): пункт «пише подію в Літопис Структури» дескоуплено — сервіс не існує жодним рядком коду, [ISS-28](../../../ISSUES.md); TODO-коментар на майбутній виклик лишено в `CardFace.tsx`)
+- [x] lint + vet clean (`npx tsc --noEmit` чисто)

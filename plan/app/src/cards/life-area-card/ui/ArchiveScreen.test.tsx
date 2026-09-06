@@ -91,6 +91,9 @@ test('card-view: клік на тайл архіву відкриває карт
   expect(screen.getByRole('heading', { name: 'Читання' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Розархівувати' })).toBeTruthy();
   expect(screen.getByText(/новий запис недоступний/)).toBeTruthy();
+  // Дочекатись резолву loadArchivedCardHistory -- інакше проміс лишається "у
+  // польоті" й наступний setState стається поза act() уже в наступному тесті.
+  expect(await screen.findByText('Історія записів')).toBeTruthy();
 });
 
 test('card-view: показує історію записів (AC-18) після резолву loadArchivedCardHistory', async () => {
