@@ -30,6 +30,10 @@ export interface CardDetailScreenProps {
   onFlagEntry?: (entryId: string) => Promise<CardBackData>;
   /** AC-15: підтвердити нову назву блоку при колізії перенесення -- опційно (CardBack.onRenameTransferredBlock). */
   onRenameTransferredBlock?: (input: { metricBlockId: string; newLabel: string }) => Promise<CardBackData>;
+  /** ISS-56: підтверджує архівацію картки -- прокидається без змін у CardFace.onArchive. */
+  onArchive: () => Promise<void>;
+  /** ISS-56: сигнал угору -- картку архівовано (CardFace.onArchived), прокидається без змін. */
+  onArchived: () => void;
 }
 
 type Side = 'face' | 'back';
@@ -41,6 +45,8 @@ export function CardDetailScreen({
   onBack,
   onFlagEntry,
   onRenameTransferredBlock,
+  onArchive,
+  onArchived,
 }: CardDetailScreenProps): JSX.Element {
   const [side, setSide] = useState<Side>('face');
 
@@ -48,7 +54,13 @@ export function CardDetailScreen({
     <div>
       <Button label="← Назад" onClick={onBack} />
       {side === 'face' ? (
-        <CardFace loadCard={loadCard} onFlip={() => setSide('back')} onRename={onRename} />
+        <CardFace
+          loadCard={loadCard}
+          onFlip={() => setSide('back')}
+          onRename={onRename}
+          onArchive={onArchive}
+          onArchived={onArchived}
+        />
       ) : (
         <CardBack
           loadBack={loadBack}

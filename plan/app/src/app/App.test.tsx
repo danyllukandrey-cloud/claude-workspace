@@ -55,6 +55,9 @@ function baseProps() {
     loadArchivedCards: vi.fn().mockReturnValue(new Promise<DeckGridItem[]>(() => {})),
     onRestoreCard: vi.fn().mockResolvedValue(undefined),
     loadArchivedCardHistory: vi.fn().mockResolvedValue([] as EntryViewModel[]),
+    // ISS-56 (docs/ISSUES.md): реальний DELETE /cards/{cardId} (main.tsx),
+    // яку App замикає над cardId (той самий стиль, що loadCard/loadBack/onRename).
+    archiveCard: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -296,4 +299,30 @@ test('ISS-55 stage 3: розархівування картки в Архіві 
   fireEvent.click(await screen.findByRole('button', { name: 'Розархівувати' }));
 
   expect(props.onRestoreCard).toHaveBeenCalledWith('card-2');
+});
+
+// ISS-56 (RED, docs/ISSUES.md): CardFace отримав "Архівувати" в меню "..." ->
+// ArchiveCardDialog (T29) -> injected AppProps.archiveCard(cardId) (DELETE
+// /cards/{cardId}, main.tsx) -> після успіху екран повертається на 'deck' з
+// повторним loadCards (та сама "ремаунт перезавантажує" ідіома, що onBack).
+
+test('ISS-56: архівування картки в деталях викликає injected archiveCard(cardId) і повертає до Колоди з повторним завантаженням', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
+
+  render(<App {...props} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Спорт' }));
+  await screen.findByRole('heading', { name: 'Спорт' });
+
+  fireEvent.click(screen.getByRole('button', { name: 'Меню картки' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Архівувати' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Архівувати' }));
+
+  expect(props.archiveCard).toHaveBeenCalledWith('card-1');
+
+  // Повернення на 'deck' -- тайл картки знову видимий, loadCards викликано
+  // вдруге (перший раз при первинному відкритті Колоди).
+  expect(await screen.findByRole('button', { name: 'Спорт' })).toBeTruthy();
+  expect(props.loadCards).toHaveBeenCalledTimes(2);
 });

@@ -23,6 +23,10 @@ function baseProps() {
     loadBack: vi.fn().mockResolvedValue(BACK_DATA),
     onRename: vi.fn().mockResolvedValue(undefined),
     onBack: vi.fn(),
+    // ISS-56 (docs/ISSUES.md): пропуск через до CardFace (onArchive) +
+    // сигнал угору "картку архівовано, іти до Колоди" (onArchived).
+    onArchive: vi.fn().mockResolvedValue(undefined),
+    onArchived: vi.fn(),
   };
 }
 
@@ -110,4 +114,23 @@ test('onFlagEntry/onRenameTransferredBlock, якщо передані, прок�
   // onRenameTransferredBlock ізольовано; тут важливо саме прокидання).
   await screen.findByText('Ще немає жодної активної метрики');
   expect(onFlagEntry).not.toHaveBeenCalled();
+});
+
+// ISS-56 (RED, docs/ISSUES.md): CardFace отримав другий пункт меню
+// "Архівувати" -> ArchiveCardDialog -> injected onArchive; CardDetailScreen
+// прокидає onArchive до CardFace без змін і прокидає власний onArchived
+// угору (App.tsx поверне користувача до Колоди, бо loadCard/loadBack на
+// щойно архівованій картці дадуть 404, якщо картку перегорнути знову).
+
+test('ISS-56: архівування на лицьовій стороні викликає injected onArchive, потім onArchived (наскрізь через композицію)', async () => {
+  const props = baseProps();
+  render(<CardDetailScreen {...props} />);
+
+  await screen.findByText('Спорт');
+  fireEvent.click(screen.getByRole('button', { name: 'Меню картки' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Архівувати' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Архівувати' }));
+
+  expect(props.onArchive).toHaveBeenCalledTimes(1);
+  await vi.waitFor(() => expect(props.onArchived).toHaveBeenCalledTimes(1));
 });

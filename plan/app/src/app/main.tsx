@@ -318,6 +318,19 @@ async function onRename(cardId: string, name: string): Promise<void> {
   }
 }
 
+/** ISS-56 (docs/ISSUES.md): реальний DELETE /cards/{cardId} -- CardFace.onArchive. */
+async function archiveCard(cardId: string): Promise<void> {
+  const response = await fetch(`/api/v1/cards/${cardId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? 'Не вдалося архівувати картку');
+  }
+}
+
 const root = document.getElementById('root');
 if (!root) throw new Error('Не знайдено елемент #root у index.html');
 
@@ -337,6 +350,7 @@ createRoot(root).render(
       loadArchivedCards={loadArchivedCards}
       onRestoreCard={onRestoreCard}
       loadArchivedCardHistory={loadArchivedCardHistory}
+      archiveCard={archiveCard}
     />
   </StrictMode>,
 );

@@ -20,6 +20,7 @@
 // жодним рядком коду (ISS-28), тому тест і код нижче цього НЕ роблять.
 import { useEffect, useState } from 'react';
 import { Banner, Button, Spinner, TextField } from '../../../shared/ui';
+import { ArchiveCardDialog } from './ArchiveCardDialog';
 import type { CardFaceData } from './types';
 
 export interface CardFaceProps {
@@ -33,6 +34,14 @@ export interface CardFaceProps {
    * "Скасувати" відкидає чернетку без цього виклику.
    */
   onRename: (name: string) => Promise<void>;
+  /**
+   * ISS-56 (docs/ISSUES.md): підтверджує архівацію картки (DELETE
+   * /cards/{id} -- реальний запит робить викликач, T30). Прокидається без
+   * змін в ArchiveCardDialog.onArchive, коли обрано "Архівувати" в меню "...".
+   */
+  onArchive: () => Promise<void>;
+  /** ISS-56: сигнал батькові -- картку архівовано, є куди піти (App повертає до Колоди). */
+  onArchived: () => void;
 }
 
 type LoadState = 'loading' | 'ready' | 'error';
@@ -40,7 +49,7 @@ type LoadState = 'loading' | 'ready' | 'error';
 const FALLBACK_ERROR_TEXT = 'Не вдалося завантажити картку';
 const RENAME_FAILED_MESSAGE = 'Не вдалося зберегти назву. Перевірте зв’язок і спробуйте ще раз.';
 
-export function CardFace({ loadCard, onFlip, onRename }: CardFaceProps): JSX.Element {
+export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived }: CardFaceProps): JSX.Element {
   const [state, setState] = useState<LoadState>('loading');
   const [data, setData] = useState<CardFaceData | null>(null);
   const [error, setError] = useState<string>(FALLBACK_ERROR_TEXT);
@@ -53,6 +62,10 @@ export function CardFace({ loadCard, onFlip, onRename }: CardFaceProps): JSX.Ele
   const [draftName, setDraftName] = useState('');
   const [isSavingName, setIsSavingName] = useState(false);
   const [renameError, setRenameError] = useState<string | undefined>(undefined);
+  // ISS-56: другий пункт меню "..." -- "Архівувати" відкриває ArchiveCardDialog
+  // (T29, фіксований контракт cardName/onArchive/onCancel). isArchiving --
+  // незалежний від isRenaming (обидва скидаються разом при новому loadCard).
+  const [isArchiving, setIsArchiving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,6 +79,7 @@ export function CardFace({ loadCard, onFlip, onRename }: CardFaceProps): JSX.Ele
     setDraftName('');
     setIsSavingName(false);
     setRenameError(undefined);
+    setIsArchiving(false);
 
     loadCard()
       .then((result) => {
@@ -94,6 +108,22 @@ export function CardFace({ loadCard, onFlip, onRename }: CardFaceProps): JSX.Ele
     setRenameError(undefined);
     setIsMenuOpen(false);
     setIsRenaming(true);
+  }
+
+  function startArchive(): void {
+    setIsMenuOpen(false);
+    setIsArchiving(true);
+  }
+
+  function cancelArchive(): void {
+    // ISS-56: "Скасувати" в діалозі -- ні onArchive, ні onArchived не викликаються.
+    setIsArchiving(false);
+  }
+
+  function confirmArchive(): Promise<void> {
+    return onArchive().then(() => {
+      onArchived();
+    });
   }
 
   function cancelRename(): void {
@@ -155,7 +185,13 @@ export function CardFace({ loadCard, onFlip, onRename }: CardFaceProps): JSX.Ele
               <button type="button" role="menuitem" onClick={startRename}>
                 Перейменувати
               </button>
+              <button type="button" role="menuitem" onClick={startArchive}>
+                Архівувати
+              </button>
             </div>
+          )}
+          {isArchiving && (
+            <ArchiveCardDialog cardName={data.name} onArchive={confirmArchive} onCancel={cancelArchive} />
           )}
         </>
       )}

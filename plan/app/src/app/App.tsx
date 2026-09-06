@@ -48,6 +48,8 @@ export interface AppProps {
   onRestoreCard: (cardId: string) => Promise<void>;
   /** Завантажує історію записів архівованої картки (ArchiveScreen.loadArchivedCardHistory, ISS-55 stage 3). */
   loadArchivedCardHistory: (cardId: string) => Promise<EntryViewModel[]>;
+  /** Архівовує обрану картку (DELETE /cards/{cardId}, CardFace.onArchive, ISS-56). */
+  archiveCard: (cardId: string) => Promise<void>;
 }
 
 type Screen = { screen: 'deck' } | { screen: 'create' } | { screen: 'detail'; cardId: string } | { screen: 'archive' };
@@ -71,6 +73,7 @@ export function App({
   loadArchivedCards,
   onRestoreCard,
   loadArchivedCardHistory,
+  archiveCard,
 }: AppProps): JSX.Element {
   const [session, setSession] = useState<StoredSession | null>(() => readStoredSession());
   const [screen, setScreen] = useState<Screen>({ screen: 'deck' });
@@ -94,6 +97,8 @@ export function App({
             loadBack={() => loadBack(screen.cardId)}
             onRename={(name) => onRename(screen.cardId, name)}
             onBack={() => setScreen({ screen: 'deck' })}
+            onArchive={() => archiveCard(screen.cardId)}
+            onArchived={() => setScreen({ screen: 'deck' })}
           />
         )}
         {screen.screen === 'archive' && (
