@@ -125,11 +125,13 @@ export function ArchiveScreen({
     };
 
     return (
-      <CardShell
-        isFlipped={false}
-        front={
-          <div>
-            <h2>{card.name}</h2>
+      <div>
+        <h1>Архів карток</h1>
+        <CardShell
+          isFlipped={false}
+          front={
+            <div>
+              <h2>{card.name}</h2>
             <p>Картка в архіві -- новий запис недоступний, поки її не розархівовано</p>
             <Button label="Розархівувати" onClick={handleRestore} disabled={isRestoring} />
             {restoreError !== null && <Banner variant="error" text={restoreError} />}
@@ -149,14 +151,20 @@ export function ArchiveScreen({
               </div>
             )}
           </div>
-        }
-        back={null}
-      />
+          }
+          back={null}
+        />
+      </div>
     );
   }
 
   if (state.items.length === 0) {
-    return <EmptyState message="Архів порожній" actionHint="Заархівовані картки з'являться тут після архівації" />;
+    return (
+      <div>
+        <h1>Архів карток</h1>
+        <EmptyState message="Архів порожній" actionHint="Заархівовані картки з'являться тут після архівації" />
+      </div>
+    );
   }
 
   const items = state.items;
@@ -191,5 +199,10 @@ export function ArchiveScreen({
       });
   };
 
-  return <DeckGrid items={items} onOpen={handleOpen} />;
+  return (
+    <div>
+      <h1>Архів карток</h1>
+      <DeckGrid items={items} onOpen={handleOpen} />
+    </div>
+  );
 }

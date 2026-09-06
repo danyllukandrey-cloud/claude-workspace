@@ -45,6 +45,40 @@ test('default: після резолву loadArchivedCards із картками
   expect(screen.getByText('Медитація')).toBeTruthy();
 });
 
+// ISS-57: без постійного заголовка "Архів карток" (wireframe screens.md
+// SCR-07) немає жодної ознаки, що це саме архів, не активна Колода --
+// live-тестування Андрія це підтвердило. Заголовок має лишатись видимим і
+// в списку, і всередині card-view (не лише на самому верхньому рівні).
+test('ISS-57: заголовок "Архів карток" видимий у списку архіву', async () => {
+  const loadArchivedCards = vi.fn().mockResolvedValue([{ id: 'card-1', name: 'Читання' }]);
+
+  render(
+    <ArchiveScreen
+      loadArchivedCards={loadArchivedCards}
+      onRestoreCard={vi.fn()}
+      loadArchivedCardHistory={vi.fn().mockResolvedValue([])}
+    />,
+  );
+
+  expect(await screen.findByRole('heading', { name: 'Архів карток' })).toBeTruthy();
+});
+
+test('ISS-57: заголовок "Архів карток" лишається видимим і в card-view', async () => {
+  const loadArchivedCards = vi.fn().mockResolvedValue([{ id: 'card-1', name: 'Читання' }]);
+
+  render(
+    <ArchiveScreen
+      loadArchivedCards={loadArchivedCards}
+      onRestoreCard={vi.fn()}
+      loadArchivedCardHistory={vi.fn().mockResolvedValue([])}
+    />,
+  );
+
+  fireEvent.click(await screen.findByText('Читання'));
+
+  expect(await screen.findByRole('heading', { name: 'Архів карток' })).toBeTruthy();
+});
+
 test('empty: після резолву loadArchivedCards із порожнім масивом рендерить EmptyState', async () => {
   const loadArchivedCards = vi.fn().mockResolvedValue([]);
 
