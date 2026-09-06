@@ -31,7 +31,7 @@
 | T24 | UI: shared CardShell primitives | ui | TBD | M | — | done |
 | T25 | UI: SCR-01 Колода карток | ui | TBD | M | T24, T21 | done |
 | T26 | UI: SCR-02/SCR-03 Картка (face+back) | ui | TBD | L | T24, T21, T22, T23 | done |
-| T27 | UI: SCR-04 Форма створення | ui | TBD | S | T24, T21 | todo |
+| T27 | UI: SCR-04 Форма створення | ui | TBD | S | T24, T21 | done |
 | T28 | UI: SCR-05 Форма блоку-метрики | ui | TBD | M | T24, T22 | todo |
 | T29 | UI: SCR-06 Підтвердження архівації | ui | TBD | S | T24, T21 | todo |
 | T30 | Wiring: register life-area-card module | wiring | TBD | S | T25, T26, T27, T28, T29, T36, T37 | todo |

@@ -7,7 +7,7 @@ acs: ["AC-02"]
 files_hint: ["plan/app/src/cards/life-area-card/ui/CreateCardForm.tsx"]
 owner: "TBD"
 estimate: "S"
-status: "todo"
+status: "done"
 ---
 
 # T27 — UI: SCR-04 Форма створення картки
@@ -22,5 +22,5 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Component test: усі 4 стани зі `screens.md` SCR-04 рендеряться за відповідним триггером
-- [ ] lint + vet clean
+- [x] Component test: усі 4 стани зі `screens.md` SCR-04 рендеряться за відповідним триггером
+- [x] lint + vet clean

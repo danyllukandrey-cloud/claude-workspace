@@ -18,7 +18,10 @@ export class CardValidationError extends Error {
   }
 }
 
-function assertNonEmpty(value: string, code: string, message: string): void {
+// Експортовано (T27 should-fix): ui/CreateCardForm.tsx перевикористовує цю
+// саму перевірку для інлайн-помилки ДО виклику onCreate, замість дублювання
+// власного тексту -- один рядок правди про "що таке порожня назва".
+export function assertNonEmpty(value: string, code: string, message: string): void {
   if (value == null || !value.trim()) {
     throw new CardValidationError(code, message);
   }
