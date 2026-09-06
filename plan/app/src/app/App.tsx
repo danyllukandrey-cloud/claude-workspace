@@ -6,8 +6,9 @@
 // localStorage['plan.jwt'] і Date.now() (composition root -- main.tsx).
 
 import { useState } from 'react';
-import { CardDetailScreen, CreateCardForm, DeckScreen } from '../cards/life-area-card';
-import type { CardBackData, CardFaceData, DeckGridItem } from '../cards/life-area-card';
+import { ArchiveScreen, CardDetailScreen, CreateCardForm, DeckScreen } from '../cards/life-area-card';
+import type { CardBackData, CardFaceData, DeckGridItem, EntryViewModel } from '../cards/life-area-card';
+import { Button } from '../shared/ui';
 import { LoginScreen } from './LoginScreen';
 import type { SessionResult } from './LoginScreen';
 
@@ -41,9 +42,15 @@ export interface AppProps {
   loadBack: (cardId: string) => Promise<CardBackData>;
   /** Зберігає нову назву обраної картки (AC-19, PATCH /cards/{id}, ISS-55 stage 2). */
   onRename: (cardId: string, name: string) => Promise<void>;
+  /** Завантажує архівовані картки (ArchiveScreen.loadArchivedCards, ISS-55 stage 3). */
+  loadArchivedCards: () => Promise<DeckGridItem[]>;
+  /** Розархівовує картку (ArchiveScreen.onRestoreCard, ISS-55 stage 3). */
+  onRestoreCard: (cardId: string) => Promise<void>;
+  /** Завантажує історію записів архівованої картки (ArchiveScreen.loadArchivedCardHistory, ISS-55 stage 3). */
+  loadArchivedCardHistory: (cardId: string) => Promise<EntryViewModel[]>;
 }
 
-type Screen = { screen: 'deck' } | { screen: 'create' } | { screen: 'detail'; cardId: string };
+type Screen = { screen: 'deck' } | { screen: 'create' } | { screen: 'detail'; cardId: string } | { screen: 'archive' };
 
 function isSessionValid(session: StoredSession | null, now: () => Date): boolean {
   if (!session) return false;
@@ -61,6 +68,9 @@ export function App({
   loadCard,
   loadBack,
   onRename,
+  loadArchivedCards,
+  onRestoreCard,
+  loadArchivedCardHistory,
 }: AppProps): JSX.Element {
   const [session, setSession] = useState<StoredSession | null>(() => readStoredSession());
   const [screen, setScreen] = useState<Screen>({ screen: 'deck' });
@@ -86,11 +96,22 @@ export function App({
             onBack={() => setScreen({ screen: 'deck' })}
           />
         )}
+        {screen.screen === 'archive' && (
+          <div>
+            <Button label="← Назад" onClick={() => setScreen({ screen: 'deck' })} />
+            <ArchiveScreen
+              loadArchivedCards={loadArchivedCards}
+              onRestoreCard={onRestoreCard}
+              loadArchivedCardHistory={loadArchivedCardHistory}
+            />
+          </div>
+        )}
         {screen.screen === 'deck' && (
           <DeckScreen
             loadCards={loadCards}
             onOpenCard={(cardId) => setScreen({ screen: 'detail', cardId })}
             onCreateCard={() => setScreen({ screen: 'create' })}
+            onOpenArchive={() => setScreen({ screen: 'archive' })}
           />
         )}
       </main>

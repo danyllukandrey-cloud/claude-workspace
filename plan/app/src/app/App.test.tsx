@@ -26,7 +26,7 @@
 
 import { render, screen, fireEvent } from '@testing-library/react';
 import { App } from './App';
-import type { DeckGridItem } from '../cards/life-area-card';
+import type { DeckGridItem, EntryViewModel } from '../cards/life-area-card';
 
 const FIXED_NOW = () => new Date('2026-09-06T12:00:00.000Z');
 
@@ -49,6 +49,12 @@ function baseProps() {
     loadCard: vi.fn().mockResolvedValue({ name: 'Спорт', description: 'опис', dataWarning: null }),
     loadBack: vi.fn().mockResolvedValue({ metricBlocks: [], aggregateProgress: null, entries: [] }),
     onRename: vi.fn().mockResolvedValue(undefined),
+    // ISS-55, stage 3/3: ін'єкція реальних GET /cards?status=archived / POST
+    // .../restore / GET .../entries (main.tsx), які App передає в ArchiveScreen
+    // (T36) при перемиканні на 'archive'.
+    loadArchivedCards: vi.fn().mockReturnValue(new Promise<DeckGridItem[]>(() => {})),
+    onRestoreCard: vi.fn().mockResolvedValue(undefined),
+    loadArchivedCardHistory: vi.fn().mockResolvedValue([] as EntryViewModel[]),
   };
 }
 
@@ -230,4 +236,64 @@ test('ISS-55 stage 2: перейменування картки в деталя�
   // onRename в AppProps приймає (cardId, name) -- App сам звужує до
   // CardDetailScreen-контракту (name: string) => Promise<void> через замикання.
   expect(props.onRename).toHaveBeenCalledWith('card-1', 'Спорт і здоров’я');
+});
+
+// ISS-55, stage 3/3 (RED): App.tsx отримує четвертий екран 'archive' -- клік
+// на кнопку "Архів" у Колоді (DeckScreen.onOpenArchive, щойно доданий проп)
+// перемикає рендер на ArchiveScreen (T36, SCR-07), вже написаний і
+// протестований ізольовано, але досі нічим не досяжний з App. Обгортаю
+// ArchiveScreen тонкою "← Назад" кнопкою прямо в App.tsx (той самий вибір,
+// що CardDetailScreen у stage 2) -- ArchiveScreen сам не має кнопки назад
+// (фіксований контракт T36), і окремий файл-обгортка був би зайвим для
+// одного <button> з тим самим текстом "← Назад", що вже використовує деталі
+// картки. Повернення на 'deck' повторно викликає loadCards (той самий стиль
+// ремаунту, що onBack у CardDetailScreen).
+
+test('ISS-55 stage 3: клік "Архів" у Колоді перемикає екран на ArchiveScreen', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
+  props.loadArchivedCards.mockResolvedValue([{ id: 'card-2', name: 'Читання' }]);
+
+  render(<App {...props} />);
+
+  const archiveButton = await screen.findByRole('button', { name: 'Архів' });
+  fireEvent.click(archiveButton);
+
+  // ArchiveScreen (T36) рендерить архівовані тайли через DeckGrid -- "Читання"
+  // видиме, тоді як активна картка "Спорт" (Колода) більше не на екрані.
+  expect(await screen.findByText('Читання')).toBeTruthy();
+  expect(screen.queryByText('Спорт')).toBeNull();
+  expect(props.loadArchivedCards).toHaveBeenCalledTimes(1);
+});
+
+test('ISS-55 stage 3: кнопка "← Назад" в Архіві повертає на Колоду з повторним завантаженням', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
+  props.loadArchivedCards.mockResolvedValue([]);
+
+  render(<App {...props} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Архів' }));
+  await screen.findByText('Архів порожній');
+
+  fireEvent.click(screen.getByRole('button', { name: '← Назад' }));
+
+  // Повернення на 'deck' -- тайл активної картки знову видимий, loadCards
+  // викликано вдруге (перший раз при первинному монтуванні Колоди).
+  expect(await screen.findByRole('button', { name: 'Спорт' })).toBeTruthy();
+  expect(props.loadCards).toHaveBeenCalledTimes(2);
+});
+
+test('ISS-55 stage 3: розархівування картки в Архіві викликає injected onRestoreCard(cardId)', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([]);
+  props.loadArchivedCards.mockResolvedValue([{ id: 'card-2', name: 'Читання' }]);
+
+  render(<App {...props} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Архів' }));
+  fireEvent.click(await screen.findByText('Читання'));
+  fireEvent.click(await screen.findByRole('button', { name: 'Розархівувати' }));
+
+  expect(props.onRestoreCard).toHaveBeenCalledWith('card-2');
 });

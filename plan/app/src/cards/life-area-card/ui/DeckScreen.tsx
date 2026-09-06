@@ -17,6 +17,7 @@ import { DeckGrid } from './DeckGrid';
 import type { DeckGridItem } from './DeckGrid';
 
 const CREATE_CARD_LABEL = '+ Створити картку';
+const OPEN_ARCHIVE_LABEL = 'Архів';
 
 export interface DeckScreenProps {
   /**
@@ -33,6 +34,8 @@ export interface DeckScreenProps {
   onOpenCard: (cardId: string) => void;
   /** Викликається при кліку на кнопку "+ Створити картку" (ISS-55). */
   onCreateCard: () => void;
+  /** Викликається при кліку на кнопку "Архів" (ISS-55, stage 3). */
+  onOpenArchive: () => void;
 }
 
 type LoadState =
@@ -42,7 +45,7 @@ type LoadState =
 
 const DEFAULT_ERROR_MESSAGE = 'Не вдалося завантажити колоду карток';
 
-export function DeckScreen({ loadCards, onOpenCard, onCreateCard }: DeckScreenProps): JSX.Element {
+export function DeckScreen({ loadCards, onOpenCard, onCreateCard, onOpenArchive }: DeckScreenProps): JSX.Element {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
 
   useEffect(() => {
@@ -80,6 +83,7 @@ export function DeckScreen({ loadCards, onOpenCard, onCreateCard }: DeckScreenPr
       <div>
         <EmptyState message="Тут ще немає жодної картки" actionHint="Створіть першу картку, щоб почати" />
         <Button label={CREATE_CARD_LABEL} onClick={onCreateCard} />
+        <Button label={OPEN_ARCHIVE_LABEL} onClick={onOpenArchive} />
       </div>
     );
   }
@@ -88,6 +92,7 @@ export function DeckScreen({ loadCards, onOpenCard, onCreateCard }: DeckScreenPr
     <div>
       <DeckGrid items={state.items} onOpen={onOpenCard} />
       <Button label={CREATE_CARD_LABEL} onClick={onCreateCard} />
+      <Button label={OPEN_ARCHIVE_LABEL} onClick={onOpenArchive} />
     </div>
   );
 }

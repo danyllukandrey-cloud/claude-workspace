@@ -248,19 +248,61 @@ async function loadBack(cardId: string): Promise<CardBackData> {
   });
 
   const blockById = new Map(blocks.map((block) => [block.id, block]));
-  const entries: EntryViewModel[] = entryPage.items.map((entry) => {
-    const block = blockById.get(entry.metricBlockId);
-    return {
-      id: entry.id,
-      metricBlockId: entry.metricBlockId,
-      amount: entry.amount,
-      status: entry.status,
-      recordedAtLabel: formatRecordedAtLabel(entry.recordedAt),
-      summary: `+${entry.amount}${block ? ` ${block.unit}` : ''}`,
-    };
-  });
+  const entries: EntryViewModel[] = entryPage.items.map((entry) => toEntryViewModel(entry, blockById.get(entry.metricBlockId)));
 
   return { metricBlocks, aggregateProgress: card.aggregateProgress, entries };
+}
+
+/**
+ * Мапить сирий EntryDto у EntryViewModel (recordedAtLabel + summary) -- спільна
+ * логіка для loadBack (T26) і loadArchivedCardHistory (ISS-55 stage 3, T36),
+ * винесена, щоб не дублювати formatRecordedAtLabel/summary в двох місцях.
+ */
+function toEntryViewModel(entry: EntryDto, block: MetricBlockDto | undefined): EntryViewModel {
+  return {
+    id: entry.id,
+    metricBlockId: entry.metricBlockId,
+    amount: entry.amount,
+    status: entry.status,
+    recordedAtLabel: formatRecordedAtLabel(entry.recordedAt),
+    summary: `+${entry.amount}${block ? ` ${block.unit}` : ''}`,
+  };
+}
+
+async function loadArchivedCards(): Promise<DeckGridItem[]> {
+  const response = await fetch('/api/v1/cards?status=archived', { headers: authHeaders() });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? 'Не вдалося завантажити архів карток');
+  }
+
+  const page = (await response.json()) as CardPageDto;
+  return page.items.map((card) => ({ id: card.id, name: card.name }));
+}
+
+async function onRestoreCard(cardId: string): Promise<void> {
+  const response = await fetch(`/api/v1/cards/${cardId}/restore`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? 'Не вдалося розархівувати картку');
+  }
+}
+
+async function loadArchivedCardHistory(cardId: string): Promise<EntryViewModel[]> {
+  const response = await fetch(`/api/v1/cards/${cardId}/entries`, { headers: authHeaders() });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? 'Не вдалося завантажити історію записів');
+  }
+
+  const entryPage = (await response.json()) as EntryPageDto;
+  return entryPage.items.map((entry) => toEntryViewModel(entry, undefined));
 }
 
 async function onRename(cardId: string, name: string): Promise<void> {
@@ -292,6 +334,9 @@ createRoot(root).render(
       loadCard={loadCard}
       loadBack={loadBack}
       onRename={onRename}
+      loadArchivedCards={loadArchivedCards}
+      onRestoreCard={onRestoreCard}
+      loadArchivedCardHistory={loadArchivedCardHistory}
     />
   </StrictMode>,
 );

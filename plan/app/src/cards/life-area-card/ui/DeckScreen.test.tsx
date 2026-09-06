@@ -14,13 +14,18 @@ import { DeckScreen } from './DeckScreen';
 // стан, а не змінює контракти EmptyState/DeckGrid (ISS-55 явно каже: ці два
 // компоненти лишаються текст-only/тайл-only за задумом).
 
+// ISS-55 stage 3/3: DeckScreen отримує ще один required проп -- onOpenArchive
+// (той самий стиль DI, що onCreateCard, ISS-55 stage 1). Усі наявні тести
+// нижче оновлені додаванням onOpenArchive={vi.fn()} до render(), той самий
+// підхід, що застосували stage 1 для onCreateCard.
+
 test('loading: показує Spinner одразу після монтування, поки loadCards ще не резолвнувся', () => {
   // Promise навмисно ніколи не резолвиться в цьому тесті -- перевіряємо лише
   // стан "loading" одразу після початкового GET /cards (screens.md SCR-01).
   const pending = new Promise<never>(() => {});
   const loadCards = vi.fn().mockReturnValue(pending);
 
-  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} />);
+  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={vi.fn()} />);
 
   expect(screen.getByRole('status')).toBeTruthy();
   expect(loadCards).toHaveBeenCalledTimes(1);
@@ -34,7 +39,9 @@ test('default: після резолву loadCards із картками рен�
   const loadCards = vi.fn().mockResolvedValue(items);
   const onOpenCard = vi.fn();
 
-  render(<DeckScreen loadCards={loadCards} onOpenCard={onOpenCard} onCreateCard={vi.fn()} />);
+  render(
+    <DeckScreen loadCards={loadCards} onOpenCard={onOpenCard} onCreateCard={vi.fn()} onOpenArchive={vi.fn()} />,
+  );
 
   const tile = await screen.findByText('Спорт');
   expect(screen.getByText('Навчання')).toBeTruthy();
@@ -47,7 +54,7 @@ test('default: після резолву loadCards із картками рен�
 test('empty: після резолву loadCards із порожнім масивом рендерить EmptyState', async () => {
   const loadCards = vi.fn().mockResolvedValue([]);
 
-  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} />);
+  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={vi.fn()} />);
 
   expect(await screen.findByText('Тут ще немає жодної картки')).toBeTruthy();
 });
@@ -55,7 +62,7 @@ test('empty: після резолву loadCards із порожнім маси�
 test('error: після реджекту loadCards рендерить Banner із текстом помилки', async () => {
   const loadCards = vi.fn().mockRejectedValue(new Error('Мережа недоступна'));
 
-  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} />);
+  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={vi.fn()} />);
 
   expect(await screen.findByText('Мережа недоступна')).toBeTruthy();
 });
@@ -63,7 +70,7 @@ test('error: після реджекту loadCards рендерить Banner і�
 test('error: реджект без Error-повідомлення падає назад на дефолтний текст', async () => {
   const loadCards = vi.fn().mockRejectedValue('щось пішло не так');
 
-  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} />);
+  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={vi.fn()} />);
 
   expect(await screen.findByText('Не вдалося завантажити колоду карток')).toBeTruthy();
 });
@@ -72,7 +79,9 @@ test('ISS-55: empty-стан показує кнопку "+ Створити к�
   const loadCards = vi.fn().mockResolvedValue([]);
   const onCreateCard = vi.fn();
 
-  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={onCreateCard} />);
+  render(
+    <DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={onCreateCard} onOpenArchive={vi.fn()} />,
+  );
 
   await screen.findByText('Тут ще немає жодної картки');
   const button = screen.getByRole('button', { name: '+ Створити картку' });
@@ -87,7 +96,9 @@ test('ISS-55: default-стан (DeckGrid з картками) показує к�
   const loadCards = vi.fn().mockResolvedValue(items);
   const onCreateCard = vi.fn();
 
-  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={onCreateCard} />);
+  render(
+    <DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={onCreateCard} onOpenArchive={vi.fn()} />,
+  );
 
   await screen.findByText('Спорт');
   const button = screen.getByRole('button', { name: '+ Створити картку' });
@@ -95,4 +106,40 @@ test('ISS-55: default-стан (DeckGrid з картками) показує к�
   fireEvent.click(button);
 
   expect(onCreateCard).toHaveBeenCalledTimes(1);
+});
+
+// ISS-55 stage 3/3 (RED): нова кнопка "Архів" -- в ОБОХ станах (empty і
+// default), той самий патерн розміщення, що onCreateCard (stage 1).
+
+test('ISS-55 stage 3: empty-стан показує кнопку "Архів", клік викликає onOpenArchive', async () => {
+  const loadCards = vi.fn().mockResolvedValue([]);
+  const onOpenArchive = vi.fn();
+
+  render(
+    <DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={onOpenArchive} />,
+  );
+
+  await screen.findByText('Тут ще немає жодної картки');
+  const button = screen.getByRole('button', { name: 'Архів' });
+
+  fireEvent.click(button);
+
+  expect(onOpenArchive).toHaveBeenCalledTimes(1);
+});
+
+test('ISS-55 stage 3: default-стан (DeckGrid з картками) показує кнопку "Архів" поряд з тайлами', async () => {
+  const items = [{ id: 'card-1', name: 'Спорт' }];
+  const loadCards = vi.fn().mockResolvedValue(items);
+  const onOpenArchive = vi.fn();
+
+  render(
+    <DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={onOpenArchive} />,
+  );
+
+  await screen.findByText('Спорт');
+  const button = screen.getByRole('button', { name: 'Архів' });
+
+  fireEvent.click(button);
+
+  expect(onOpenArchive).toHaveBeenCalledTimes(1);
 });

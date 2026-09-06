@@ -17,5 +17,8 @@ export { CardDetailScreen } from './ui/CardDetailScreen';
 export type { CardDetailScreenProps } from './ui/CardDetailScreen';
 export type { CardBackData, CardFaceData, EntryViewModel, MetricBlockViewModel } from './ui/types';
 
+export { ArchiveScreen } from './ui/ArchiveScreen';
+export type { ArchiveScreenProps } from './ui/ArchiveScreen';
+
 export { computeProgress } from './domain/progress';
 export type { MetricBlockGoal, RawEntry } from './domain/progress';
