@@ -211,12 +211,14 @@ updated_at: "2026-08-27"
 
 | Component | Why no existing primitive fits | Registered in design-system |
 |---|---|---|
-| `DeckGrid` | Сітка карток колоди з переходом на окрему картку — інша природа, ніж `CardShell` (одна картка, що перевертається) | pending |
-| `MetricBlockCard` | Рядок блоку-метрики: прогрес-бар/лічильник/capped-варіант/pending-позначка в одному компоненті — жодного з наявних примітивів не покриває цю комбінацію станів | pending |
-| `EntryHistoryList` | Розгортний список записів з діями виправлення — специфічно для US-12 | pending |
-| `Spinner` | Індикатор завантаження — уже запропонований `structure/screens.md`; **reused, не дубльований під новою назвою** | pending (спільний зі `structure`) |
-| `Banner` | Інлайн-повідомлення (помилка/попередження) — уже запропонований `structure/screens.md`; **reused** | pending (спільний зі `structure`) |
-| `EmptyState` | Стандартний порожній стан — уже запропонований `structure/screens.md`; **reused** | pending (спільний зі `structure`) |
-| `ConfirmDialog` | Підтвердження дії з наслідками, що не скасовуються одним кліком — уже запропонований `structure/screens.md` (AC-11b там); **reused** для архівації картки тут | pending (спільний зі `structure`) |
+| `DeckGrid` | Сітка карток колоди з переходом на окрему картку — інша природа, ніж `CardShell` (одна картка, що перевертається) | написано, `plan/app/src/cards/life-area-card/ui/DeckGrid.tsx:29` (T25) — feature-специфічний, у `shared/ui/` не виносили: другого користувача цього компонента поки немає |
+| `MetricBlockCard` | Рядок блоку-метрики: прогрес-бар/лічильник/capped-варіант/pending-позначка в одному компоненті — жодного з наявних примітивів не покриває цю комбінацію станів | написано, `plan/app/src/cards/life-area-card/ui/MetricBlockCard.tsx:13` (T26) — те саме: feature-специфічний, не в `shared/ui/` |
+| `EntryHistoryList` | Розгортний список записів з діями виправлення — специфічно для US-12 | написано, `plan/app/src/cards/life-area-card/ui/EntryHistoryList.tsx:17` (T26) — те саме |
+| `Spinner` | Індикатор завантаження — уже запропонований `structure/screens.md`; **reused, не дубльований під новою назвою** | готово — `docs/design-system.md` (ISS-44) |
+| `Banner` | Інлайн-повідомлення (помилка/попередження) — уже запропонований `structure/screens.md`; **reused** | готово — `docs/design-system.md` (ISS-44) |
+| `EmptyState` | Стандартний порожній стан — уже запропонований `structure/screens.md`; **reused** | готово — `docs/design-system.md` (ISS-44) |
+| `ConfirmDialog` | Підтвердження дії з наслідками, що не скасовуються одним кліком — уже запропонований `structure/screens.md` (AC-11b там); **reused** для архівації картки тут | готово — `docs/design-system.md` (ISS-44) |
+
+> **Чому `DeckGrid`/`MetricBlockCard`/`EntryHistoryList` не отримали рядка в `docs/design-system.md`:** той файл — інвентар САМЕ `plan/app/src/shared/ui/` («Library location», design-system.md §Design tool) — примітивів, спільних для всіх карток. Ці три компоненти живуть у `plan/app/src/cards/life-area-card/ui/` — специфічні для цієї картки, не спільна бібліотека. Якщо колись з'явиться другий користувач (інша картка захоче той самий компонент) — тоді і винести в `shared/ui/` з рядком у `design-system.md`, не раніше (YAGNI).
 
 Чотири останні рядки — не нові пропозиції, а той самий компонент, що вже запропонував `structure/screens.md`: продукт отримає **один** реальний компонент кожного виду, коли `implement` вперше його напише, а не декілька з різними назвами. Усі — `pending`: жоден код компонента ще не написаний ([`design-system.md`](../../design-system.md) — інвентар лише 4 заплановані примітиви: `CardShell`/`Button`/`NumberField`/`TextField`, усі реюзані тут). `implement` реєструє кожен назад в інвентар, коли пише реальний код.
