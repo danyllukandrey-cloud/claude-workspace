@@ -7,7 +7,7 @@
 
 import { useState } from 'react';
 import { ArchiveScreen, CardDetailScreen, CreateCardForm, DeckScreen } from '../cards/life-area-card';
-import type { CardBackData, CardFaceData, DeckGridItem, EntryViewModel } from '../cards/life-area-card';
+import type { CardBackData, CardFaceData, DeckGridItem, EntryViewModel, MetricBlockFormValues } from '../cards/life-area-card';
 import { Button } from '../shared/ui';
 import { LoginScreen } from './LoginScreen';
 import type { SessionResult } from './LoginScreen';
@@ -52,6 +52,10 @@ export interface AppProps {
   loadArchivedCardHistory: (cardId: string) => Promise<EntryViewModel[]>;
   /** Архівовує обрану картку (DELETE /cards/{cardId}, CardFace.onArchive, ISS-56). */
   archiveCard: (cardId: string) => Promise<void>;
+  /** Створює блок-метрику обраної картки (POST /cards/{id}/metric-blocks, CardBack.onCreateMetricBlock, ISS-60). */
+  createMetricBlock: (cardId: string, values: MetricBlockFormValues) => Promise<void>;
+  /** ТИМЧАСОВО (D-110, docs/DECISIONS.md) -- вносить запис для блоку обраної картки (POST .../metric-blocks/{id}/entries, CardBack.onAddEntry). */
+  addEntry: (cardId: string, metricBlockId: string, amount: number) => Promise<void>;
 }
 
 type Screen = { screen: 'deck' } | { screen: 'create' } | { screen: 'detail'; cardId: string } | { screen: 'archive' };
@@ -77,6 +81,8 @@ export function App({
   onRestoreCard,
   loadArchivedCardHistory,
   archiveCard,
+  createMetricBlock,
+  addEntry,
 }: AppProps): JSX.Element {
   const [session, setSession] = useState<StoredSession | null>(() => readStoredSession());
   const [screen, setScreen] = useState<Screen>({ screen: 'deck' });
@@ -102,6 +108,8 @@ export function App({
             onBack={() => setScreen({ screen: 'deck' })}
             onArchive={() => archiveCard(screen.cardId)}
             onArchived={() => setScreen({ screen: 'deck' })}
+            onCreateMetricBlock={(values) => createMetricBlock(screen.cardId, values)}
+            onAddEntry={(metricBlockId, amount) => addEntry(screen.cardId, metricBlockId, amount)}
           />
         )}
         {screen.screen === 'archive' && (

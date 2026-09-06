@@ -17,6 +17,8 @@ import { useEffect, useState } from 'react';
 import { Banner, Button, EmptyState, Spinner, TextField } from '../../../shared/ui';
 import { EntryHistoryList } from './EntryHistoryList';
 import { MetricBlockCard } from './MetricBlockCard';
+import { MetricBlockForm } from './MetricBlockForm';
+import type { MetricBlockFormValues } from './MetricBlockForm';
 import type { CardBackData } from './types';
 
 export interface CardBackProps {
@@ -33,6 +35,14 @@ export interface CardBackProps {
   onFlagEntry?: (entryId: string) => Promise<CardBackData>;
   /** AC-15: користувач підтвердив нову назву блоку, перенесення якого зіткнулось із наявним -- повертає свіжий стан звороту без колізії. */
   onRenameTransferredBlock?: (input: { metricBlockId: string; newLabel: string }) => Promise<CardBackData>;
+  /**
+   * ISS-60 (docs/ISSUES.md): створює новий блок-метрику для картки з
+   * порожнього стану -- повертає лише Promise<void> (не свіжі дані), тож
+   * свіжість забезпечує повторний виклик loadBack, не повернене значення.
+   */
+  onCreateMetricBlock?: (values: MetricBlockFormValues) => Promise<void>;
+  /** ТИМЧАСОВО (D-110, docs/DECISIONS.md) -- вносить запис для блоку metricBlockId; відсутній -- кнопка "+" на плитках не рендериться. */
+  onAddEntry?: (metricBlockId: string, amount: number) => Promise<void>;
 }
 
 type LoadState = 'loading' | 'ready' | 'error';
@@ -40,13 +50,21 @@ type LoadState = 'loading' | 'ready' | 'error';
 const FALLBACK_ERROR_TEXT = 'Не вдалося завантажити картку';
 const FALLBACK_COLLISION_ERROR_TEXT = 'У картці вже є блок-метрика з такою назвою й одиницею';
 
-export function CardBack({ loadBack, onFlip, onFlagEntry, onRenameTransferredBlock }: CardBackProps): JSX.Element {
+export function CardBack({
+  loadBack,
+  onFlip,
+  onFlagEntry,
+  onRenameTransferredBlock,
+  onCreateMetricBlock,
+  onAddEntry,
+}: CardBackProps): JSX.Element {
   const [state, setState] = useState<LoadState>('loading');
   const [data, setData] = useState<CardBackData | null>(null);
   const [error, setError] = useState<string>(FALLBACK_ERROR_TEXT);
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [collisionError, setCollisionError] = useState<string | undefined>(undefined);
+  const [isCreatingBlock, setIsCreatingBlock] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,6 +88,19 @@ export function CardBack({ loadBack, onFlip, onFlagEntry, onRenameTransferredBlo
     };
   }, [loadBack]);
 
+  /** Перевантажує зворот після мутації (створення блоку, новий запис) -- той самий loadBack, без окремого стану "loading" (дані вже видимі). */
+  const refresh = (): void => {
+    loadBack()
+      .then((result) => {
+        setData(result);
+        setRenameValue(result.pendingTransferCollision?.label ?? '');
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : FALLBACK_ERROR_TEXT);
+        setState('error');
+      });
+  };
+
   if (state === 'loading') {
     return <Spinner />;
   }
@@ -86,6 +117,21 @@ export function CardBack({ loadBack, onFlip, onFlagEntry, onRenameTransferredBlo
         setError(err instanceof Error ? err.message : 'Не вдалося виправити запис');
         setState('error');
       });
+  };
+
+  const handleCreateMetricBlock = (values: MetricBlockFormValues): Promise<void> => {
+    if (!onCreateMetricBlock) return Promise.resolve();
+    return onCreateMetricBlock(values).then(() => {
+      setIsCreatingBlock(false);
+      refresh();
+    });
+  };
+
+  const handleAddEntry = (metricBlockId: string, amount: number): Promise<void> => {
+    if (!onAddEntry) return Promise.resolve();
+    return onAddEntry(metricBlockId, amount).then(() => {
+      refresh();
+    });
   };
 
   const handleConfirmRename = (): void => {
@@ -118,15 +164,27 @@ export function CardBack({ loadBack, onFlip, onFlagEntry, onRenameTransferredBlo
       )}
 
       {data.metricBlocks.length === 0 ? (
-        <EmptyState
-          message="Ще немає жодної активної метрики"
-          actionHint="Додайте блок-метрику, щоб почати відстежувати прогрес"
-        />
+        <>
+          <EmptyState
+            message="Ще немає жодної активної метрики"
+            actionHint="Додайте блок-метрику, щоб почати відстежувати прогрес"
+          />
+          {onCreateMetricBlock &&
+            (isCreatingBlock ? (
+              <MetricBlockForm onSubmit={handleCreateMetricBlock} />
+            ) : (
+              <Button label="+ Додати блок-метрику" onClick={() => setIsCreatingBlock(true)} />
+            ))}
+        </>
       ) : (
         <>
           {data.aggregateProgress !== null && <p>Загальний прогрес: {Math.round(data.aggregateProgress * 100)}%</p>}
           {data.metricBlocks.map((block) => (
-            <MetricBlockCard key={block.id} block={block} />
+            <MetricBlockCard
+              key={block.id}
+              block={block}
+              onAddEntry={onAddEntry ? (amount) => handleAddEntry(block.id, amount) : undefined}
+            />
           ))}
         </>
       )}

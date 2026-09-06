@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { CardBack } from './CardBack';
 import type { CardBackData, EntryViewModel } from './types';
+import type { MetricBlockFormValues } from './MetricBlockForm';
 
 // screens.md SCR-03 стани -- кожен тест тригерить свій стан через результат
 // (чи ще не результат) ін'єктованих loadBack/onFlagEntry/onRenameTransferredBlock,
@@ -179,4 +180,92 @@ test('SCR-03: клік "← лицьова" викликає onFlip', async () =
   fireEvent.click(await screen.findByRole('button', { name: /лицьова/ }));
 
   expect(onFlip).toHaveBeenCalledTimes(1);
+});
+
+// ISS-60 (docs/ISSUES.md, план у рядку): порожній стан отримує кнопку
+// "+ Додати блок-метрику" -> відкриває MetricBlockForm (T28) -> injected
+// onCreateMetricBlock -> після успіху форма закривається й CardBack сам
+// перевантажує зворот через loadBack (той самий "ремаунт перезавантажує"
+// підхід, що вже є в App.tsx для інших мутацій) -- onCreateMetricBlock
+// повертає лише Promise<void>, не свіжі дані, тому свіжість забезпечує
+// повторний виклик loadBack, не повернене значення.
+
+test('ISS-60: без onCreateMetricBlock порожній стан не показує кнопку створення блоку', async () => {
+  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
+  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
+
+  await screen.findByText('Ще немає жодної активної метрики');
+  expect(screen.queryByRole('button', { name: '+ Додати блок-метрику' })).toBeNull();
+});
+
+test('ISS-60: з onCreateMetricBlock порожній стан показує кнопку "+ Додати блок-метрику", клік відкриває MetricBlockForm', async () => {
+  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
+  render(
+    <CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateMetricBlock={vi.fn()} />,
+  );
+
+  await screen.findByText('Ще немає жодної активної метрики');
+  fireEvent.click(screen.getByRole('button', { name: '+ Додати блок-метрику' }));
+
+  expect(screen.getByLabelText('Що рахуємо:')).toBeTruthy();
+  expect(screen.getByLabelText('Одиниця:')).toBeTruthy();
+});
+
+test('ISS-60: успішне збереження форми викликає onCreateMetricBlock(values), закриває форму й перевантажує зворот (loadBack вдруге)', async () => {
+  const emptyData: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
+  const filledData: CardBackData = {
+    metricBlocks: [
+      { id: 'mb1', label: 'Тренування', unit: 'раз', progress: { kind: 'bounded', share: 0, overGoal: 0 }, hasPendingEntry: false },
+    ],
+    aggregateProgress: 0,
+    entries: [],
+  };
+  const loadBack = vi.fn().mockResolvedValueOnce(emptyData).mockResolvedValueOnce(filledData);
+  const onCreateMetricBlock = vi.fn().mockResolvedValue(undefined);
+
+  render(<CardBack loadBack={loadBack} onFlip={vi.fn()} onCreateMetricBlock={onCreateMetricBlock} />);
+
+  await screen.findByText('Ще немає жодної активної метрики');
+  fireEvent.click(screen.getByRole('button', { name: '+ Додати блок-метрику' }));
+
+  fireEvent.change(screen.getByLabelText('Що рахуємо:'), { target: { value: 'Тренування' } });
+  fireEvent.change(screen.getByLabelText('Одиниця:'), { target: { value: 'раз' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+
+  await screen.findByText(/Тренування: 0%/);
+
+  const expected: MetricBlockFormValues = {
+    label: 'Тренування',
+    unit: 'раз',
+    targetCount: null,
+    isOngoing: false,
+    targetDate: null,
+  };
+  expect(onCreateMetricBlock).toHaveBeenCalledWith(expected);
+  expect(loadBack).toHaveBeenCalledTimes(2);
+  expect(screen.queryByLabelText('Що рахуємо:')).toBeNull();
+});
+
+// D-110 (docs/DECISIONS.md, ТИМЧАСОВЕ): onAddEntry прокидається з CardBack
+// у КОЖЕН MetricBlockCard, замкнутий над block.id -- MetricBlockCard сам
+// нічого не знає про metricBlockId (лише amount), тому саме CardBack додає
+// його при передачі.
+
+test('D-110: onAddEntry, якщо переданий, прокидається в MetricBlockCard замкнутим над id блоку', async () => {
+  const data: CardBackData = {
+    metricBlocks: [
+      { id: 'mb1', label: 'Тренування', unit: 'раз', progress: { kind: 'bounded', share: 0.5, overGoal: 0 }, hasPendingEntry: false },
+    ],
+    aggregateProgress: 0.5,
+    entries: [],
+  };
+  const onAddEntry = vi.fn().mockResolvedValue(undefined);
+  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onAddEntry={onAddEntry} />);
+
+  await screen.findByText(/Тренування: 50%/);
+  fireEvent.click(screen.getByRole('button', { name: '+' }));
+  fireEvent.change(screen.getByLabelText('Кількість'), { target: { value: '3' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Додати' }));
+
+  expect(onAddEntry).toHaveBeenCalledWith('mb1', 3);
 });

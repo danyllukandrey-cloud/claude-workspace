@@ -38,6 +38,7 @@ import type {
   CardFaceData,
   DeckGridItem,
   EntryViewModel,
+  MetricBlockFormValues,
   MetricBlockGoal,
   MetricBlockViewModel,
   RawEntry,
@@ -361,6 +362,40 @@ async function archiveCard(cardId: string): Promise<void> {
   }
 }
 
+/** ISS-60 (docs/ISSUES.md): реальний POST /cards/{id}/metric-blocks -- CardBack.onCreateMetricBlock. */
+async function createMetricBlock(cardId: string, values: MetricBlockFormValues): Promise<void> {
+  const response = await fetch(`/api/v1/cards/${cardId}/metric-blocks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({
+      label: values.label,
+      unit: values.unit,
+      targetCount: values.targetCount,
+      isOngoing: values.isOngoing,
+      targetDate: values.targetDate,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? 'Не вдалося зберегти блок-метрику');
+  }
+}
+
+/** ТИМЧАСОВО (D-110, docs/DECISIONS.md) -- реальний POST .../metric-blocks/{metricBlockId}/entries -- CardBack.onAddEntry. */
+async function addEntry(cardId: string, metricBlockId: string, amount: number): Promise<void> {
+  const response = await fetch(`/api/v1/cards/${cardId}/metric-blocks/${metricBlockId}/entries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ amount }),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? 'Не вдалося зберегти запис');
+  }
+}
+
 const root = document.getElementById('root');
 if (!root) throw new Error('Не знайдено елемент #root у index.html');
 
@@ -382,6 +417,8 @@ createRoot(root).render(
       onRestoreCard={onRestoreCard}
       loadArchivedCardHistory={loadArchivedCardHistory}
       archiveCard={archiveCard}
+      createMetricBlock={createMetricBlock}
+      addEntry={addEntry}
     />
   </StrictMode>,
 );

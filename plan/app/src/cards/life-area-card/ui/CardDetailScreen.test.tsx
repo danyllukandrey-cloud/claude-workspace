@@ -134,3 +134,28 @@ test('ISS-56: архівування на лицьовій стороні вик
   expect(props.onArchive).toHaveBeenCalledTimes(1);
   await vi.waitFor(() => expect(props.onArchived).toHaveBeenCalledTimes(1));
 });
+
+// ISS-60/D-110 (RED, docs/ISSUES.md): CardDetailScreen прокидає два нові
+// опційні пропи без змін у CardBack -- onCreateMetricBlock (ISS-60) і
+// onAddEntry (D-110, тимчасове). Тестуємо лише прокидання (той самий підхід,
+// що вже є для onFlagEntry/onRenameTransferredBlock вище) -- власна поведінка
+// кожного вже покрита CardBack.test.tsx ізольовано.
+
+test('ISS-60/D-110: onCreateMetricBlock/onAddEntry, якщо передані, прокидаються в CardBack без змін', async () => {
+  const props = baseProps();
+  const onCreateMetricBlock = vi.fn().mockResolvedValue(undefined);
+  const onAddEntry = vi.fn().mockResolvedValue(undefined);
+
+  render(
+    <CardDetailScreen {...props} onCreateMetricBlock={onCreateMetricBlock} onAddEntry={onAddEntry} />,
+  );
+
+  fireEvent.click(await screen.findByRole('button', { name: /перегорнути/ }));
+  await screen.findByText('Ще немає жодної активної метрики');
+
+  // Прокидання підтверджується непрямо через реальну поведінку CardBack --
+  // кнопка створення блоку з'являється лише коли onCreateMetricBlock переданий.
+  expect(screen.getByRole('button', { name: '+ Додати блок-метрику' })).toBeTruthy();
+  expect(onCreateMetricBlock).not.toHaveBeenCalled();
+  expect(onAddEntry).not.toHaveBeenCalled();
+});
