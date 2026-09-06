@@ -142,12 +142,35 @@ async function requestSession(googleIdToken: string): Promise<SessionResult> {
   return body as SessionResult;
 }
 
-/** Вантажить GIS-скрипт один раз (idempotent -- перевіряє, чи вже є тег на сторінці). */
-function loadGoogleIdentityScript(): Promise<void> {
-  const existing = document.querySelector(`script[src="${GIS_SCRIPT_SRC}"]`);
-  if (existing) return Promise.resolve();
+// ISS-59: кешуємо ОДИН Promise на рівні модуля, а не перевіряємо лише
+// присутність тега <script> -- React 18 StrictMode (dev) двічі підряд
+// монтує LoginScreen, і другий виклик встигав побачити щойно доданий, але
+// ще НЕ завантажений тег і мовчки вважати це "готово" (window.google ще
+// undefined) -- звідси хибний банер помилки поруч із робочою кнопкою.
+// Тепер усі виклики чекають той самий реальний `load`, незалежно від
+// кількості одночасних монтувань.
+let gisScriptPromise: Promise<void> | null = null;
 
-  return new Promise((resolve, reject) => {
+/** Вантажить GIS-скрипт один раз (idempotent -- усі виклики діляться тим самим Promise). */
+function loadGoogleIdentityScript(): Promise<void> {
+  if (gisScriptPromise) return gisScriptPromise;
+
+  gisScriptPromise = new Promise((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${GIS_SCRIPT_SRC}"]`);
+    if (existing) {
+      // Тег уже доданий (напр. HMR перезапустив цей модуль, але DOM лишився) --
+      // якщо він і справді вже довантажився раніше, window.google вже є, і
+      // подія `load` вдруге не спрацює -- перевіряємо це явно, а не лише
+      // чекаємо подію.
+      if (window.google) {
+        resolve();
+        return;
+      }
+      existing.addEventListener('load', () => resolve());
+      existing.addEventListener('error', () => reject(new Error('Не вдалося завантажити скрипт Google Identity Services')));
+      return;
+    }
+
     const script = document.createElement('script');
     script.src = GIS_SCRIPT_SRC;
     script.async = true;
@@ -156,6 +179,8 @@ function loadGoogleIdentityScript(): Promise<void> {
     script.addEventListener('error', () => reject(new Error('Не вдалося завантажити скрипт Google Identity Services')));
     document.head.appendChild(script);
   });
+
+  return gisScriptPromise;
 }
 
 function renderGoogleButton(
