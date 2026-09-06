@@ -7,7 +7,7 @@ acs: ["AC-17", "AC-18"]
 files_hint: ["plan/app/src/cards/life-area-card/ui/ArchiveScreen.tsx"]
 owner: "TBD"
 estimate: "M"
-status: "todo"
+status: "done"
 ---
 
 # T36 — UI: SCR-07 Архів карток
@@ -22,6 +22,6 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Component test: рендерить default/empty/card-view стани per screens.md SCR-07
-- [ ] Component test: «Розархівувати» викликає T35, після успіху картка зникає зі списку архіву
-- [ ] lint + vet clean
+- [x] Component test: рендерить default/empty/card-view стани per screens.md SCR-07
+- [x] Component test: «Розархівувати» викликає T35, після успіху картка зникає зі списку архіву
+- [x] lint + vet clean
