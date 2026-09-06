@@ -9,7 +9,7 @@
 // 404 однаковий для "не існує" й "чуже" (різні ownerUserId в тесті).
 
 import { describe, it, expect, vi } from 'vitest';
-import { listCards, createCard, getCard, updateCard, archiveCard } from './card-handlers';
+import { listCards, createCard, getCard, updateCard, archiveCard, restoreCard } from './card-handlers';
 import { AppError } from '../../../shared/errors';
 import { CardValidationError } from '../domain/card';
 import type { Db } from '../infra/postgres-repo';
@@ -399,5 +399,63 @@ describe('archiveCard handler', () => {
     await archiveCard(db, OWNER, CARD_ID, closeStructurePosition);
 
     expect(closeStructurePosition).toHaveBeenCalledWith(db, CARD_ID);
+  });
+});
+
+// --- restoreCard (T35) -----------------------------------------------------
+
+/** Маршрутизує запит за текстом SQL -- той самий підхід, що app/restore-card.test.ts. */
+function fakeRestoreCardDb(opts: { current: ReturnType<typeof cardRow> | null; restored?: ReturnType<typeof cardRow> }): Db {
+  const query = vi.fn(async (text: string, _params?: unknown[]) => {
+    if (text.startsWith('SELECT')) {
+      return { rows: opts.current ? [opts.current] : [] };
+    }
+    if (text.startsWith('UPDATE card')) {
+      return { rows: opts.restored ? [opts.restored] : [] };
+    }
+    if (text.startsWith('INSERT INTO card_lifecycle_event')) {
+      return { rows: [{ ...LIFECYCLE_ROW, transition: 'restored' }] };
+    }
+    throw new Error(`Непередбачений запит у тесті: ${text}`);
+  });
+  return { query: query as unknown as Db['query'] };
+}
+
+describe('restoreCard handler', () => {
+  // 200 happy path (AC-17) -- дзеркало archiveCard.
+  it('restores an archived card and returns the Card DTO', async () => {
+    const db = fakeRestoreCardDb({
+      current: cardRow({ status: 'archived' }),
+      restored: cardRow({ status: 'active' }),
+    });
+
+    const result = await restoreCard(db, OWNER, CARD_ID);
+
+    expect(result.status).toBe('active');
+    expect(result).not.toHaveProperty('aggregateProgress');
+  });
+
+  // 404 card.not_found -- та сама форма для "не існує" й "чуже" (AC-04).
+  it('returns the identical 404 for a missing card and for another user\'s card', async () => {
+    const missingDb = fakeRestoreCardDb({ current: null });
+    const foreignDb = fakeRestoreCardDb({ current: null });
+
+    const missingError = await restoreCard(missingDb, 'owner-a', 'nonexistent-card').catch((e) => e);
+    const foreignError = await restoreCard(foreignDb, 'owner-b', CARD_ID).catch((e) => e);
+
+    expect(missingError).toBeInstanceOf(AppError);
+    expect(foreignError).toBeInstanceOf(AppError);
+    expect(missingError).toMatchObject({ code: 'card.not_found', httpStatus: 404 });
+    expect(foreignError).toMatchObject({ code: 'card.not_found', httpStatus: 404 });
+  });
+
+  // 409 card.not_archived -- картка існує й належить користувачу, але вже активна.
+  it('returns 409 card.not_archived for an already-active card', async () => {
+    const db = fakeRestoreCardDb({ current: cardRow({ status: 'active' }) });
+
+    const error = await restoreCard(db, OWNER, CARD_ID).catch((e) => e);
+
+    expect(error).toBeInstanceOf(AppError);
+    expect(error).toMatchObject({ code: 'card.not_archived', httpStatus: 409 });
   });
 });

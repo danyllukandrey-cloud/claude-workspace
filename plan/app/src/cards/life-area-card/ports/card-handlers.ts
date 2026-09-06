@@ -1,4 +1,5 @@
-// Ports: HTTP-хендлери картки (T21) -- contracts/openapi.yaml `/api/v1/cards*`.
+// Ports: HTTP-хендлери картки (T21 + T35 -- той самий файл, tracker.md
+// files_hint, ISS-38) -- contracts/openapi.yaml `/api/v1/cards*`.
 //
 // Framework-agnostic (ADR-0005/сесійний бриф): у репо ще немає жодного HTTP-
 // фреймворку (Express/Fastify) -- це навмисно, T30 підключить конкретний
@@ -23,6 +24,7 @@ import type { CallClaude } from '../app/get-card';
 import { updateCard as updateCardUseCase } from '../app/update-card';
 import { archiveCard as archiveCardUseCase } from '../app/archive-card';
 import type { CloseStructurePositionForCard } from '../app/archive-card';
+import { restoreCard as restoreCardUseCase } from '../app/restore-card';
 import type { CardRecord, CardStatusRow, Db } from '../infra/postgres-repo';
 
 // --- DTO -- форма відповіді, camelCase, точно як у схемах контракту --------
@@ -212,5 +214,19 @@ export async function archiveCard(
   closeStructurePosition?: CloseStructurePositionForCard
 ): Promise<CardDto> {
   const record = await archiveCardUseCase(db, { ownerUserId, cardId }, closeStructurePosition);
+  return toCardDto(record);
+}
+
+// --- restoreCard -- POST /api/v1/cards/{cardId}/restore --------------------
+// T35 -- dзеркало archiveCard (AC-17). 404 card.not_found (non-disclosure,
+// AC-04) і 409 card.not_archived (картка вже активна) кидає use-case (T33)
+// сам -- пропускаємо як є, той самий підхід, що решта хендлерів цього файлу.
+//
+// AC-18 (перегляд архіву) НЕ потребує окремого хендлера -- listCards вище
+// (T21) уже приймає status='archived' і повертає ту саму CardPage, той самий
+// ендпоінт GET /cards, лише інший query-параметр (contracts/openapi.yaml).
+
+export async function restoreCard(db: Db, ownerUserId: string, cardId: string): Promise<CardDto> {
+  const record = await restoreCardUseCase(db, ownerUserId, cardId);
   return toCardDto(record);
 }

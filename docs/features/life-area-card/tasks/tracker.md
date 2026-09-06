@@ -39,7 +39,7 @@
 | T32 | Migration: restore transition + archived index | migration | TBD | S | T5 | done |
 | T33 | App: restoreCard use-case | app | TBD | S | T9, T10 | done |
 | T34 | App: listCards with status filter | app | TBD | S | T10 | done |
-| T35 | Ports: restoreCard + archived listCards handlers | ports | TBD | S | T33, T34 | todo |
+| T35 | Ports: restoreCard + archived listCards handlers | ports | TBD | S | T33, T34, T21 | done |
 | T36 | UI: SCR-07 Архів карток | ui | TBD | M | T24, T35 | todo |
 | T37 | UI: SCR-02 rename state | ui | TBD | S | T24, T21 | todo |
 | T38 | Migration: add owner_user_id FK | migration | TBD | S | T1 | done |
