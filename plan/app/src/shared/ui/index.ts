@@ -20,4 +20,11 @@ export type { EmptyStateProps } from './EmptyState';
 export { ConfirmDialog } from './ConfirmDialog';
 export type { ConfirmDialogProps } from './ConfirmDialog';
 
-// Button, NumberField, TextField — ще заплановано, ще не написано (design-system.md).
+export { Button } from './Button';
+export type { ButtonProps } from './Button';
+
+export { TextField } from './TextField';
+export type { TextFieldProps } from './TextField';
+
+export { NumberField } from './NumberField';
+export type { NumberFieldProps } from './NumberField';

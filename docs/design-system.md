@@ -3,7 +3,7 @@ status: Living
 tool: code
 figma_file: ""
 pen_file: ""
-updated_at: "2026-08-24"
+updated_at: "2026-09-06"
 ---
 
 # Design system — ПЛАН
@@ -30,12 +30,18 @@ updated_at: "2026-08-24"
 
 | Component | Source (`file:line` / node / URL) | States it supports | Notes |
 |---|---|---|---|
-| `CardShell` | `plan/app/src/shared/ui/index.ts:4` | — | **Заплановано, ще не написано.** Каркас картки, що перевертається (лицьова / зворотна сторона) |
-| `Button` | `plan/app/src/shared/ui/index.ts:5` | — | **Заплановано, ще не написано** |
-| `NumberField` | `plan/app/src/shared/ui/index.ts:5` | — | **Заплановано, ще не написано** |
-| `TextField` | `plan/app/src/shared/ui/index.ts:5` | — | **Заплановано, ще не написано** |
+| `CardShell` | `plan/app/src/shared/ui/CardShell.tsx:17` | front, back (перемикається пропом `isFlipped`) | Каркас картки, що перевертається — одночасно видно лише одну сторону (T24) |
+| `Button` | `plan/app/src/shared/ui/Button.tsx:17` | default, disabled | Presentation-примітив: підпис + `onClick`, без бізнес-логіки (T27/T28/T29/T36/T37 підготовка, хвиля 7) |
+| `TextField` | `plan/app/src/shared/ui/TextField.tsx:21` | default, error (інлайн-помилка під полем) | Controlled текстове поле (хвиля 7) |
+| `NumberField` | `plan/app/src/shared/ui/NumberField.tsx:19` | default, error (інлайн-помилка під полем) | Controlled числове поле; `null` = порожньо, окремо від `0` (хвиля 7) |
+| `Banner` | `plan/app/src/shared/ui/Banner.tsx:15` | success, error, info (проп `variant`) | Інлайн-повідомлення — ніколи `alert` (T24) |
+| `Spinner` | `plan/app/src/shared/ui/Spinner.tsx:6` | — (без пропів, лише індикатор) | Індикатор завантаження (T24) |
+| `EmptyState` | `plan/app/src/shared/ui/EmptyState.tsx:13` | — (повідомлення + підказка наступної дії) | Стандартний порожній стан, без ілюстрацій (T24) |
+| `ConfirmDialog` | `plan/app/src/shared/ui/ConfirmDialog.tsx:20` | — (повідомлення + confirm/cancel) | Підтвердження дії з незворотними наслідками — ніколи `confirm()` (T24) |
 
 `screens.md` кожної фічі описує екрани цими назвами; коли `implement` напише компонент насправді, рядок оновлюється реальним `file:line` і переліком станів.
+
+> **ISS-44 закрито тут же:** до цієї правки таблиця містила лише 4 з 8 уже написаних компонентів — `Banner`/`Spinner`/`EmptyState`/`ConfirmDialog` існували в коді й використовувались у `screens.md` кожної фічі, але жодного рядка тут не мали.
 
 ## Interaction & writing conventions
 
