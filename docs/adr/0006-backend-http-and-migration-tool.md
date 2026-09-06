@@ -125,3 +125,18 @@
 4. Повернути `token`/`expiresAt`/`user`.
 
 Кожен ІНШИЙ маршрут (усіх трьох фіч) перевіряє цей JWT одним спільним middleware в тому самому composition root — той самий `AppError`/error-envelope, що вже описаний у §Обґрунтування вище.
+
+### Фронтенд (ISS-52)
+
+Той самий прецедент, що ендпоінт сесії вище — екран входу не належить жодній з трьох product-фіч (жоден `spec.md` не описує його як власний AC), тож живе в `plan/app/src/app/` (app-shell), поруч із `main.tsx`, не в `cards/life-area-card/`.
+
+**Бібліотека:** Google Identity Services (GIS) — `<script src="https://accounts.google.com/gsi/client">`, той самий постачальник, що вже перевіряється на бекенді через `google-auth-library`, документація і приклади збігаються один-в-один (той самий критерій ADR-0006, «чи розбереться Андрій сам»). Без OAuth-редиректу і без власного попапа — `google.accounts.id.initialize({ client_id, callback })` + кнопка, GIS сам показує стандартний Google-попап і повертає `credential` (Google ID-токен) у колбек.
+
+**Потік:**
+
+1. `main.tsx` при старті читає `localStorage['plan.jwt']`. Немає токена (або збережений `expiresAt` минув) → рендерить `LoginScreen`, не `DeckScreen`.
+2. `LoginScreen` монтує GIS-кнопку. Колбек отримує `credential` → `POST /api/v1/session` з `{ googleIdToken: credential }`.
+3. Відповідь 200 → `{ token, expiresAt, user }` пишеться в `localStorage['plan.jwt']` (той самий формат, що вже читає `main.tsx`) → рендер перемикається на `DeckScreen`.
+4. Відповідь 401 (`auth.invalid_google_token`) → повідомлення про помилку на `LoginScreen`, спробувати ще раз.
+
+**Нова змінна середовища:** `VITE_GOOGLE_CLIENT_ID` — той самий Client ID, що бекендовий `GOOGLE_CLIENT_ID` (це публічний ідентифікатор застосунку, не секрет — Google API його ніколи не приховує, у браузері він і так видно в HTML/мережевих запитах). Vite за замовчуванням шукає `.env` у своїй власній папці (`plan/app/`), а не в корені репозиторію — щоб не заводити другий `.env`-файл (правило єдиного джерела), `vite.config.ts` отримує `envDir: '../../'`, і змінна лягає в той самий кореневий `.env`, що й решта (`DATABASE_URL`, `JWT_SECRET` тощо). Vite експонує в браузерний бандл лише змінні з префіксом `VITE_` — решта кореневого `.env` (секрети на кшталт `JWT_SECRET`/`ANTHROPIC_API_KEY`) лишається недоступна фронтенд-коду, це вбудований запобіжник самого Vite, не наша умовність.
