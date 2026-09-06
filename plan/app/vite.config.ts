@@ -7,6 +7,10 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
+  // Root .env (правило єдиного джерела) -- DATABASE_URL/JWT_SECRET лишаються
+  // недоступні браузеру (Vite експонує лише VITE_-префіксовані змінні),
+  // VITE_GOOGLE_CLIENT_ID (ADR-0006 "### Фронтенд (ISS-52)") читається звідти.
+  envDir: '../../',
   test: {
     environment: 'jsdom',
     globals: true,
