@@ -9,7 +9,7 @@
 // картка-джерело; (3) AppError use-case шару проходить нагору без змін.
 
 import { describe, it, expect, vi } from 'vitest';
-import { createMetricBlock, transferMetricBlock } from './metric-block-handlers';
+import { createMetricBlock, transferMetricBlock, listMetricBlocks } from './metric-block-handlers';
 import { AppError } from '../../../shared/errors';
 import type { Db } from '../infra/postgres-repo';
 
@@ -78,6 +78,71 @@ const OTHER_METRIC_BLOCK_ROW = { ...SOURCE_METRIC_BLOCK_ROW, id: 'block-other', 
 function transferredBlockRow(overrides: Partial<typeof SOURCE_METRIC_BLOCK_ROW> = {}) {
   return { ...SOURCE_METRIC_BLOCK_ROW, card_id: 'card-target', ...overrides };
 }
+
+// --- listMetricBlocks (D-106, закриває ISS-39) ------------------------------
+
+describe('listMetricBlocks port', () => {
+  // DoD (D-106): метадані блоків картки, БЕЗ progress/overGoalAmount --
+  // прогрес рахує PWA клієнтськи (sad.md Critical flow 4/6), не цей ендпоінт.
+  it('returns metric-block metadata for the card, without progress/overGoalAmount fields', async () => {
+    const OTHER_BLOCK_ROW = { ...CREATED_METRIC_BLOCK_ROW, id: 'block-2', label: 'Фільми', target_date: null };
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [OWNED_CARD_ROW] }) // findCardById
+      .mockResolvedValueOnce({ rows: [CREATED_METRIC_BLOCK_ROW, OTHER_BLOCK_ROW] }); // listMetricBlocksByCard
+    const db: Db = { query };
+
+    const result = await listMetricBlocks(db, 'user-1', 'card-1');
+
+    expect(result).toEqual([
+      {
+        id: 'block-1',
+        cardId: 'card-1',
+        label: 'Книги',
+        unit: 'книги',
+        frequency: null,
+        targetCount: 12,
+        isOngoing: false,
+        targetDate: '2026-03-15',
+        createdAt: '2026-01-02T00:00:00.000Z',
+        updatedAt: '2026-01-02T00:00:00.000Z',
+      },
+      expect.objectContaining({ id: 'block-2', label: 'Фільми' }),
+    ]);
+    // additionalProperties: false в контракті -- жодного progress/overGoalAmount, як і create/transfer.
+    result.forEach((block) => {
+      expect(block).not.toHaveProperty('progress');
+      expect(block).not.toHaveProperty('overGoalAmount');
+    });
+  });
+
+  // Картка без жодного блоку -- порожній масив, не помилка (AC-08, декларативна картка).
+  it('returns an empty array for a card with no metric blocks', async () => {
+    const query = vi.fn().mockResolvedValueOnce({ rows: [OWNED_CARD_ROW] }).mockResolvedValueOnce({ rows: [] });
+    const db: Db = { query };
+
+    const result = await listMetricBlocks(db, 'user-1', 'card-1');
+
+    expect(result).toEqual([]);
+  });
+
+  // 404 card.not_found -- та сама форма для "не існує" й "чуже" (AC-04),
+  // перевірено перед будь-яким читанням блоків.
+  it('returns the identical 404 for a missing card and for another user\'s card', async () => {
+    const missingQuery = vi.fn().mockResolvedValue({ rows: [] });
+    const foreignQuery = vi.fn().mockResolvedValue({ rows: [] });
+
+    const missingError = await listMetricBlocks({ query: missingQuery }, 'owner-a', 'nonexistent-card').catch((e) => e);
+    const foreignError = await listMetricBlocks({ query: foreignQuery }, 'owner-b', 'card-1').catch((e) => e);
+
+    expect(missingError).toBeInstanceOf(AppError);
+    expect(foreignError).toBeInstanceOf(AppError);
+    expect(missingError).toMatchObject({ code: 'card.not_found', httpStatus: 404 });
+    expect(foreignError).toMatchObject({ code: 'card.not_found', httpStatus: 404 });
+    // non-disclosure: жодного другого запиту (listMetricBlocksByCard) при відсутній картці.
+    expect(missingQuery).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('createMetricBlock port', () => {
   // DoD: створення блоку відповідає контракту -- camelCase, дати рядками,

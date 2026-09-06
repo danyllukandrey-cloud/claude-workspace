@@ -96,10 +96,14 @@ paths:
   /api/v1/cards/{cardId}:
     get:
       tags: [Cards]
-      summary: Прочитати картку з пораховим прогресом (AC-09/AC-09b/AC-10)
+      summary: Прочитати картку з пораховим агрегатом прогресу (AC-09/AC-09b/AC-10)
       description: |
-        `progress` — частка виконання цілі по кожному блоку-метриці, обмежена 100% при
-        перевищенні (`overGoalAmount` показує надлишок окремо, AC-09b, ADR-0001). `dataWarning` —
+        `aggregateProgress` — картковий агрегат (D-105: середнє часток виконання цілі серед
+        bounded-блоків, capped 100% при перевищенні, AC-09b); `null` для декларативної картки без
+        жодного bounded-блоку (AC-08). Виправлено 2026-09-06 (D-106) — попередній опис помилково
+        обіцяв per-block `progress`/`overGoalAmount` полів, яких немає в схемі `Card`
+        (`additionalProperties: false`); ці числа PWA рахує сама з `GET .../metric-blocks`
+        (метадані) + `GET .../entries` (сирі події), не з цього ендпоінту. `dataWarning` —
         непорожнє, коли агент вважає щось на картці підозрілим (AC-10); не блокує решту картки.
       operationId: getCard
       parameters:
@@ -215,6 +219,36 @@ paths:
                 message: "Only an archived card can be restored"
 
   /api/v1/cards/{cardId}/metric-blocks:
+    get:
+      tags: [MetricBlocks]
+      summary: Прочитати список блоків-метрик картки (D-106, закриває ISS-39)
+      description: |
+        Метадані блоків картки (label/unit/targetCount/isOngoing/frequency), БЕЗ обчисленого
+        прогресу — `progress`/`overGoalAmount` у відповіді відсутні (те саме, що `createMetricBlock`
+        повертає при 201). Прогрес рахує PWA клієнтськи з сирих подій (docs/features/life-area-card/adr/0001-recompute-progress-from-raw-events.md,
+        sad.md Critical flow 4/6) на основі цих метаданих + історії з `GET .../entries`. Без
+        пагінації — жодне джерело (`spec.md`/`screens.md`) не фіксує ліміт блоків на картці,
+        рішення спирається на припущення MVP-масштабу (одиниці блоків на картку), не на письмове
+        обмеження; переглянути, якщо практика покаже інше.
+      operationId: listMetricBlocks
+      parameters:
+        - in: path
+          name: cardId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MetricBlock" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/CardNotFound"
+
     post:
       tags: [MetricBlocks]
       summary: Додати блок-метрику до картки (AC-05/AC-07/AC-08 US-02/06/08/09)

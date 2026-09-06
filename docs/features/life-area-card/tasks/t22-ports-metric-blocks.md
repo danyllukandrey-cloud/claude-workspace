@@ -25,3 +25,7 @@ HTTP-хендлери блоків-метрик — [`contracts/openapi.yaml` `/
 - [x] Handler-test: створення блоку відповідає контракту
 - [x] Handler-test: `409` на колізію назви при перенесенні, точно за прикладом
 - [x] lint + vet clean
+
+## Notes
+
+**Доповнено 2026-09-06 ([D-106](../../../DECISIONS.md#d-106), закриває [ISS-39](../../../ISSUES.md)):** той самий файл отримав `GET /cards/{cardId}/metric-blocks` (`listMetricBlocks`) — метадані блоків картки (label/unit/targetCount/isOngoing/frequency), БЕЗ обчисленого прогресу (`progress`/`overGoalAmount` і далі рахує PWA клієнтськи, `sad.md` Critical flow 4/6). T26 (хвиля 7, картка face+back) використовує цей ендпоінт для відкриття переліку блоків картки.

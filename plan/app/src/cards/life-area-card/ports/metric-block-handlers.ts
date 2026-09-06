@@ -1,6 +1,7 @@
-// Ports-шар (T22): HTTP-хендлери блоків-метрик за контрактом
+// Ports-шар (T22 + D-106): HTTP-хендлери блоків-метрик за контрактом
 // (docs/features/life-area-card/contracts/openapi.yaml, шляхи
-// /api/v1/cards/{cardId}/metric-blocks і /api/v1/cards/{cardId}/metric-blocks/transfer).
+// /api/v1/cards/{cardId}/metric-blocks (GET+POST) і
+// /api/v1/cards/{cardId}/metric-blocks/transfer).
 //
 // Framework-agnostic: у репо ще немає жодного HTTP-фреймворку (Express/Fastify
 // навмисно не встановлені -- T30 підключить конкретний транспорт пізніше).
@@ -22,12 +23,17 @@
 // порту, а не в репозиторії (репозиторій навмисно лишається "сирим" шаром
 // над `pg`, серіалізація під конкретний контракт -- відповідальність порту).
 //
-// `progress`/`overGoalAmount` зі схеми MetricBlock контракту цей файл НЕ
-// заповнює: обидва поля опційні (відсутні в `required`), а їхній розрахунок
-// -- відповідальність окремого GET-ендпоінту з прогресом (T26, хвиля 7,
-// ISS-39). create/transfer лише створюють чи переносять блок і не мають
-// звідки взяти прогрес без зайвого запиту записів -- тому поля просто
-// відсутні у відповіді, а не заповнені вигаданим null.
+// `progress`/`overGoalAmount` зі схеми MetricBlock контракту цей файл ніде
+// НЕ заповнює -- навіть у listMetricBlocks нижче (D-106, закриває ISS-39):
+// прогрес і далі рахує PWA клієнтськи з сирих подій (feature ADR-0001 --
+// docs/features/life-area-card/adr/0001-recompute-progress-from-raw-events.md,
+// не плутати з кореневим docs/adr/0001-frontend-stack.md; sad.md Critical
+// flow 4/6), не бекенд. listMetricBlocks віддає лише метадані
+// (label/unit/targetCount/isOngoing/frequency) -- те, чого досі не було
+// способу прочитати взагалі (T26, хвиля 7, потребує списку блоків картки).
+// Клієнт кешує ці метадані повним заміщенням (local-cache.ts
+// cacheMetricBlocks, T11+D-106) -- відкриття картки офлайн НЕ залежить від
+// цього ендпоінту, лише перша синхронізація на новому пристрої (QG-1).
 //
 // targetDate -- ЛОКАЛЬНІ ґеттери (getFullYear/getMonth/getDate), НЕ
 // toISOString() (виправлено, blocker критика хвилі 6): target_date у БД --
@@ -40,7 +46,9 @@
 
 import { createMetricBlock as createMetricBlockUseCase } from '../app/create-metric-block';
 import { transferMetricBlock as transferMetricBlockUseCase } from '../app/transfer-metric-block';
+import { findCardById, listMetricBlocksByCard } from '../infra/postgres-repo';
 import type { Db, MetricBlockRecord } from '../infra/postgres-repo';
+import { AppError } from '../../../shared/errors';
 
 /** Тіло POST /api/v1/cards/{cardId}/metric-blocks (openapi.yaml MetricBlockCreate). */
 export interface MetricBlockCreateBody {
@@ -97,6 +105,26 @@ function toMetricBlock(record: MetricBlockRecord): MetricBlock {
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
   };
+}
+
+/**
+ * GET /api/v1/cards/{cardId}/metric-blocks (D-106, закриває ISS-39) --
+ * список метаданих блоків картки, БЕЗ прогресу (PWA рахує сама, sad.md
+ * Critical flow 4/6). Non-disclosure (AC-04): findCardById перевіряється
+ * ПЕРЕД читанням блоків -- чужа й неіснуюча картка дають однаковий
+ * card.not_found (CardNotFound), той самий підхід, що listEntries (T23).
+ * Без пагінації -- припущення MVP-масштабу (одиниці блоків на картку), НЕ
+ * письмове обмеження з spec.md/screens.md (openapi.yaml, той самий опис
+ * дослівно) -- переглянути, якщо практика покаже інше.
+ */
+export async function listMetricBlocks(db: Db, ownerUserId: string, cardId: string): Promise<MetricBlock[]> {
+  const card = await findCardById(db, ownerUserId, cardId);
+  if (!card) {
+    throw new AppError('card.not_found', 'Картку не знайдено', 404);
+  }
+
+  const blocks = await listMetricBlocksByCard(db, cardId);
+  return blocks.map(toMetricBlock);
 }
 
 /**

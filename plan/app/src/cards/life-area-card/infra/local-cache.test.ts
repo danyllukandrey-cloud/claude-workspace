@@ -3,7 +3,8 @@ import type { StoragePort } from '../../../shared/storage/port';
 import { createEntry } from '../domain/entry';
 import { computeProgress } from '../domain/progress';
 import type { RawEntry, MetricBlockGoal } from '../domain/progress';
-import { readCachedEntries, cacheEntry, computeProgressFromCache } from './local-cache';
+import { readCachedEntries, cacheEntry, computeProgressFromCache, readCachedMetricBlocks, cacheMetricBlocks } from './local-cache';
+import type { CachedMetricBlock } from './local-cache';
 
 // Проста фейкова реалізація StoragePort -- Map у пам'яті, без localStorage і
 // без мережі. Нормальна практика для коду за портами (T11 task context):
@@ -49,6 +50,49 @@ describe('cacheEntry', () => {
 
     const [cached] = readCachedEntries(storage, 'card-1');
     expect(cached.status).toBe('pending');
+  });
+});
+
+describe('readCachedMetricBlocks / cacheMetricBlocks (D-106, закриває ISS-39)', () => {
+  const BLOCK: CachedMetricBlock = {
+    id: 'block-1',
+    label: 'Пробіжки',
+    unit: 'км',
+    frequency: null,
+    targetCount: 10,
+    isOngoing: false,
+    targetDate: null,
+  };
+
+  // QG-1 (sad.md §10): відкриття картки БЕЗ мережі читає метадані блоків
+  // зі 100% з кешу -- фейковий StoragePort не робить жодного мережевого
+  // виклику за визначенням, доводимо, що раніше синхронізовані метадані
+  // читаються назад рівно з нього.
+  it('reads previously synced metric-block metadata back without any network call', () => {
+    const storage = createFakeStorage();
+    cacheMetricBlocks(storage, 'card-1', [BLOCK]);
+
+    expect(readCachedMetricBlocks(storage, 'card-1')).toEqual([BLOCK]);
+  });
+
+  // Немає кешованих метаданих (картка ще ніколи не синхронізувалась) --
+  // порожній масив, не помилка й не null -- той самий контракт, що readCachedEntries.
+  it('returns an empty array when nothing has been synced yet', () => {
+    const storage = createFakeStorage();
+
+    expect(readCachedMetricBlocks(storage, 'card-1')).toEqual([]);
+  });
+
+  // Повне заміщення, НЕ append (на відміну від cacheEntry) -- GET .../metric-blocks
+  // завжди повертає актуальний повний список, не приріст.
+  it('replaces the cached list wholesale on each sync, unlike the append-only entries cache', () => {
+    const storage = createFakeStorage();
+    cacheMetricBlocks(storage, 'card-1', [BLOCK]);
+
+    const renamed = { ...BLOCK, label: 'Біг' };
+    cacheMetricBlocks(storage, 'card-1', [renamed]);
+
+    expect(readCachedMetricBlocks(storage, 'card-1')).toEqual([renamed]);
   });
 });
 
