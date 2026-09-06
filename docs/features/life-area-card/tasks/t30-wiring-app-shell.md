@@ -7,7 +7,7 @@ acs: []
 files_hint: ["plan/app/src/cards/life-area-card/index.ts", "plan/app/src/app/main.tsx", "plan/app/server/ (composition root, ADR-0006)"]
 owner: "TBD"
 estimate: "M"
-status: "todo"
+status: "done"
 ---
 
 # T30 — Wiring: register life-area-card module + backend transport
@@ -26,10 +26,19 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Застосунок запускається з Колодою, доступною з навігації
-- [ ] `index.ts` відповідає `sad.md §5`
-- [ ] `plan/app/server/` реально піднімає Express, усі змонтовані маршрути відповідають формою за `contracts/openapi.yaml` (контрактний тест — ADR-0006 §Рішення, п.3)
-- [ ] `POST /api/v1/session` видає JWT за Google ID-токеном точно за формою з ADR-0006 §Додаток: Ендпоінт сесії (D-109); невалідний Google-токен → 401 `auth.invalid_google_token`
-- [ ] Спільний auth-middleware перевіряє JWT на решті маршрутів (усіх трьох фіч, той самий composition root) і кладе `ownerUserId` у контекст запиту для хендлерів
-- [ ] Помилки (`AppError`) мапляться в JSON-конверт контракту одним error-middleware, не в кожному хендлері окремо
-- [ ] lint + vet clean
+- [x] Застосунок запускається з Колодою, доступною з навігації
+- [x] `index.ts` відповідає `sad.md §5`
+- [x] `plan/app/server/` реально піднімає Express, усі змонтовані маршрути відповідають формою за `contracts/openapi.yaml` (контрактний тест — ADR-0006 §Рішення, п.3)
+- [x] `POST /api/v1/session` видає JWT за Google ID-токеном точно за формою з ADR-0006 §Додаток: Ендпоінт сесії (D-109); невалідний Google-токен → 401 `auth.invalid_google_token`
+- [x] Спільний auth-middleware перевіряє JWT на решті маршрутів (усіх трьох фіч, той самий composition root) і кладе `ownerUserId` у контекст запиту для хендлерів
+- [x] Помилки (`AppError`) мапляться в JSON-конверт контракту одним error-middleware, не в кожному хендлері окремо
+- [x] lint + vet clean
+
+## Notes
+
+`npm test` 38/38 файлів, 201/201 тестів; `npm run lint` (обидва tsconfig — браузерний і `tsconfig.server.json`) чисто; `npm run build` перевірено — серверні залежності (`express`/`pg`/`jose`/`google-auth-library`) не потрапляють у браузерний бандл.
+
+**Свідомо поза обсягом цієї задачі (не блокери DoD, лишаються відкритими дороговказами):**
+- Немає екрана логіну — ніщо ще не пише `localStorage['plan.jwt']`, який читає `main.tsx`. До появи екрана входу Колода показуватиме банер помилки (401). Тобто транспорт готовий, UI для самого входу — ще ні.
+- `onOpenCard` у `main.tsx` — заглушка (`console.log`); переходу на деталі картки (`CardFace`/`CardBack`) ще немає в жодній задачі app-shell.
+- **Перед реальним запуском (`npm run dev` зі справжнім сервером) потрібні дві нові змінні середовища, яких ще немає в `.env`:** `JWT_SECRET` (згенерувати самостійно, довільний випадковий рядок) і `GOOGLE_CLIENT_ID` (з Google Cloud Console — окрема ручна дія користувача, не автоматизується). `DATABASE_URL_POOLED` уже є (D-96).
