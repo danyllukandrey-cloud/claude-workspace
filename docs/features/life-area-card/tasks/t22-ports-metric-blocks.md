@@ -7,7 +7,7 @@ acs: ["AC-05", "AC-07", "AC-08", "AC-14", "AC-15"]
 files_hint: ["plan/app/src/cards/life-area-card/ports/metric-block-handlers.ts"]
 owner: "TBD"
 estimate: "S"
-status: "todo"
+status: "done"
 ---
 
 # T22 — Ports: metric-blocks handlers
@@ -22,6 +22,6 @@ HTTP-хендлери блоків-метрик — [`contracts/openapi.yaml` `/
 
 ## Definition of Done
 
-- [ ] Handler-test: створення блоку відповідає контракту
-- [ ] Handler-test: `409` на колізію назви при перенесенні, точно за прикладом
-- [ ] lint + vet clean
+- [x] Handler-test: створення блоку відповідає контракту
+- [x] Handler-test: `409` на колізію назви при перенесенні, точно за прикладом
+- [x] lint + vet clean

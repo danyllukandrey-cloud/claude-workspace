@@ -26,7 +26,7 @@
 | T19 | App: resolveEntry use-case | app | TBD | M | T7, T8, T10 | done |
 | T20 | App: getCardWithProgress use-case | app | TBD | M | T6, T10, T12 | done |
 | T21 | Ports: cards handlers | ports | TBD | M | T13, T14, T15, T20 | done |
-| T22 | Ports: metric-blocks handlers | ports | TBD | S | T16, T17 | todo |
+| T22 | Ports: metric-blocks handlers | ports | TBD | S | T16, T17 | done |
 | T23 | Ports: entries handlers | ports | TBD | S | T18, T19 | todo |
 | T24 | UI: shared CardShell primitives | ui | TBD | M | — | done |
 | T25 | UI: SCR-01 Колода карток | ui | TBD | M | T24, T21 | todo |
