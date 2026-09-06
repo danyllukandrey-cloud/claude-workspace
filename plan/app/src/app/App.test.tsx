@@ -35,13 +35,20 @@ function baseProps() {
     readStoredSession: vi.fn().mockReturnValue(null),
     writeStoredSession: vi.fn(),
     loadCards: vi.fn().mockReturnValue(new Promise<DeckGridItem[]>(() => {})),
-    onOpenCard: vi.fn(),
     requestSession: vi.fn(),
     renderGoogleButton: vi.fn(),
     now: FIXED_NOW,
     // ISS-55, stage 1/3: ін'єкція реального POST /cards (createCard, main.tsx),
     // яку App викликає з екрана 'create' (CreateCardForm.onCreate).
     createCard: vi.fn(),
+    // ISS-55, stage 2/3: відкриття картки з Колоди (CardDetailScreen) --
+    // навігація на 'detail' тепер ВНУТРІШНЯ (App сам перемикає screen, той
+    // самий стиль, що onCreateCard) -- зовнішній injected `onOpenCard` прибрано
+    // з AppProps, замість нього App отримує fetch-функції ЗА cardId, які сам
+    // передає в CardDetailScreen, коли перемкнувся на 'detail'.
+    loadCard: vi.fn().mockResolvedValue({ name: 'Спорт', description: 'опис', dataWarning: null }),
+    loadBack: vi.fn().mockResolvedValue({ metricBlocks: [], aggregateProgress: null, entries: [] }),
+    onRename: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -167,4 +174,60 @@ test('ISS-55: успішне створення картки викликає in
 
   expect(props.createCard).toHaveBeenCalledWith({ name: 'Спорт' });
   expect(props.loadCards).toHaveBeenCalledTimes(2);
+});
+
+// ISS-55, stage 2/3 (RED): клік на тайл картки в Колоді (DeckGrid, T25)
+// відкриває CardDetailScreen (композиція CardFace/CardBack, ще не написана --
+// див. CardDetailScreen.test.tsx). App сам перемикає внутрішній screen на
+// 'detail' з обраним cardId (той самий стиль, що onCreateCard) і передає в
+// CardDetailScreen ін'єктовані loadCard/loadBack/onRename, ЗВ'ЯЗАНІ з cardId
+// тайла, що відкрили -- саме тому props.loadCard/loadBack не приймають
+// аргументів (CardFace/CardBack фіксований контракт), а App сам створює
+// замикання над cardId при передачі.
+
+test('ISS-55 stage 2: клік на тайл картки в Колоді відкриває деталі картки (CardDetailScreen)', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
+
+  render(<App {...props} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Спорт' }));
+
+  // CardFace (T26) -- єдиний, хто рендерить назву картки як <h2>; DeckGrid
+  // більше не на екрані (кнопка "+ Створити картку" -- DeckScreen-специфічна).
+  expect(await screen.findByRole('heading', { name: 'Спорт' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '+ Створити картку' })).toBeNull();
+  expect(props.loadCard).toHaveBeenCalledTimes(1);
+});
+
+test('ISS-55 stage 2: кнопка "← Назад" у деталях картки повертає на Колоду з повторним завантаженням', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
+
+  render(<App {...props} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Спорт' }));
+  await screen.findByRole('heading', { name: 'Спорт' });
+
+  fireEvent.click(screen.getByRole('button', { name: '← Назад' }));
+
+  // Повернення на 'deck' -- тайл картки знову видимий як кнопка DeckGrid.
+  expect(await screen.findByRole('button', { name: 'Спорт' })).toBeTruthy();
+  expect(props.loadCards).toHaveBeenCalledTimes(2);
+});
+
+test('ISS-55 stage 2: перейменування картки в деталях викликає injected onRename(cardId, назва)', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
+
+  render(<App {...props} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Спорт' }));
+  fireEvent.click(await screen.findByRole('heading', { name: 'Спорт' }));
+  fireEvent.change(screen.getByLabelText('Назва'), { target: { value: 'Спорт і здоров’я' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+
+  // onRename в AppProps приймає (cardId, name) -- App сам звужує до
+  // CardDetailScreen-контракту (name: string) => Promise<void> через замикання.
+  expect(props.onRename).toHaveBeenCalledWith('card-1', 'Спорт і здоров’я');
 });

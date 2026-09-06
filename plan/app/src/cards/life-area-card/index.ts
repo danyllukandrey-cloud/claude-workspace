@@ -12,3 +12,10 @@ export type { DeckGridItem } from './ui/DeckGrid';
 
 export { CreateCardForm } from './ui/CreateCardForm';
 export type { CreateCardFormProps, CreateCardFormInput } from './ui/CreateCardForm';
+
+export { CardDetailScreen } from './ui/CardDetailScreen';
+export type { CardDetailScreenProps } from './ui/CardDetailScreen';
+export type { CardBackData, CardFaceData, EntryViewModel, MetricBlockViewModel } from './ui/types';
+
+export { computeProgress } from './domain/progress';
+export type { MetricBlockGoal, RawEntry } from './domain/progress';

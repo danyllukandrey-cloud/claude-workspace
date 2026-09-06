@@ -17,14 +17,32 @@
 // localStorage -- без токена (чи протермінованого) App.tsx рендерить
 // LoginScreen замість DeckScreen, тож loadCards узагалі не викликається.
 //
-// onOpenCard -- поки що заглушка: екран деталей картки (комбінація
-// CardFace/CardBack) ще не зареєстрований у app-shell жодною задачею.
-// Навігація до нього -- деталь майбутньої задачі, не цієї (sad.md §5:
-// "порядок навігації -- деталь реалізації").
+// loadCard/loadBack/onRename -- ін'єктовані реалізації CardDetailScreen
+// (ISS-55 stage 2/3, docs/ISSUES.md). App.tsx сам замикає їх над cardId,
+// обраним у Колоді -- ці функції тут приймають cardId явним параметром.
+//
+// D-106 (openapi.yaml "GET .../metric-blocks"): відповідь ендпоінту -- лише
+// метадані блоку (label/unit/targetCount/isOngoing), БЕЗ обчисленого
+// прогресу -- поля progress/overGoalAmount, які схема технічно дозволяє,
+// НІКОЛИ не читаються звідси. Прогрес кожного блоку рахує сам PWA-клієнт
+// (computeProgress, domain/progress.ts) із сирих подій GET .../entries --
+// той самий підхід, що docs/features/life-area-card/adr/0001-recompute-progress-from-raw-events.md.
+// Картковий агрегат (aggregateProgress, D-105) -- єдине число, яке довіряємо
+// як є з GET /cards/{cardId} (сервер уже порахував середнє часток bounded-
+// блоків, capped 100%).
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import type { DeckGridItem } from '../cards/life-area-card';
+import type {
+  CardBackData,
+  CardFaceData,
+  DeckGridItem,
+  EntryViewModel,
+  MetricBlockGoal,
+  MetricBlockViewModel,
+  RawEntry,
+} from '../cards/life-area-card';
+import { computeProgress } from '../cards/life-area-card';
 import { App } from './App';
 import type { StoredSession } from './App';
 import type { SessionResult } from './LoginScreen';
@@ -40,6 +58,47 @@ interface CardDto {
 
 interface CardPageDto {
   items: CardDto[];
+}
+
+interface CardDetailDto {
+  id: string;
+  name: string;
+  description: string | null;
+  aggregateProgress: number | null;
+  dataWarning: string | null;
+}
+
+interface MetricBlockDto {
+  id: string;
+  cardId: string;
+  label: string;
+  unit: string;
+  targetCount: number | null;
+  isOngoing: boolean;
+}
+
+interface EntryDto {
+  id: string;
+  metricBlockId: string;
+  cardId: string;
+  amount: number;
+  status: 'pending' | 'confirmed' | 'rejected';
+  recordedAt: string;
+}
+
+interface EntryPageDto {
+  items: EntryDto[];
+}
+
+/** Спільні заголовки авторизації (Bearer JWT, D-109) -- той самий Session, що loadCards/createCard. */
+function authHeaders(): Record<string, string> {
+  const session = readStoredSession();
+  return session ? { Authorization: `Bearer ${session.token}` } : {};
+}
+
+/** Формат "27.08" -- достатньо для короткого підпису в історії записів (AC-13). */
+function formatRecordedAtLabel(recordedAt: string): string {
+  return new Intl.DateTimeFormat('uk-UA', { day: '2-digit', month: '2-digit' }).format(new Date(recordedAt));
 }
 
 function readStoredSession(): StoredSession | null {
@@ -118,10 +177,7 @@ function renderGoogleButton(
 }
 
 async function loadCards(): Promise<DeckGridItem[]> {
-  const session = readStoredSession();
-  const response = await fetch('/api/v1/cards', {
-    headers: session ? { Authorization: `Bearer ${session.token}` } : {},
-  });
+  const response = await fetch('/api/v1/cards', { headers: authHeaders() });
 
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { message?: string } | null;
@@ -133,13 +189,9 @@ async function loadCards(): Promise<DeckGridItem[]> {
 }
 
 async function createCard(input: { name: string }): Promise<void> {
-  const session = readStoredSession();
   const response = await fetch('/api/v1/cards', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(session ? { Authorization: `Bearer ${session.token}` } : {}),
-    },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(input),
   });
 
@@ -149,10 +201,79 @@ async function createCard(input: { name: string }): Promise<void> {
   }
 }
 
-function onOpenCard(cardId: string): void {
-  // TODO(майбутня задача): екран деталей картки (CardFace/CardBack) ще не
-  // зареєстрований в app-shell -- поки лише фіксуємо намір відкрити картку.
-  console.log('Відкрити картку', cardId);
+async function loadCard(cardId: string): Promise<CardFaceData> {
+  const response = await fetch(`/api/v1/cards/${cardId}`, { headers: authHeaders() });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? 'Не вдалося завантажити картку');
+  }
+
+  const card = (await response.json()) as CardDetailDto;
+  return { name: card.name, description: card.description, dataWarning: card.dataWarning };
+}
+
+async function loadBack(cardId: string): Promise<CardBackData> {
+  const [cardResponse, blocksResponse, entriesResponse] = await Promise.all([
+    fetch(`/api/v1/cards/${cardId}`, { headers: authHeaders() }),
+    fetch(`/api/v1/cards/${cardId}/metric-blocks`, { headers: authHeaders() }),
+    fetch(`/api/v1/cards/${cardId}/entries`, { headers: authHeaders() }),
+  ]);
+
+  if (!cardResponse.ok || !blocksResponse.ok || !entriesResponse.ok) {
+    const failed = [cardResponse, blocksResponse, entriesResponse].find((response) => !response.ok);
+    const body = (await failed?.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? 'Не вдалося завантажити картку');
+  }
+
+  const card = (await cardResponse.json()) as CardDetailDto;
+  const blocks = (await blocksResponse.json()) as MetricBlockDto[];
+  const entryPage = (await entriesResponse.json()) as EntryPageDto;
+
+  // D-106: `blocks` -- лише метадані (label/unit/targetCount/isOngoing), БЕЗ
+  // прогресу. Прогрес кожного блоку рахуємо тут з сирих подій (RawEntry) --
+  // тільки так, ніколи з можливого pre-computed поля відповіді.
+  const metricBlocks: MetricBlockViewModel[] = blocks.map((block) => {
+    const blockEntries = entryPage.items.filter((entry) => entry.metricBlockId === block.id);
+    const goal: MetricBlockGoal = { targetCount: block.targetCount, isOngoing: block.isOngoing };
+    const rawEntries: RawEntry[] = blockEntries.map((entry) => ({ amount: entry.amount, status: entry.status }));
+
+    return {
+      id: block.id,
+      label: block.label,
+      unit: block.unit,
+      progress: computeProgress(goal, rawEntries),
+      hasPendingEntry: blockEntries.some((entry) => entry.status === 'pending'),
+    };
+  });
+
+  const blockById = new Map(blocks.map((block) => [block.id, block]));
+  const entries: EntryViewModel[] = entryPage.items.map((entry) => {
+    const block = blockById.get(entry.metricBlockId);
+    return {
+      id: entry.id,
+      metricBlockId: entry.metricBlockId,
+      amount: entry.amount,
+      status: entry.status,
+      recordedAtLabel: formatRecordedAtLabel(entry.recordedAt),
+      summary: `+${entry.amount}${block ? ` ${block.unit}` : ''}`,
+    };
+  });
+
+  return { metricBlocks, aggregateProgress: card.aggregateProgress, entries };
+}
+
+async function onRename(cardId: string, name: string): Promise<void> {
+  const response = await fetch(`/api/v1/cards/${cardId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ name }),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? 'Не вдалося зберегти назву картки');
+  }
 }
 
 const root = document.getElementById('root');
@@ -167,8 +288,10 @@ createRoot(root).render(
       requestSession={requestSession}
       renderGoogleButton={renderGoogleButton}
       loadCards={loadCards}
-      onOpenCard={onOpenCard}
       createCard={createCard}
+      loadCard={loadCard}
+      loadBack={loadBack}
+      onRename={onRename}
     />
   </StrictMode>,
 );

@@ -6,8 +6,8 @@
 // localStorage['plan.jwt'] і Date.now() (composition root -- main.tsx).
 
 import { useState } from 'react';
-import { CreateCardForm, DeckScreen } from '../cards/life-area-card';
-import type { DeckGridItem } from '../cards/life-area-card';
+import { CardDetailScreen, CreateCardForm, DeckScreen } from '../cards/life-area-card';
+import type { CardBackData, CardFaceData, DeckGridItem } from '../cards/life-area-card';
 import { LoginScreen } from './LoginScreen';
 import type { SessionResult } from './LoginScreen';
 
@@ -33,13 +33,17 @@ export interface AppProps {
   ) => void;
   /** Завантажує колоду карток (DeckScreen). */
   loadCards: () => Promise<DeckGridItem[]>;
-  /** Відкриття картки з колоди (DeckScreen). */
-  onOpenCard: (cardId: string) => void;
   /** Створює нову картку (POST /cards, CreateCardForm.onCreate, ISS-55). */
   createCard: (input: { name: string }) => Promise<void>;
+  /** Завантажує лицьову сторону обраної картки (CardDetailScreen.loadCard, ISS-55 stage 2). */
+  loadCard: (cardId: string) => Promise<CardFaceData>;
+  /** Завантажує зворот обраної картки (CardDetailScreen.loadBack, ISS-55 stage 2). */
+  loadBack: (cardId: string) => Promise<CardBackData>;
+  /** Зберігає нову назву обраної картки (AC-19, PATCH /cards/{id}, ISS-55 stage 2). */
+  onRename: (cardId: string, name: string) => Promise<void>;
 }
 
-type Screen = 'deck' | 'create';
+type Screen = { screen: 'deck' } | { screen: 'create' } | { screen: 'detail'; cardId: string };
 
 function isSessionValid(session: StoredSession | null, now: () => Date): boolean {
   if (!session) return false;
@@ -53,29 +57,40 @@ export function App({
   requestSession,
   renderGoogleButton,
   loadCards,
-  onOpenCard,
   createCard,
+  loadCard,
+  loadBack,
+  onRename,
 }: AppProps): JSX.Element {
   const [session, setSession] = useState<StoredSession | null>(() => readStoredSession());
-  const [screen, setScreen] = useState<Screen>('deck');
+  const [screen, setScreen] = useState<Screen>({ screen: 'deck' });
 
   if (isSessionValid(session, now)) {
     return (
       <main style={{ fontFamily: 'system-ui, sans-serif', padding: '2rem' }}>
         <h1>ПЛАН</h1>
-        {screen === 'create' ? (
+        {screen.screen === 'create' && (
           <CreateCardForm
             onCreate={async (input) => {
               await createCard(input);
-              setScreen('deck');
+              setScreen({ screen: 'deck' });
             }}
-            onCancel={() => setScreen('deck')}
+            onCancel={() => setScreen({ screen: 'deck' })}
           />
-        ) : (
+        )}
+        {screen.screen === 'detail' && (
+          <CardDetailScreen
+            loadCard={() => loadCard(screen.cardId)}
+            loadBack={() => loadBack(screen.cardId)}
+            onRename={(name) => onRename(screen.cardId, name)}
+            onBack={() => setScreen({ screen: 'deck' })}
+          />
+        )}
+        {screen.screen === 'deck' && (
           <DeckScreen
             loadCards={loadCards}
-            onOpenCard={onOpenCard}
-            onCreateCard={() => setScreen('create')}
+            onOpenCard={(cardId) => setScreen({ screen: 'detail', cardId })}
+            onCreateCard={() => setScreen({ screen: 'create' })}
           />
         )}
       </main>
