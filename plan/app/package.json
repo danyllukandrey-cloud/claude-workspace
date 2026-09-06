@@ -6,6 +6,7 @@
   "description": "ПЛАН — застосунок карток для планування аспектів життя",
   "scripts": {
     "dev": "vite",
+    "dev:server": "node --env-file=../../.env node_modules/tsx/dist/cli.mjs watch server/index.ts",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run --passWithNoTests",
@@ -35,6 +36,7 @@
     "js-yaml": "^5.4.1",
     "jsdom": "^25.0.1",
     "node-pg-migrate": "^7.9.1",
+    "tsx": "^4.23.13",
     "typescript": "^5.7.2",
     "vite": "^6.0.7",
     "vitest": "^2.1.8"
