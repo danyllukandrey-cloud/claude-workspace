@@ -7,7 +7,7 @@ acs: ["AC-01", "AC-06", "AC-11", "AC-12", "AC-13"]
 files_hint: ["plan/app/src/cards/life-area-card/ports/entry-handlers.ts"]
 owner: "TBD"
 estimate: "S"
-status: "todo"
+status: "done"
 ---
 
 # T23 — Ports: entries handlers
@@ -22,7 +22,7 @@ HTTP-хендлери записів і історії — [`contracts/openapi.y
 
 ## Definition of Done
 
-- [ ] Handler-test: створення запису відповідає контракту (`confirmed`/`pending`)
-- [ ] Handler-test: `PATCH` вирішує конфлікт/виправляє за контрактом
-- [ ] Handler-test: історія повертається найновішими зверху
-- [ ] lint + vet clean
+- [x] Handler-test: створення запису відповідає контракту (`confirmed`/`pending`)
+- [x] Handler-test: `PATCH` вирішує конфлікт/виправляє за контрактом
+- [x] Handler-test: історія повертається найновішими зверху
+- [x] lint + vet clean
