@@ -7,6 +7,12 @@ import { DeckScreen } from './DeckScreen';
 // loadCards() (ISS-45, DI), тому кожен стан тут триггериться реальним
 // проходженням Promise: pending -> "loading", resolve([...]) -> "default",
 // resolve([]) -> "empty", reject(...) -> "error".
+//
+// ISS-55 (RED, stage 1/3): новий проп onCreateCard -- кнопка "+ Створити
+// картку" має бути видима і в "default" (поряд з DeckGrid), і в "empty"
+// (поряд з EmptyState) -- DeckScreen сама її рендерить, обгортаючи внутрішній
+// стан, а не змінює контракти EmptyState/DeckGrid (ISS-55 явно каже: ці два
+// компоненти лишаються текст-only/тайл-only за задумом).
 
 test('loading: показує Spinner одразу після монтування, поки loadCards ще не резолвнувся', () => {
   // Promise навмисно ніколи не резолвиться в цьому тесті -- перевіряємо лише
@@ -14,7 +20,7 @@ test('loading: показує Spinner одразу після монтуванн
   const pending = new Promise<never>(() => {});
   const loadCards = vi.fn().mockReturnValue(pending);
 
-  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} />);
+  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} />);
 
   expect(screen.getByRole('status')).toBeTruthy();
   expect(loadCards).toHaveBeenCalledTimes(1);
@@ -28,7 +34,7 @@ test('default: після резолву loadCards із картками рен�
   const loadCards = vi.fn().mockResolvedValue(items);
   const onOpenCard = vi.fn();
 
-  render(<DeckScreen loadCards={loadCards} onOpenCard={onOpenCard} />);
+  render(<DeckScreen loadCards={loadCards} onOpenCard={onOpenCard} onCreateCard={vi.fn()} />);
 
   const tile = await screen.findByText('Спорт');
   expect(screen.getByText('Навчання')).toBeTruthy();
@@ -41,7 +47,7 @@ test('default: після резолву loadCards із картками рен�
 test('empty: після резолву loadCards із порожнім масивом рендерить EmptyState', async () => {
   const loadCards = vi.fn().mockResolvedValue([]);
 
-  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} />);
+  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} />);
 
   expect(await screen.findByText('Тут ще немає жодної картки')).toBeTruthy();
 });
@@ -49,7 +55,7 @@ test('empty: після резолву loadCards із порожнім маси�
 test('error: після реджекту loadCards рендерить Banner із текстом помилки', async () => {
   const loadCards = vi.fn().mockRejectedValue(new Error('Мережа недоступна'));
 
-  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} />);
+  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} />);
 
   expect(await screen.findByText('Мережа недоступна')).toBeTruthy();
 });
@@ -57,7 +63,36 @@ test('error: після реджекту loadCards рендерить Banner і�
 test('error: реджект без Error-повідомлення падає назад на дефолтний текст', async () => {
   const loadCards = vi.fn().mockRejectedValue('щось пішло не так');
 
-  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} />);
+  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} />);
 
   expect(await screen.findByText('Не вдалося завантажити колоду карток')).toBeTruthy();
+});
+
+test('ISS-55: empty-стан показує кнопку "+ Створити картку", клік викликає onCreateCard', async () => {
+  const loadCards = vi.fn().mockResolvedValue([]);
+  const onCreateCard = vi.fn();
+
+  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={onCreateCard} />);
+
+  await screen.findByText('Тут ще немає жодної картки');
+  const button = screen.getByRole('button', { name: '+ Створити картку' });
+
+  fireEvent.click(button);
+
+  expect(onCreateCard).toHaveBeenCalledTimes(1);
+});
+
+test('ISS-55: default-стан (DeckGrid з картками) показує кнопку "+ Створити картку" поряд з тайлами', async () => {
+  const items = [{ id: 'card-1', name: 'Спорт' }];
+  const loadCards = vi.fn().mockResolvedValue(items);
+  const onCreateCard = vi.fn();
+
+  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={onCreateCard} />);
+
+  await screen.findByText('Спорт');
+  const button = screen.getByRole('button', { name: '+ Створити картку' });
+
+  fireEvent.click(button);
+
+  expect(onCreateCard).toHaveBeenCalledTimes(1);
 });

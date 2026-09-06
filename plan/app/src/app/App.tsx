@@ -6,7 +6,7 @@
 // localStorage['plan.jwt'] і Date.now() (composition root -- main.tsx).
 
 import { useState } from 'react';
-import { DeckScreen } from '../cards/life-area-card';
+import { CreateCardForm, DeckScreen } from '../cards/life-area-card';
 import type { DeckGridItem } from '../cards/life-area-card';
 import { LoginScreen } from './LoginScreen';
 import type { SessionResult } from './LoginScreen';
@@ -35,7 +35,11 @@ export interface AppProps {
   loadCards: () => Promise<DeckGridItem[]>;
   /** Відкриття картки з колоди (DeckScreen). */
   onOpenCard: (cardId: string) => void;
+  /** Створює нову картку (POST /cards, CreateCardForm.onCreate, ISS-55). */
+  createCard: (input: { name: string }) => Promise<void>;
 }
+
+type Screen = 'deck' | 'create';
 
 function isSessionValid(session: StoredSession | null, now: () => Date): boolean {
   if (!session) return false;
@@ -50,14 +54,30 @@ export function App({
   renderGoogleButton,
   loadCards,
   onOpenCard,
+  createCard,
 }: AppProps): JSX.Element {
   const [session, setSession] = useState<StoredSession | null>(() => readStoredSession());
+  const [screen, setScreen] = useState<Screen>('deck');
 
   if (isSessionValid(session, now)) {
     return (
       <main style={{ fontFamily: 'system-ui, sans-serif', padding: '2rem' }}>
         <h1>ПЛАН</h1>
-        <DeckScreen loadCards={loadCards} onOpenCard={onOpenCard} />
+        {screen === 'create' ? (
+          <CreateCardForm
+            onCreate={async (input) => {
+              await createCard(input);
+              setScreen('deck');
+            }}
+            onCancel={() => setScreen('deck')}
+          />
+        ) : (
+          <DeckScreen
+            loadCards={loadCards}
+            onOpenCard={onOpenCard}
+            onCreateCard={() => setScreen('create')}
+          />
+        )}
       </main>
     );
   }

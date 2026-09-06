@@ -45,6 +45,23 @@ test('saving: збереження в процесі показує Spinner, п�
   expect(await screen.findByRole('button', { name: 'Створити' })).toBeTruthy();
 });
 
+test('cancel: коли передано onCancel, рендерить кнопку "Скасувати", яка викликає onCancel без onCreate', () => {
+  const onCreate = vi.fn();
+  const onCancel = vi.fn();
+  render(<CreateCardForm onCreate={onCreate} onCancel={onCancel} />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Скасувати' }));
+
+  expect(onCancel).toHaveBeenCalledTimes(1);
+  expect(onCreate).not.toHaveBeenCalled();
+});
+
+test('cancel: без onCancel кнопка "Скасувати" не рендериться', () => {
+  render(<CreateCardForm onCreate={vi.fn()} />);
+
+  expect(screen.queryByRole('button', { name: 'Скасувати' })).toBeNull();
+});
+
 test('error: відхилений onCreate (мережа/401) показує Banner з поясненням', async () => {
   const onCreate = vi.fn().mockRejectedValue(new Error('network down'));
   render(<CreateCardForm onCreate={onCreate} />);

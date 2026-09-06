@@ -132,6 +132,23 @@ async function loadCards(): Promise<DeckGridItem[]> {
   return page.items.map((card) => ({ id: card.id, name: card.name }));
 }
 
+async function createCard(input: { name: string }): Promise<void> {
+  const session = readStoredSession();
+  const response = await fetch('/api/v1/cards', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(session ? { Authorization: `Bearer ${session.token}` } : {}),
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? 'Не вдалося зберегти картку');
+  }
+}
+
 function onOpenCard(cardId: string): void {
   // TODO(майбутня задача): екран деталей картки (CardFace/CardBack) ще не
   // зареєстрований в app-shell -- поки лише фіксуємо намір відкрити картку.
@@ -151,6 +168,7 @@ createRoot(root).render(
       renderGoogleButton={renderGoogleButton}
       loadCards={loadCards}
       onOpenCard={onOpenCard}
+      createCard={createCard}
     />
   </StrictMode>,
 );

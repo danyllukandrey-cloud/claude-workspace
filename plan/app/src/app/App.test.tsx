@@ -24,7 +24,7 @@
 // "now" теж ін'єктовано -- порівняння expiresAt з поточним часом інакше
 // недетерміноване між прогонами тесту (сьогодні збігається, за рік -- ні).
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { App } from './App';
 import type { DeckGridItem } from '../cards/life-area-card';
 
@@ -39,7 +39,19 @@ function baseProps() {
     requestSession: vi.fn(),
     renderGoogleButton: vi.fn(),
     now: FIXED_NOW,
+    // ISS-55, stage 1/3: ін'єкція реального POST /cards (createCard, main.tsx),
+    // яку App викликає з екрана 'create' (CreateCardForm.onCreate).
+    createCard: vi.fn(),
   };
+}
+
+function validSessionProps() {
+  const props = baseProps();
+  props.readStoredSession.mockReturnValue({
+    token: 'valid.jwt.token',
+    expiresAt: '2026-09-10T00:00:00.000Z', // після FIXED_NOW (2026-09-06)
+  });
+  return props;
 }
 
 test('без токена в сховищі рендерить LoginScreen (монтує GIS-кнопку), не DeckScreen', () => {
@@ -111,4 +123,48 @@ test('успішний обмін credential у LoginScreen пише сесію 
     expiresAt: sessionResult.expiresAt,
   });
   expect(props.loadCards).toHaveBeenCalledTimes(1);
+});
+
+// ISS-55 (RED, stage 1/3): App.tsx отримує третій екран 'create' -- клік на
+// кнопку "+ Створити картку" (DeckScreen.onCreateCard, щойно доданий проп)
+// перемикає рендер із DeckScreen на CreateCardForm; успішне збереження
+// викликає ін'єктований createCard і повертає назад на 'deck' з повторним
+// GET /cards (loadCards має бути викликаний ще раз -- DeckScreen.loadCards'
+// референційна стабільність, docs у DeckScreen.tsx).
+
+test('ISS-55: клік "+ Створити картку" в Колоді перемикає екран на форму створення картки', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
+
+  render(<App {...props} />);
+
+  const createButton = await screen.findByRole('button', { name: '+ Створити картку' });
+  fireEvent.click(createButton);
+
+  // CreateCardForm (T27) -- єдиний, хто рендерить поле "Назва" з написом
+  // "Нова картка"; DeckScreen більше не повинен бути на екрані.
+  expect(await screen.findByRole('heading', { name: 'Нова картка' })).toBeTruthy();
+  expect(screen.queryByText('Спорт')).toBeNull();
+});
+
+test('ISS-55: успішне створення картки викликає injected createCard і повертає до Колоди з повторним завантаженням', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([]);
+  props.createCard.mockResolvedValue(undefined);
+
+  render(<App {...props} />);
+
+  const createButton = await screen.findByRole('button', { name: '+ Створити картку' });
+  fireEvent.click(createButton);
+
+  const nameField = await screen.findByLabelText('Назва');
+  fireEvent.change(nameField, { target: { value: 'Спорт' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Створити' }));
+
+  // Повернення на 'deck' -- EmptyState знову видимий (loadCards резолвнувся
+  // порожнім масивом і вдруге).
+  expect(await screen.findByText('Тут ще немає жодної картки')).toBeTruthy();
+
+  expect(props.createCard).toHaveBeenCalledWith({ name: 'Спорт' });
+  expect(props.loadCards).toHaveBeenCalledTimes(2);
 });

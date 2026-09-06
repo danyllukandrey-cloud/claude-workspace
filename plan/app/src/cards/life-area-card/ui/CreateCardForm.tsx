@@ -34,9 +34,15 @@ export interface CreateCardFormProps {
    * знає й не має знати, що саме всередині -- fetch, mock у тесті, будь-що.
    */
   onCreate: (input: CreateCardFormInput) => Promise<void>;
+  /**
+   * Необов'язковий вихід без збереження (закриття форми). Коли передано --
+   * рендериться друга кнопка "Скасувати", яка викликає лише цей проп, без
+   * жодного виклику onCreate.
+   */
+  onCancel?: () => void;
 }
 
-export function CreateCardForm({ onCreate }: CreateCardFormProps): JSX.Element {
+export function CreateCardForm({ onCreate, onCancel }: CreateCardFormProps): JSX.Element {
   const [name, setName] = useState('');
   const [validationError, setValidationError] = useState<string | undefined>(undefined);
   const [saving, setSaving] = useState(false);
@@ -82,7 +88,14 @@ export function CreateCardForm({ onCreate }: CreateCardFormProps): JSX.Element {
       <h2>Нова картка</h2>
       {submitError && <Banner variant="error" text={submitError} />}
       <TextField label="Назва" value={name} onChange={handleNameChange} error={validationError} />
-      {saving ? <Spinner /> : <Button type="submit" label="Створити" />}
+      {saving ? (
+        <Spinner />
+      ) : (
+        <>
+          <Button type="submit" label="Створити" />
+          {onCancel && <Button type="button" label="Скасувати" onClick={onCancel} />}
+        </>
+      )}
     </form>
   );
 }

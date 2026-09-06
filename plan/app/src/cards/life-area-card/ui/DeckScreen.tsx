@@ -12,9 +12,11 @@
 // (правило залежностей, plan/app/CLAUDE.md).
 
 import { useEffect, useState } from 'react';
-import { Banner, EmptyState, Spinner } from '../../../shared/ui';
+import { Banner, Button, EmptyState, Spinner } from '../../../shared/ui';
 import { DeckGrid } from './DeckGrid';
 import type { DeckGridItem } from './DeckGrid';
+
+const CREATE_CARD_LABEL = '+ Створити картку';
 
 export interface DeckScreenProps {
   /**
@@ -29,6 +31,8 @@ export interface DeckScreenProps {
   loadCards: () => Promise<DeckGridItem[]>;
   /** Викликається з id картки при відкритті тайла колоди. */
   onOpenCard: (cardId: string) => void;
+  /** Викликається при кліку на кнопку "+ Створити картку" (ISS-55). */
+  onCreateCard: () => void;
 }
 
 type LoadState =
@@ -38,7 +42,7 @@ type LoadState =
 
 const DEFAULT_ERROR_MESSAGE = 'Не вдалося завантажити колоду карток';
 
-export function DeckScreen({ loadCards, onOpenCard }: DeckScreenProps): JSX.Element {
+export function DeckScreen({ loadCards, onOpenCard, onCreateCard }: DeckScreenProps): JSX.Element {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
 
   useEffect(() => {
@@ -72,8 +76,18 @@ export function DeckScreen({ loadCards, onOpenCard }: DeckScreenProps): JSX.Elem
   }
 
   if (state.items.length === 0) {
-    return <EmptyState message="Тут ще немає жодної картки" actionHint="Створіть першу картку, щоб почати" />;
+    return (
+      <div>
+        <EmptyState message="Тут ще немає жодної картки" actionHint="Створіть першу картку, щоб почати" />
+        <Button label={CREATE_CARD_LABEL} onClick={onCreateCard} />
+      </div>
+    );
   }
 
-  return <DeckGrid items={state.items} onOpen={onOpenCard} />;
+  return (
+    <div>
+      <DeckGrid items={state.items} onOpen={onOpenCard} />
+      <Button label={CREATE_CARD_LABEL} onClick={onCreateCard} />
+    </div>
+  );
 }
