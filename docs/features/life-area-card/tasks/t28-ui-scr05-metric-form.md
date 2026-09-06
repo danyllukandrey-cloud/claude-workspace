@@ -7,7 +7,7 @@ acs: ["AC-05", "AC-07", "AC-08"]
 files_hint: ["plan/app/src/cards/life-area-card/ui/MetricBlockForm.tsx"]
 owner: "TBD"
 estimate: "M"
-status: "todo"
+status: "done"
 ---
 
 # T28 — UI: SCR-05 Форма блоку-метрики
@@ -22,6 +22,6 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Component test: усі 5 станів зі `screens.md` SCR-05 рендеряться за відповідним триггером
-- [ ] Component test: перемикач «постійний процес» ховає поле дати
-- [ ] lint + vet clean
+- [x] Component test: усі 5 станів зі `screens.md` SCR-05 рендеряться за відповідним триггером
+- [x] Component test: перемикач «постійний процес» ховає поле дати
+- [x] lint + vet clean
