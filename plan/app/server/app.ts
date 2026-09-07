@@ -327,6 +327,17 @@ export function createApp(deps: AppDeps): express.Express {
       res.status(422).json({ code: err.code, message: err.message });
       return;
     }
+    // Review 2026-09-07, post-ship follow-up review ("Express 5 req.body ->
+    // 500"): T50 handled req.body===undefined, але зіпсований JSON
+    // (entity.parse.failed) чи завеликий (entity.too.large) -- окрема
+    // помилка body-parser (express.json()) з готовим числовим `status`
+    // (400/413) -- жодна гілка тут цього не перевіряла, тож обидва падали в
+    // generic 500 нижче попри те, що самі несуть правильну відповідь.
+    const bodyParserStatus = (err as { status?: unknown; statusCode?: unknown }).status ?? (err as { statusCode?: unknown }).statusCode;
+    if (typeof bodyParserStatus === 'number' && bodyParserStatus >= 400 && bodyParserStatus < 500) {
+      res.status(bodyParserStatus).json({ code: 'request.invalid_body', message: 'Некоректне тіло запиту' });
+      return;
+    }
     // eslint-disable-next-line no-console -- немає власного логера (one-person MVP, ADR-0006).
     console.error(err);
     res.status(500).json({ code: 'internal.error', message: 'Internal server error' });

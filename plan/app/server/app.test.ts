@@ -254,4 +254,28 @@ describe('composition root -- auth middleware on mounted routes (T30, D-107)', (
       server.close();
     }
   });
+
+  // Review 2026-09-07, post-ship follow-up review: express.json() (body-parser)
+  // сигналізує зіпсований JSON окремою помилкою з числовим `status` (400,
+  // "entity.parse.failed") -- жодна гілка error-middleware цього не
+  // перевіряла, тож така помилка теж падала в generic 500.
+  it('T50-remainder: зіпсований JSON у тілі запиту повертає 400, не сирий 500', async () => {
+    const query = vi.fn();
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/cards`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer a-valid-looking-jwt', 'Content-Type': 'application/json' },
+        body: '{"name": "unclosed', // навмисно зіпсований JSON
+      });
+      const body = await res.json();
+
+      expect(res.status).toBe(400);
+      expect(body).toMatchObject(ERROR_SHAPE);
+    } finally {
+      server.close();
+    }
+  });
 });
