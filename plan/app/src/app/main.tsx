@@ -34,6 +34,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import type {
+  CachedMetricBlock,
   CardBackData,
   CardFaceData,
   DeckGridItem,
@@ -43,10 +44,27 @@ import type {
   MetricBlockViewModel,
   RawEntry,
 } from '../cards/life-area-card';
-import { computeProgress } from '../cards/life-area-card';
+import {
+  computeProgress,
+  computeAggregateProgress,
+  cacheEntries,
+  cacheEntry,
+  cacheMetricBlocks,
+  computeProgressFromCache,
+  readCachedEntries,
+  readCachedMetricBlocks,
+} from '../cards/life-area-card';
+import { createLocalStorageAdapter } from '../shared/storage/local';
 import { App } from './App';
 import type { StoredSession } from './App';
 import type { SessionResult } from './LoginScreen';
+
+// T45 (review 2026-09-07 B8/C13): ЄДИНЕ місце застосунку, що підставляє
+// реальний StoragePort -- local-cache.ts (T11) сам його ніколи не створює
+// (ADR-0004, DI). До цього фіксу жодна функція нижче взагалі не читала й не
+// писала кеш -- QG-1 ("офлайн-читання 100%") був недосяжний у production,
+// попри готовий і протестований local-cache.ts.
+const storage = createLocalStorageAdapter();
 
 const JWT_STORAGE_KEY = 'plan.jwt';
 const GIS_SCRIPT_SRC = 'https://accounts.google.com/gsi/client';
@@ -74,8 +92,23 @@ interface MetricBlockDto {
   cardId: string;
   label: string;
   unit: string;
+  frequency: string | null;
   targetCount: number | null;
   isOngoing: boolean;
+  targetDate: string | null;
+}
+
+/** GET .../metric-blocks -> CachedMetricBlock (T45) -- та сама форма, що local-cache.ts вимагає. */
+function toCachedMetricBlock(block: MetricBlockDto): CachedMetricBlock {
+  return {
+    id: block.id,
+    label: block.label,
+    unit: block.unit,
+    frequency: block.frequency,
+    targetCount: block.targetCount,
+    isOngoing: block.isOngoing,
+    targetDate: block.targetDate,
+  };
 }
 
 interface EntryDto {
@@ -244,22 +277,88 @@ async function loadCard(cardId: string): Promise<CardFaceData> {
   return { name: card.name, description: card.description, dataWarning: card.dataWarning };
 }
 
-async function loadBack(cardId: string): Promise<CardBackData> {
-  const [cardResponse, blocksResponse, entriesResponse] = await Promise.all([
-    fetch(`/api/v1/cards/${cardId}`, { headers: authHeaders() }),
-    fetch(`/api/v1/cards/${cardId}/metric-blocks`, { headers: authHeaders() }),
-    fetch(`/api/v1/cards/${cardId}/entries`, { headers: authHeaders() }),
-  ]);
+/**
+ * T45 (review 2026-09-07 C13): мережа недоступна (чи бекенд не відповів) --
+ * QG-1 вимагає, щоб картка й історія все одно відкривались, зі 100% з кешу.
+ * Кеш метаданих блоків (readCachedMetricBlocks) -- єдиний сигнал "чи взагалі
+ * є з чим офлайн відповісти": порожній список означає "картку ще ніколи не
+ * синхронізовано онлайн" -- тоді офлайн-відповіді бути не може, пробрасуємо
+ * оригінальну мережеву помилку, а не мовчки повертаємо порожню картку.
+ */
+function loadBackFromCache(cardId: string): CardBackData | null {
+  const cachedBlocks = readCachedMetricBlocks(storage, cardId);
+  if (cachedBlocks.length === 0) return null;
 
-  if (!cardResponse.ok || !blocksResponse.ok || !entriesResponse.ok) {
-    const failed = [cardResponse, blocksResponse, entriesResponse].find((response) => !response.ok);
-    const body = (await failed?.json().catch(() => null)) as { message?: string } | null;
-    throw new Error(body?.message ?? 'Не вдалося завантажити картку');
+  const cachedEntries = readCachedEntries(storage, cardId);
+  const metricBlocks: MetricBlockViewModel[] = cachedBlocks.map((block) => {
+    const goal: MetricBlockGoal = { targetCount: block.targetCount, isOngoing: block.isOngoing };
+    return {
+      id: block.id,
+      label: block.label,
+      unit: block.unit,
+      progress: computeProgressFromCache(storage, cardId, block.id, goal),
+      hasPendingEntry: cachedEntries.some((entry) => entry.metricBlockId === block.id && entry.status === 'pending'),
+    };
+  });
+
+  // Та сама формула, що бекенд (D-105, domain/progress.ts) -- не друга
+  // незалежна копія, яка з часом розійшлась би з сервером.
+  const aggregateProgress = computeAggregateProgress(metricBlocks.map((block) => block.progress));
+
+  // Кешовані записи (domain Entry) не несуть recordedAt (readCachedEntries --
+  // сирі події, не готовий view-model) -- на відміну від мережевої відповіді,
+  // тут немає з чого показати дату запису чесно, тож recordedAtLabel лишаємо
+  // порожнім, а не парсимо порожній рядок у Date (дало б "Invalid Date").
+  const blockById = new Map(cachedBlocks.map((block) => [block.id, block]));
+  const entries: EntryViewModel[] = cachedEntries.map((entry) => {
+    const block = blockById.get(entry.metricBlockId);
+    return {
+      id: entry.id,
+      metricBlockId: entry.metricBlockId,
+      amount: entry.amount,
+      status: entry.status,
+      recordedAtLabel: '',
+      summary: `+${entry.amount}${block ? ` ${block.unit}` : ''}`,
+    };
+  });
+
+  return { metricBlocks, aggregateProgress, entries };
+}
+
+async function loadBack(cardId: string): Promise<CardBackData> {
+  let card: CardDetailDto;
+  let blocks: MetricBlockDto[];
+  let entryPage: EntryPageDto;
+  try {
+    const [cardResponse, blocksResponse, entriesResponse] = await Promise.all([
+      fetch(`/api/v1/cards/${cardId}`, { headers: authHeaders() }),
+      fetch(`/api/v1/cards/${cardId}/metric-blocks`, { headers: authHeaders() }),
+      fetch(`/api/v1/cards/${cardId}/entries`, { headers: authHeaders() }),
+    ]);
+
+    if (!cardResponse.ok || !blocksResponse.ok || !entriesResponse.ok) {
+      const failed = [cardResponse, blocksResponse, entriesResponse].find((response) => !response.ok);
+      const body = (await failed?.json().catch(() => null)) as { message?: string } | null;
+      throw new Error(body?.message ?? 'Не вдалося завантажити картку');
+    }
+
+    card = (await cardResponse.json()) as CardDetailDto;
+    blocks = (await blocksResponse.json()) as MetricBlockDto[];
+    entryPage = (await entriesResponse.json()) as EntryPageDto;
+  } catch (networkError) {
+    // T45/QG-1: мережа недоступна (чи бекенд повернув помилку) -- відповідаємо
+    // повністю з кешу, якщо є з чим; інакше пробрасуємо оригінальну помилку
+    // (той самий текст, що бачив би користувач і без цього фіксу).
+    const fromCache = loadBackFromCache(cardId);
+    if (fromCache) return fromCache;
+    throw networkError;
   }
 
-  const card = (await cardResponse.json()) as CardDetailDto;
-  const blocks = (await blocksResponse.json()) as MetricBlockDto[];
-  const entryPage = (await entriesResponse.json()) as EntryPageDto;
+  // Успішна синхронізація -- кешуємо ОБИДВА джерела повним заміщенням (D-106,
+  // review C13): наступне відкриття офлайн бачить рівно те, що бекенд щойно
+  // показав, не застарілий чи частковий стан.
+  cacheMetricBlocks(storage, cardId, blocks.map(toCachedMetricBlock));
+  cacheEntries(storage, cardId, entryPage.items.map(toDomainEntry));
 
   // D-106: `blocks` -- лише метадані (label/unit/targetCount/isOngoing), БЕЗ
   // прогресу. Прогрес кожного блоку рахуємо тут з сирих подій (RawEntry) --
@@ -282,6 +381,11 @@ async function loadBack(cardId: string): Promise<CardBackData> {
   const entries: EntryViewModel[] = entryPage.items.map((entry) => toEntryViewModel(entry, blockById.get(entry.metricBlockId)));
 
   return { metricBlocks, aggregateProgress: card.aggregateProgress, entries };
+}
+
+/** EntryDto -> Entry (domain, для кешу) -- лише поля, які local-cache.ts вимагає. */
+function toDomainEntry(entry: EntryDto): { id: string; metricBlockId: string; amount: number; status: EntryDto['status'] } {
+  return { id: entry.id, metricBlockId: entry.metricBlockId, amount: entry.amount, status: entry.status };
 }
 
 /**
@@ -394,6 +498,14 @@ async function addEntry(cardId: string, metricBlockId: string, amount: number): 
     const body = (await response.json().catch(() => null)) as { message?: string } | null;
     throw new Error(body?.message ?? 'Не вдалося зберегти запис');
   }
+
+  // T45 (review C13, "writes to it ... after every ... confirmed entry"):
+  // CardBack одразу перезавантажує дані після успішного addEntry (ISS-60),
+  // що й так синхронізує весь кеш через loadBack вище -- цей рядок лише
+  // страхує вікно МІЖ "запис прийнято" і "перезавантаження завершилось",
+  // щоб застосунок не показав застарілий кеш, якщо мережа зникне саме тоді.
+  const entry = (await response.json()) as EntryDto;
+  cacheEntry(storage, cardId, toDomainEntry(entry));
 }
 
 const root = document.getElementById('root');

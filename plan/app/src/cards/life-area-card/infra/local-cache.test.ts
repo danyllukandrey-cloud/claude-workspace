@@ -3,7 +3,7 @@ import type { StoragePort } from '../../../shared/storage/port';
 import { createEntry } from '../domain/entry';
 import { computeProgress } from '../domain/progress';
 import type { RawEntry, MetricBlockGoal } from '../domain/progress';
-import { readCachedEntries, cacheEntry, computeProgressFromCache, readCachedMetricBlocks, cacheMetricBlocks } from './local-cache';
+import { readCachedEntries, cacheEntry, cacheEntries, computeProgressFromCache, readCachedMetricBlocks, cacheMetricBlocks } from './local-cache';
 import type { CachedMetricBlock } from './local-cache';
 
 // Проста фейкова реалізація StoragePort -- Map у пам'яті, без localStorage і
@@ -123,8 +123,36 @@ describe('computeProgressFromCache', () => {
     });
 
     const directResult = computeProgress(goal, rawEntries);
-    const cachedResult = computeProgressFromCache(storage, 'card-1', goal);
+    const cachedResult = computeProgressFromCache(storage, 'card-1', 'block-1', goal);
 
     expect(cachedResult).toEqual(directResult);
+  });
+
+  // Review 2026-09-07 B8 (D-38): регресійний тест на саму знахідку -- картка
+  // з ДВОМА блоками-метриками, кожен зі своєю одиницею. До фіксу
+  // computeProgressFromCache читав УСІ записи картки без фільтра -- ця
+  // перевірка впала б, показуючи share, порахований з сумішки обох блоків.
+  it('does not sum entries from a different metric-block on the same card (D-38, units differ)', () => {
+    const storage = createFakeStorage();
+    cacheEntry(storage, 'card-1', createEntry({ id: 'entry-km', metricBlockId: 'block-km', amount: 3 }));
+    cacheEntry(storage, 'card-1', createEntry({ id: 'entry-min', metricBlockId: 'block-min', amount: 40 }));
+
+    const goalKm: MetricBlockGoal = { targetCount: 10, isOngoing: false };
+    const resultKm = computeProgressFromCache(storage, 'card-1', 'block-km', goalKm);
+
+    // Якби фільтра не було, accumulated тут було б 3+40=43, а не 3.
+    expect(resultKm).toMatchObject({ kind: 'bounded', share: 3 / 10, overGoal: 0 });
+  });
+});
+
+describe('cacheEntries (T45, review C13 -- повне заміщення на кожній синхронізації)', () => {
+  it('replaces the cached list wholesale, unlike the append-only cacheEntry', () => {
+    const storage = createFakeStorage();
+    cacheEntry(storage, 'card-1', createEntry({ id: 'stale-entry', metricBlockId: 'block-1', amount: 1 }));
+
+    const freshFromServer = [createEntry({ id: 'entry-1', metricBlockId: 'block-1', amount: 5 })];
+    cacheEntries(storage, 'card-1', freshFromServer);
+
+    expect(readCachedEntries(storage, 'card-1')).toEqual(freshFromServer);
   });
 });

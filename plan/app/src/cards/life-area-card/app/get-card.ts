@@ -18,8 +18,8 @@
 // звертається до T12 і не заповнює dataWarning -- не помилка, лише "перевірка
 // поки не підключена".
 
-import { computeProgress } from '../domain/progress';
-import type { BoundedProgress, Progress, RawEntry } from '../domain/progress';
+import { computeProgress, computeAggregateProgress } from '../domain/progress';
+import type { Progress, RawEntry } from '../domain/progress';
 import { checkSuspiciousData } from '../infra/claude-client';
 import { findCardById, listEntriesByMetricBlock, listMetricBlocksByCard } from '../infra/postgres-repo';
 import type { CardRecord, Db, EntryRecord, MetricBlockRecord } from '../infra/postgres-repo';
@@ -77,7 +77,9 @@ export async function getCardWithProgress(
     metricBlocks.push({ metricBlock: block, progress });
   }
 
-  const aggregateProgress = computeAggregateProgress(metricBlocks);
+  // T45 (review B8): формула сама -- у domain/progress.ts (D-105) -- офлайн-
+  // розрахунок (main.tsx) рахує ТІЄЮ САМОЮ функцією, не власною копією.
+  const aggregateProgress = computeAggregateProgress(metricBlocks.map((entry) => entry.progress));
 
   let dataWarning: string | null = null;
   if (callClaude) {
@@ -86,18 +88,6 @@ export async function getCardWithProgress(
   }
 
   return { card, metricBlocks, aggregateProgress, dataWarning };
-}
-
-function computeAggregateProgress(metricBlocks: MetricBlockProgress[]): number | null {
-  const boundedShares = metricBlocks
-    .map((entry) => entry.progress)
-    .filter((progress): progress is BoundedProgress => progress.kind === 'bounded')
-    .map((progress) => progress.share);
-
-  if (boundedShares.length === 0) {
-    return null;
-  }
-  return boundedShares.reduce((sum, share) => sum + share, 0) / boundedShares.length;
 }
 
 /** Короткий текстовий опис фактів картки для T12 -- join останніх записів у рядок. */

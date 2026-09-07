@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { computeProgress, ProgressValidationError } from './progress';
-import type { RawEntry, MetricBlockGoal } from './progress';
+import { computeProgress, computeAggregateProgress, ProgressValidationError } from './progress';
+import type { RawEntry, MetricBlockGoal, Progress } from './progress';
 
 describe('computeProgress — bounded goal (targetCount set)', () => {
   // AC-09: Given a user has a card with one or more metric-blocks that have
@@ -70,5 +70,26 @@ describe('computeProgress — purely frequency-based goal (ISS-34)', () => {
     ];
     const progress = computeProgress(goal, entries);
     expect(progress).toMatchObject({ kind: 'ongoing', accumulated: 4 });
+  });
+});
+
+// T45 (review 2026-09-07 B8/C13): винесено з app/get-card.ts (був приватною
+// функцією лише там) -- офлайн-розрахунок (main.tsx, QG-1) має рахувати
+// АГРЕГАТ картки за ТІЄЮ САМОЮ формулою (D-105), не другою незалежною
+// копією, яка з часом розійдеться (той самий клас ризику, що D-19 описує
+// для документів -- тут для коду).
+describe('computeAggregateProgress (D-105 -- просте середнє часток bounded-блоків)', () => {
+  it('averages the share of bounded-progress blocks, ignoring ongoing blocks entirely', () => {
+    const progresses: Progress[] = [
+      { kind: 'bounded', share: 0.25, overGoal: 0 },
+      { kind: 'bounded', share: 0.5, overGoal: 0 },
+      { kind: 'ongoing', accumulated: 7 },
+    ];
+    expect(computeAggregateProgress(progresses)).toBeCloseTo(0.375); // (0.25 + 0.5) / 2
+  });
+
+  it('returns null when there is no bounded-progress block at all (declarative card or only ongoing blocks)', () => {
+    expect(computeAggregateProgress([])).toBeNull();
+    expect(computeAggregateProgress([{ kind: 'ongoing', accumulated: 3 }])).toBeNull();
   });
 });

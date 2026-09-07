@@ -21,5 +21,18 @@ export type { MetricBlockFormValues } from './ui/MetricBlockForm';
 export { ArchiveScreen } from './ui/ArchiveScreen';
 export type { ArchiveScreenProps } from './ui/ArchiveScreen';
 
-export { computeProgress } from './domain/progress';
-export type { MetricBlockGoal, RawEntry } from './domain/progress';
+export { computeProgress, computeAggregateProgress } from './domain/progress';
+export type { MetricBlockGoal, RawEntry, Progress } from './domain/progress';
+
+// T45 (review 2026-09-07 B8/C13): main.tsx -- єдине місце, що підставляє
+// реальний StoragePort (shared/storage/local.ts) -- читає/пише офлайн-кеш
+// картки лише через ці функції, ніколи не сягаючи в infra/local-cache.ts напряму.
+export {
+  readCachedEntries,
+  cacheEntries,
+  cacheEntry,
+  readCachedMetricBlocks,
+  cacheMetricBlocks,
+  computeProgressFromCache,
+} from './infra/local-cache';
+export type { CachedMetricBlock } from './infra/local-cache';

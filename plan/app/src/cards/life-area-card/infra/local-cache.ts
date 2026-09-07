@@ -29,6 +29,17 @@ export function cacheEntry(storage: StoragePort, cardId: string, entry: Entry): 
   storage.write(entriesCacheKey(cardId), [...existing, entry]);
 }
 
+/**
+ * Повне заміщення (як cacheMetricBlocks нижче), НЕ append (на відміну від
+ * cacheEntry вище) -- T45 (review C13): GET .../entries при кожній успішній
+ * синхронізації повертає актуальний повний список цієї картки, не приріст;
+ * викликається з main.tsx після кожного успішного завантаження, щоб наступне
+ * відкриття офлайн бачило ті самі дані, що бекенд показав востаннє.
+ */
+export function cacheEntries(storage: StoragePort, cardId: string, entries: Entry[]): void {
+  storage.write(entriesCacheKey(cardId), entries);
+}
+
 // --- Метадані блоків-метрик (D-106, закриває ISS-39; доповнює T11) ---------
 //
 // QG-1 (sad.md §10) вимагає: відкриття картки БЕЗ мережі читає картку й
@@ -66,6 +77,19 @@ export function cacheMetricBlocks(storage: StoragePort, cardId: string, blocks: 
   storage.write(metricBlocksCacheKey(cardId), blocks);
 }
 
-export function computeProgressFromCache(storage: StoragePort, cardId: string, goal: MetricBlockGoal): Progress {
-  return computeProgress(goal, readCachedEntries(storage, cardId));
+/**
+ * Review 2026-09-07 B8 (D-38, "units don't sum across blocks"): фільтруємо
+ * ЛИШЕ записи цього блоку -- до цього фіксу тут читались УСІ записи картки,
+ * тож дві різні метрики (наприклад "км" і "хвилини") мовчки підсумовувались
+ * би в один прогрес, щойно картка мала більше одного блоку. Ізольований
+ * юніт-тест цього не ловив (кожен приклад кешував записи лише одного блоку).
+ */
+export function computeProgressFromCache(
+  storage: StoragePort,
+  cardId: string,
+  metricBlockId: string,
+  goal: MetricBlockGoal,
+): Progress {
+  const blockEntries = readCachedEntries(storage, cardId).filter((entry) => entry.metricBlockId === metricBlockId);
+  return computeProgress(goal, blockEntries);
 }

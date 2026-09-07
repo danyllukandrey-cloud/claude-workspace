@@ -63,3 +63,24 @@ export function computeProgress(goal: MetricBlockGoal, entries: RawEntry[]): Pro
 
   return { kind: 'bounded', share, overGoal };
 }
+
+/**
+ * Агрегат картки (AC-09, формула затверджена D-105, закриває ISS-33): просте
+ * середнє `share` серед bounded-блоків. Ongoing-блоки не мають частки
+ * (показуються як накопичена кількість, не відсоток) -- у середнє не входять.
+ * Немає жодного bounded-блоку -- null.
+ *
+ * T45 (review 2026-09-07 B8): винесено сюди з app/get-card.ts (була приватною
+ * функцією лише там), щоб офлайн-розрахунок (main.tsx, QG-1) рахував агрегат
+ * ТІЄЮ САМОЮ формулою, не другою незалежною копією.
+ */
+export function computeAggregateProgress(progresses: Progress[]): number | null {
+  const boundedShares = progresses
+    .filter((progress): progress is BoundedProgress => progress.kind === 'bounded')
+    .map((progress) => progress.share);
+
+  if (boundedShares.length === 0) {
+    return null;
+  }
+  return boundedShares.reduce((sum, share) => sum + share, 0) / boundedShares.length;
+}
