@@ -121,6 +121,30 @@ describe('createMetricBlock use-case', () => {
     expect(query.mock.calls.some((call) => /INSERT INTO metric_block/.test(call[0] as string))).toBe(false);
   });
 
+  // Review 2026-09-07 B6: targetCount<=0 -- "отруйний" запис, що бриктує
+  // картку назавжди (кожне наступне GET /cards/{id} падає з 500 у
+  // computeProgress). Відхиляємо ДО insertMetricBlock -- жодного запису
+  // в БД, insertMetricBlock не викликано.
+  it('rejects a non-positive targetCount before any write', async () => {
+    const query = vi.fn().mockResolvedValueOnce({ rows: [OWNED_CARD_ROW] }); // лише findCardById
+    const db: Db = { query };
+
+    await expect(
+      createMetricBlock(db, { ownerUserId: 'user-1', cardId: 'card-1', label: 'Книги', unit: 'книги', targetCount: 0 })
+    ).rejects.toMatchObject({ code: 'metric_block.invalid_target_count', httpStatus: 422 });
+
+    expect(query.mock.calls.some((call) => /INSERT INTO metric_block/.test(call[0] as string))).toBe(false);
+  });
+
+  it('rejects a negative targetCount before any write', async () => {
+    const query = vi.fn().mockResolvedValueOnce({ rows: [OWNED_CARD_ROW] });
+    const db: Db = { query };
+
+    await expect(
+      createMetricBlock(db, { ownerUserId: 'user-1', cardId: 'card-1', label: 'Книги', unit: 'книги', targetCount: -5 })
+    ).rejects.toMatchObject({ code: 'metric_block.invalid_target_count', httpStatus: 422 });
+  });
+
   // AC-08: цей use-case ніколи не чіпає таблицю card (лише читає її для
   // ownership-перевірки) -- жоден виклик query не є UPDATE/INSERT на card,
   // тож картка без блоку лишається декларативною автоматично.

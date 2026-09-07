@@ -58,6 +58,15 @@ export async function createMetricBlock(db: Db, input: CreateMetricBlockInput): 
     throw new AppError('card.not_found', 'Картку не знайдено', 404);
   }
 
+  // Review 2026-09-07 B6: targetCount<=0 -- "отруйний" запис. insertMetricBlock
+  // приймав будь-яке число мовчки; звідти воно потрапляло в computeProgress
+  // (domain/progress.ts), яка кидає ProgressValidationError на КОЖНЕ наступне
+  // відкриття картки -- картка ставала непридатною назавжди, без шляху
+  // виправити через API. Відхиляємо ДО запису.
+  if (input.targetCount != null && input.targetCount <= 0) {
+    throw new AppError('metric_block.invalid_target_count', 'Ціль має бути додатним числом', 422);
+  }
+
   return insertMetricBlock(db, {
     id: randomUUID(),
     cardId: input.cardId,

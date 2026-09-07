@@ -47,7 +47,7 @@
 | T40 | Infra+wiring: transactional archive + real Structure layout close | infra | TBD | M | T10, T15 | todo |
 | T41 | App: wrap conflict-entry and transfer writes in a transaction | app | TBD | M | T40, T18, T17 | todo |
 | T42 | Wiring: connect Claude client, fail-open suspicious-data check | wiring | TBD | S | T12, T21 | todo |
-| T43 | App: reject non-positive targetCount before insert | app | TBD | S | T16 | todo |
+| T43 | App: reject non-positive targetCount before insert | app | TBD | S | T16 | done |
 | T44 | Domain: fix conflict detection when sourceDeviceId absent | domain | TBD | S | T8 | done |
 | T45 | Infra+wiring: per-block offline cache actually read/written | infra | TBD | M | T11 | todo |
 | T46 | UI: SCR-02 Опис edit + mark-filled action | ui | TBD | M | T24, T21 | todo |

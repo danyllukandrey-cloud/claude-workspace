@@ -118,6 +118,8 @@ Select-String docs\ISSUES.md -Pattern '^\| ISS-(\d+) \|' | ForEach-Object { [int
 | ISS-80 | 2026-09-07 | `plan/app/src/cards/life-area-card/infra/postgres-repo.ts` (`insertEntry`, не пише `recorded_at`) vs `plan/app/src/cards/life-area-card/ports/entry-handlers.ts:121` (`Date.now()` з Node-хоста) | `/sdd:review`: вікно виявлення «близького за часом» конфлікту (AC-06) порівнює час БД (`now()` при вставці) з часом Node-хоста, переданим окремо — будь-який дрейф годинників між хостом і Neon зсуває саме те вікно, яке AC-06 визначає | відкрито | — |
 | ISS-81 | 2026-09-07 | `docs/adr/0006-backend-http-and-migration-tool.md` §Рішення (називає `zod` runtime-залежністю) vs `plan/app/package.json` (`zod` відсутній, ніде не використовується) | `/sdd:review`: відсутній шар валідації на межі ports — пряма першопричина знахідок «500 замість 422/404» у цьому ж рев'ю. Або встановити й використати `zod`, або зафіксувати в ADR, що ручні перевірки замінили його | відкрито | — |
 
+| ISS-82 | 2026-09-07 | `plan/app/src/cards/life-area-card/app/create-metric-block.ts` (T43, review-фікс B6) vs `docs/features/life-area-card/contracts/openapi.yaml` `POST /cards/{cardId}/metric-blocks` | Новий код відхиляє `targetCount<=0` кодом `metric_block.invalid_target_count`/422, якого контракт не декларує (лише 201/401/404 задокументовані) — файл навмисно не редагувався вручну (сам забороняє, шапка файлу), потребує `/sdd:api life-area-card --reconcile` | відкрито | — |
+
 ## Пов'язані документи
 
 - [DECISIONS.md](DECISIONS.md) — рішення, що виникли з розв'язаних нестиковок
