@@ -1,5 +1,3 @@
-и
-
 ---
 status: Living
 tool: code
