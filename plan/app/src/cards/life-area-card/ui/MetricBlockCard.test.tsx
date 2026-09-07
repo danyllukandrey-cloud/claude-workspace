@@ -59,3 +59,43 @@ test('D-110: підтвердження введеного числа викли
   await screen.findByRole('button', { name: '+' }); // повернулось до згорнутого стану
   expect(screen.queryByLabelText('Кількість')).toBeNull();
 });
+
+// Review 2026-09-07 C16: до цього фіксу відхилений onAddEntry був unhandled
+// rejection -- ані повідомлення користувачу, ані повернення форми в
+// нормальний стан (кнопка "Додати" лишалась активною, ніщо не підказувало,
+// що запис НЕ зберігся).
+test('C16: відхилення onAddEntry показує інлайн-помилку, поле не згортається, значення не втрачається', async () => {
+  const onAddEntry = vi.fn().mockRejectedValue(new Error('Мережа недоступна'));
+  render(<MetricBlockCard block={boundedBlock()} onAddEntry={onAddEntry} />);
+
+  fireEvent.click(screen.getByRole('button', { name: '+' }));
+  fireEvent.change(screen.getByLabelText('Кількість'), { target: { value: '5' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Додати' }));
+
+  expect(await screen.findByText('Мережа недоступна')).toBeTruthy();
+  expect(screen.getByLabelText('Кількість')).toBeTruthy(); // поле лишається відкритим -- користувач може повторити
+  expect(screen.queryByRole('button', { name: '+' })).toBeNull(); // НЕ згорнулось назад
+});
+
+// Review 2026-09-07 C16: подвійний клік ("Додати" двічі поспіль, поки перший
+// запит ще в польоті) до фіксу викликав onAddEntry двічі -- подвійний запис
+// того самого числа.
+test('C16: кнопка "Додати" недоступна, поки перший виклик onAddEntry ще в польоті -- подвійний клік не дає другого виклику', async () => {
+  let resolveFirstCall: (() => void) | undefined;
+  const onAddEntry = vi.fn().mockImplementation(
+    () => new Promise<void>((resolve) => { resolveFirstCall = resolve; }),
+  );
+  render(<MetricBlockCard block={boundedBlock()} onAddEntry={onAddEntry} />);
+
+  fireEvent.click(screen.getByRole('button', { name: '+' }));
+  fireEvent.change(screen.getByLabelText('Кількість'), { target: { value: '5' } });
+  const submitButton = screen.getByRole('button', { name: 'Додати' });
+  fireEvent.click(submitButton);
+  fireEvent.click(submitButton); // другий клік, поки перший запит ще не завершився
+
+  expect(onAddEntry).toHaveBeenCalledTimes(1);
+  expect(submitButton).toHaveProperty('disabled', true);
+
+  resolveFirstCall?.();
+  await screen.findByRole('button', { name: '+' }); // після завершення -- нормальне згортання
+});

@@ -12,7 +12,7 @@
 // реалізований. Прибрати цю кнопку разом з onAddEntry й MetricBlockCard.test.tsx
 // (D-110-тести), коли агентський чат-інтерфейс візьме на себе внесення записів.
 import { useState } from 'react';
-import { Button, NumberField } from '../../../shared/ui';
+import { Banner, Button, NumberField } from '../../../shared/ui';
 import type { MetricBlockViewModel } from './types';
 
 export interface MetricBlockCardProps {
@@ -25,13 +25,28 @@ export function MetricBlockCard({ block, onAddEntry }: MetricBlockCardProps): JS
   const { progress } = block;
   const [isAddingEntry, setIsAddingEntry] = useState(false);
   const [amount, setAmount] = useState<number | null>(null);
+  // Review 2026-09-07 C16: без цих двох прапорців відхилений onAddEntry був
+  // unhandled rejection (ані повідомлення, ані повернення форми в нормальний
+  // стан), а подвійний клік на "Додати" (поки перший запит ще в польоті)
+  // викликав onAddEntry двічі -- подвійний запис того самого числа.
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const handleAddEntry = (): void => {
-    if (!onAddEntry || amount === null) return;
-    onAddEntry(amount).then(() => {
-      setIsAddingEntry(false);
-      setAmount(null);
-    });
+    if (!onAddEntry || amount === null || isSubmitting) return;
+    setIsSubmitting(true);
+    setSubmitError(null);
+    onAddEntry(amount)
+      .then(() => {
+        setIsAddingEntry(false);
+        setAmount(null);
+      })
+      .catch((error: unknown) => {
+        setSubmitError(error instanceof Error ? error.message : 'Не вдалося зберегти запис');
+      })
+      .finally(() => {
+        setIsSubmitting(false);
+      });
   };
 
   return (
@@ -56,7 +71,8 @@ export function MetricBlockCard({ block, onAddEntry }: MetricBlockCardProps): JS
         (isAddingEntry ? (
           <div>
             <NumberField label="Кількість" value={amount} onChange={setAmount} />
-            <Button label="Додати" onClick={handleAddEntry} />
+            <Button label="Додати" onClick={handleAddEntry} disabled={isSubmitting} />
+            {submitError && <Banner variant="error" text={submitError} />}
           </div>
         ) : (
           <Button label="+" onClick={() => setIsAddingEntry(true)} />
