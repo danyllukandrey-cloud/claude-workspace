@@ -9,16 +9,24 @@ export function detectConflict(
   windowMs: number,
 ): boolean {
   return existingEntries.some((existing) => {
-    // Review 2026-09-07 B7 (AC-06): відсутній sourceDeviceId (null) з обох боків
-    // не доводить, що це один і той самий пристрій -- ми просто цього не знаємо.
-    // `null !== null` хибне, тому наївне порівняння ховало б конфлікт. Якщо
-    // хоча б один бік не має ідентифікатора пристрою, вважаємо це МОЖЛИВО
-    // різними пристроями -- безпечніше зайвий раз уточнити, ніж мовчки
-    // зарахувати обидва записи (дух AC-06: ніколи не рахувати мовчки).
-    const possiblyDifferentDevice =
-      existing.sourceDeviceId !== newEntry.sourceDeviceId ||
-      existing.sourceDeviceId === null ||
-      newEntry.sourceDeviceId === null;
-    return possiblyDifferentDevice && Math.abs(newEntry.recordedAt - existing.recordedAt) <= windowMs;
+    // Post-ship follow-up review (regression from the earlier B7 "fix",
+    // 2026-09-07): treating "device id unknown" as "possibly a different
+    // device" broke the common case, because the real client did not send
+    // sourceDeviceId at ALL before this same follow-up wave -- every entry
+    // had it null, so this branch fired for every two entries recorded
+    // close together on the same block, regardless of device, and
+    // create-entry.ts flipped the earlier CONFIRMED entry back to
+    // 'pending' every time -- the user's progress visibly dropped after a
+    // second recording, the opposite of AC-01.
+    //
+    // AC-06's own wording is "different devices" -- a difference we can
+    // only assert when BOTH sides actually carry a known id. The client now
+    // sends a real, persisted per-device id for the normal flow (main.tsx),
+    // so `null` becomes rare; for that rare case, "unknown" defaults to
+    // "assume same device, no conflict" -- the safe choice that does not
+    // break the ordinary single-device flow.
+    const bothDeviceIdsKnown = existing.sourceDeviceId !== null && newEntry.sourceDeviceId !== null;
+    const differentDevice = bothDeviceIdsKnown && existing.sourceDeviceId !== newEntry.sourceDeviceId;
+    return differentDevice && Math.abs(newEntry.recordedAt - existing.recordedAt) <= windowMs;
   });
 }

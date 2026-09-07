@@ -37,21 +37,29 @@ describe('detectConflict', () => {
     expect(detectConflict(newEntry, existingEntries, windowMs)).toBe(false);
   });
 
-  // Review 2026-09-07 B7 (AC-06): sourceDeviceId відсутній (null) з обох боків
-  // -- це типовий випадок, коли клієнт не передає пристрій. `null !== null`
-  // хибне, тож наївне порівняння вважало б це "тим самим пристроєм" і НІКОЛИ
-  // не зафіксувало б конфлікт. Ми не знаємо, що це один і той самий пристрій
-  // -- тож вважаємо це МОЖЛИВИМ конфліктом (безпечніше уточнити зайвий раз,
-  // ніж мовчки зарахувати обидва -- дух AC-06).
-  it('flags a possible conflict when both entries have no device id, within the window', () => {
-    const newEntry: RawEntryWithTiming = { sourceDeviceId: null, recordedAt: 1_000_000 };
-    const existingEntries: RawEntryWithTiming[] = [{ sourceDeviceId: null, recordedAt: 1_000_000 - 30_000 }];
-    expect(detectConflict(newEntry, existingEntries, windowMs)).toBe(true);
-  });
+  // Review 2026-09-07, post-ship follow-up review (regresja from the B7
+  // "fix" above): treating "device id unknown" as "possibly a different
+  // device" seemed safer in isolation, but main.tsx never sent a device id
+  // at all before this same follow-up wave -- so in REAL usage every single
+  // entry had sourceDeviceId: null, which made THIS branch fire for every
+  // two entries recorded close together on the same block, regardless of
+  // device. create-entry.ts then flips the earlier entry back to 'pending'
+  // on every such "conflict" -- the user's confirmed progress visibly
+  // dropped after recording a second entry, the opposite of AC-01. The
+  // follow-up fix (main.tsx now sends a real, persisted per-device id,
+  // see local device-id generation) makes null genuinely rare -- so the
+  // safe default for "we don't know" flips back to "assume same device,
+  // no conflict" instead of "assume different, flag it".
+  it('does NOT flag a conflict when device id is unknown (null) on either/both sides -- unknown is not evidence of a different device', () => {
+    const bothNull: RawEntryWithTiming = { sourceDeviceId: null, recordedAt: 1_000_000 };
+    expect(detectConflict(bothNull, [{ sourceDeviceId: null, recordedAt: 1_000_000 - 30_000 }], windowMs)).toBe(false);
 
-  it('does not flag a conflict when both entries have no device id, outside the window', () => {
-    const newEntry: RawEntryWithTiming = { sourceDeviceId: null, recordedAt: 1_000_000 };
-    const existingEntries: RawEntryWithTiming[] = [{ sourceDeviceId: null, recordedAt: 1_000_000 - 90_000 }];
-    expect(detectConflict(newEntry, existingEntries, windowMs)).toBe(false);
+    const newKnown: RawEntryWithTiming = { sourceDeviceId: 'device-a', recordedAt: 1_000_000 };
+    expect(detectConflict(newKnown, [{ sourceDeviceId: null, recordedAt: 1_000_000 - 30_000 }], windowMs)).toBe(false);
+
+    const existingKnown: RawEntryWithTiming = { sourceDeviceId: null, recordedAt: 1_000_000 };
+    expect(detectConflict(existingKnown, [{ sourceDeviceId: 'device-a', recordedAt: 1_000_000 - 30_000 }], windowMs)).toBe(
+      false,
+    );
   });
 });
