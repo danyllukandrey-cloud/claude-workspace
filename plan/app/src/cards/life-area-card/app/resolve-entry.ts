@@ -60,6 +60,14 @@ export async function resolveEntry(db: Db, input: ResolveEntryInput): Promise<En
     throw new AppError('entry.not_found', 'Запис не знайдено', 404);
   }
 
+  // Review 2026-09-07 (backend hardening, T50): ports-шар передає `status`
+  // з тіла HTTP-запиту без валідації проти enum контракту -- будь-що, що не
+  // є ЛІТЕРАЛЬНО 'confirmed', раніше мовчки трактувалось як 'rejected'.
+  // Типо в запиті відхиляв би запис, а не сигналізував про помилку.
+  if (input.status !== 'confirmed' && input.status !== 'rejected') {
+    throw new AppError('entry.invalid_status', 'status має бути "confirmed" або "rejected"', 422);
+  }
+
   const entry: Entry = {
     id: record.id,
     metricBlockId: record.metricBlockId,

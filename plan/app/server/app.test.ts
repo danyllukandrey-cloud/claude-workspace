@@ -133,4 +133,52 @@ describe('composition root -- auth middleware on mounted routes (T30, D-107)', (
       server.close();
     }
   });
+
+  // Review 2026-09-07 A1: domain/card.ts кидає CardValidationError (окремий
+  // клас, не AppError -- домен навмисно нічого не знає про HTTP) на порожню
+  // назву; ДО цього фіксу error-middleware перевіряв лише `instanceof
+  // AppError` і будь-яка інша помилка падала у generic-гілку 500. Контракт
+  // (openapi.yaml POST /cards) документує саме 422 card.name_required.
+  it('maps a thrown CardValidationError (card.name_required, 422) to the exact contract Error envelope', async () => {
+    const query = vi.fn(); // createCard кидає ДО будь-якого query
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/cards`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer a-valid-looking-jwt', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: '   ' }),
+      });
+      const body = await res.json();
+
+      expect(res.status).toBe(422);
+      expect(body).toEqual({ code: 'card.name_required', message: expect.any(String) });
+      expect(query).not.toHaveBeenCalled();
+    } finally {
+      server.close();
+    }
+  });
+
+  // Той самий клас, для markFilled (AC-03) -- ProgressValidationError/CardValidationError,
+  // обидва не instanceof AppError.
+  it('maps a thrown CardValidationError (card.description_required, 422) via PATCH /cards/{id}', async () => {
+    const query = vi.fn().mockResolvedValueOnce({ rows: [CARD_ROW] }); // findCardById лише
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/cards/card-1`, {
+        method: 'PATCH',
+        headers: { Authorization: 'Bearer a-valid-looking-jwt', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ markFilled: true }),
+      });
+      const body = await res.json();
+
+      expect(res.status).toBe(422);
+      expect(body).toEqual({ code: 'card.description_required', message: expect.any(String) });
+    } finally {
+      server.close();
+    }
+  });
 });

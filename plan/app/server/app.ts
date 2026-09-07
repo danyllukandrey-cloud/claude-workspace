@@ -17,6 +17,8 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import type { Db } from '../src/cards/life-area-card/infra/postgres-repo';
 import { AppError } from '../src/shared/errors';
+import { CardValidationError } from '../src/cards/life-area-card/domain/card';
+import { ProgressValidationError } from '../src/cards/life-area-card/domain/progress';
 import * as cardHandlers from '../src/cards/life-area-card/ports/card-handlers';
 import * as metricBlockHandlers from '../src/cards/life-area-card/ports/metric-block-handlers';
 import * as entryHandlers from '../src/cards/life-area-card/ports/entry-handlers';
@@ -242,6 +244,16 @@ export function createApp(deps: AppDeps): express.Express {
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof AppError) {
       res.status(err.httpStatus).json({ code: err.code, message: err.message });
+      return;
+    }
+    // Review 2026-09-07 A1: доменні помилки валідації (CardValidationError,
+    // ProgressValidationError) НАВМИСНО не є AppError -- домен нічого не знає
+    // про HTTP (шарова архітектура, sad.md §5). До цього фіксу вони падали в
+    // generic-гілку нижче (500 замість контрактного 422 card.name_required/
+    // card.description_required) -- домен уже несе правильний `code`, тут
+    // лише додаємо статус, як і для AppError вище.
+    if (err instanceof CardValidationError || err instanceof ProgressValidationError) {
+      res.status(422).json({ code: err.code, message: err.message });
       return;
     }
     // eslint-disable-next-line no-console -- немає власного логера (one-person MVP, ADR-0006).

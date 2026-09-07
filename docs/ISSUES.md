@@ -120,6 +120,8 @@ Select-String docs\ISSUES.md -Pattern '^\| ISS-(\d+) \|' | ForEach-Object { [int
 
 | ISS-82 | 2026-09-07 | `plan/app/src/cards/life-area-card/app/create-metric-block.ts` (T43, review-фікс B6) vs `docs/features/life-area-card/contracts/openapi.yaml` `POST /cards/{cardId}/metric-blocks` | Новий код відхиляє `targetCount<=0` кодом `metric_block.invalid_target_count`/422, якого контракт не декларує (лише 201/401/404 задокументовані) — файл навмисно не редагувався вручну (сам забороняє, шапка файлу), потребує `/sdd:api life-area-card --reconcile` | відкрито | — |
 
+| ISS-83 | 2026-09-07 | `plan/app/src/cards/life-area-card/app/resolve-entry.ts` (T39, review-фікс backend hardening) vs `docs/features/life-area-card/contracts/openapi.yaml` `PATCH /entries/{entryId}` | Новий код відхиляє `status` поза `[confirmed, rejected]` кодом `entry.invalid_status`/422, якого контракт не декларує (лише 200/401/404) — той самий клас, що ISS-82; потребує `/sdd:api life-area-card --reconcile` | відкрито | — |
+
 ## Пов'язані документи
 
 - [DECISIONS.md](DECISIONS.md) — рішення, що виникли з розв'язаних нестиковок

@@ -139,6 +139,23 @@ describe('resolveEntry use-case', () => {
     expect(query).toHaveBeenCalledTimes(2); // без UPDATE
   });
 
+  // Review 2026-09-07 (backend hardening, T50): ports-шар не валідує `status`
+  // проти enum контракту (EntryResolve.status: [confirmed, rejected]) до
+  // виклику -- будь-який рядок, що не є ЛІТЕРАЛЬНО 'confirmed', мовчки падав
+  // у rejectEntry (`input.status === 'confirmed' ? confirmEntry : rejectEntry`).
+  // Типо "pendin" чи навіть валідне на вигляд "pending" відхиляло б запис
+  // замість очікуваної помилки.
+  it('rejects a status outside the confirmed/rejected enum, before any write', async () => {
+    const query = vi.fn().mockResolvedValueOnce({ rows: [PENDING_ENTRY_ROW] }).mockResolvedValueOnce({ rows: [CARD_ROW] });
+    const db: Db = { query };
+
+    await expect(
+      resolveEntry(db, { ownerUserId: 'user-1', entryId: 'entry-1', status: 'pending' as unknown as 'confirmed' })
+    ).rejects.toMatchObject({ code: 'entry.invalid_status', httpStatus: 422 });
+
+    expect(query.mock.calls.some((call) => /UPDATE entry/.test(call[0] as string))).toBe(false);
+  });
+
   it('throws AppError for a foreign or missing entry', async () => {
     const query = vi.fn().mockResolvedValueOnce({ rows: [] });
     const db: Db = { query };

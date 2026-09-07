@@ -43,7 +43,7 @@
 | T36 | UI: SCR-07 Архів карток | ui | TBD | M | T24, T35 | done |
 | T37 | UI: SCR-02 rename state | ui | TBD | S | T24, T21 | done |
 | T38 | Migration: add owner_user_id FK | migration | TBD | S | T1 | done |
-| T39 | Ports: map domain validation errors to contract codes | ports | TBD | S | T21, T23 | todo |
+| T39 | Ports: map domain validation errors to contract codes | ports | TBD | S | T21, T23 | done |
 | T40 | Infra+wiring: transactional archive + real Structure layout close | infra | TBD | M | T10, T15 | todo |
 | T41 | App: wrap conflict-entry and transfer writes in a transaction | app | TBD | M | T40, T18, T17 | todo |
 | T42 | Wiring: connect Claude client, fail-open suspicious-data check | wiring | TBD | S | T12, T21 | todo |
