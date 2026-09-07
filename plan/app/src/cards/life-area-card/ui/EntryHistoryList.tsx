@@ -12,9 +12,11 @@ import type { EntryViewModel } from './types';
 export interface EntryHistoryListProps {
   entries: EntryViewModel[];
   onFlagEntry: (entryId: string) => void;
+  /** Review 2026-09-07 (AC-12/E remainder, T52-style guard): вимикає ВСІ кнопки "виправити", поки один такий запит уже в польоті -- захист від подвійного кліку. */
+  isFlagEntryDisabled?: boolean;
 }
 
-export function EntryHistoryList({ entries, onFlagEntry }: EntryHistoryListProps): JSX.Element {
+export function EntryHistoryList({ entries, onFlagEntry, isFlagEntryDisabled }: EntryHistoryListProps): JSX.Element {
   return (
     <div>
       <h3>Історія записів</h3>
@@ -23,7 +25,7 @@ export function EntryHistoryList({ entries, onFlagEntry }: EntryHistoryListProps
           <li key={entry.id}>
             <span>{entry.recordedAtLabel}</span> <span>{entry.summary}</span>{' '}
             {entry.status === 'confirmed' && (
-              <button type="button" onClick={() => onFlagEntry(entry.id)}>
+              <button type="button" onClick={() => onFlagEntry(entry.id)} disabled={isFlagEntryDisabled}>
                 виправити
               </button>
             )}

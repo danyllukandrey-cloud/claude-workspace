@@ -136,6 +136,62 @@ test('SCR-03 AC-12: клік "виправити" в історії виклик
   expect(screen.queryByRole('button', { name: 'виправити' })).toBeNull();
 });
 
+// Review 2026-09-07, post-ship follow-up review (AC-12/E, RED): невдале
+// onFlagEntry раніше робило те саме, що невдалий ПОЧАТКОВИЙ load
+// (setState('error')) -- стирало вже показані дані заради банера на весь
+// екран, той самий клас багу, що refresh() (T52) вище вже виправлено, але
+// пропущено саме тут.
+
+test('T52-remainder: невдалий onFlagEntry НЕ стирає вже завантажені дані -- неблокуючий Banner замість повного екрана', async () => {
+  const initial: CardBackData = {
+    metricBlocks: [
+      { id: 'mb1', label: 'Тренування', unit: 'раз', progress: { kind: 'bounded', share: 0.5, overGoal: 0 }, hasPendingEntry: false },
+    ],
+    aggregateProgress: 0.5,
+    entries: [makeEntry({ id: 'e1', status: 'confirmed', summary: '+1 тренування' })],
+  };
+  const onFlagEntry = vi.fn().mockRejectedValue(new Error('Мережа впала'));
+
+  render(<CardBack loadBack={() => Promise.resolve(initial)} onFlip={vi.fn()} onFlagEntry={onFlagEntry} />);
+
+  await screen.findByText(/Тренування: 50%/);
+  fireEvent.click(screen.getByRole('button', { name: /Історія записів/ }));
+  fireEvent.click(await screen.findByRole('button', { name: 'виправити' }));
+
+  await screen.findByText('Мережа впала');
+  // Дані й досі на екрані -- не замінені банером помилки на весь екран.
+  expect(screen.getByText(/Тренування: 50%/)).toBeTruthy();
+  expect(screen.getByText('+1 тренування')).toBeTruthy();
+});
+
+test('T52-remainder: подвійний клік "виправити" (поки onFlagEntry ще не завершився) викликає onFlagEntry лише один раз', async () => {
+  let resolveFlag: (data: CardBackData) => void = () => {};
+  const initial: CardBackData = {
+    metricBlocks: [],
+    aggregateProgress: null,
+    entries: [makeEntry({ id: 'e1', status: 'confirmed', summary: '+1 тренування' })],
+  };
+  const onFlagEntry = vi.fn().mockReturnValue(
+    new Promise<CardBackData>((resolve) => {
+      resolveFlag = resolve;
+    }),
+  );
+
+  render(<CardBack loadBack={() => Promise.resolve(initial)} onFlip={vi.fn()} onFlagEntry={onFlagEntry} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: /Історія записів/ }));
+  const flagButton = await screen.findByRole('button', { name: 'виправити' });
+
+  fireEvent.click(flagButton);
+  fireEvent.click(flagButton);
+
+  expect(onFlagEntry).toHaveBeenCalledTimes(1);
+
+  await act(async () => {
+    resolveFlag({ metricBlocks: [], aggregateProgress: null, entries: [] });
+  });
+});
+
 test('SCR-03 transfer-collision: пропонує перейменувати блок при колізії назви (AC-15)', async () => {
   const data: CardBackData = {
     metricBlocks: [

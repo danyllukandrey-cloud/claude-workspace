@@ -65,6 +65,12 @@ export function CardBack({
   const [renameValue, setRenameValue] = useState('');
   const [collisionError, setCollisionError] = useState<string | undefined>(undefined);
   const [isCreatingBlock, setIsCreatingBlock] = useState(false);
+  // Review 2026-09-07, post-ship follow-up review (AC-12/E remainder):
+  // handleFlagEntry нижче мав ТОЙ САМИЙ баг, що refresh() уже виправлено
+  // (setState('error') на невдачі стирало всі дані) -- пропущено окремо,
+  // бо це власний catch, не сам refresh(). Той самий isSubmitting-підхід,
+  // що T49/MetricBlockCard -- захист від подвійного кліку, поки запит у польоті.
+  const [isFlaggingEntry, setIsFlaggingEntry] = useState(false);
   // Review 2026-09-07 E (T52): фоновий refresh (після успішної мутації) --
   // окремий, неблокуючий стан помилки, ніколи не `setState('error')` (той
   // самий шлях, що ПОЧАТКОВЕ завантаження) -- інакше невдалий фоновий
@@ -130,13 +136,27 @@ export function CardBack({
   }
 
   const handleFlagEntry = (entryId: string): void => {
-    if (!onFlagEntry) return;
+    if (!onFlagEntry || isFlaggingEntry) return;
+    // Той самий requestId-лічильник, що refresh() -- onFlagEntry теж
+    // повертає свіжий CardBackData, тож обидва конкурують за "останній
+    // issued", не лише один одного власного класу.
+    const requestId = ++refreshRequestIdRef.current;
+    setIsFlaggingEntry(true);
     onFlagEntry(entryId)
-      .then((fresh) => setData(fresh))
+      .then((fresh) => {
+        if (refreshRequestIdRef.current !== requestId) return;
+        setData(fresh);
+        setRefreshError(null);
+      })
       .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : 'Не вдалося виправити запис');
-        setState('error');
-      });
+        if (refreshRequestIdRef.current !== requestId) return;
+        // Review 2026-09-07 (AC-12/E remainder): НЕ `setState('error')` --
+        // запис уже виправлено на бекенді (PATCH пройшов), лише перезапит
+        // свіжого стану провалився. Стирати весь екран заради цього так
+        // само неправильно, як refresh() робив до T52.
+        setRefreshError(err instanceof Error ? err.message : 'Не вдалося виправити запис');
+      })
+      .finally(() => setIsFlaggingEntry(false));
   };
 
   const handleCreateMetricBlock = (values: MetricBlockFormValues): Promise<void> => {
@@ -217,7 +237,9 @@ export function CardBack({
       <button type="button" onClick={() => setHistoryExpanded((expanded) => !expanded)}>
         Історія записів {historyExpanded ? '▴' : '▾'}
       </button>
-      {historyExpanded && <EntryHistoryList entries={data.entries} onFlagEntry={handleFlagEntry} />}
+      {historyExpanded && (
+        <EntryHistoryList entries={data.entries} onFlagEntry={handleFlagEntry} isFlagEntryDisabled={isFlaggingEntry} />
+      )}
 
       {/* D-111 (docs/DECISIONS.md, виправлено): "← лицьова" -- ОСТАННІЙ
           елемент, унизу -- те саме місце, де на лицьовій стороні стоїть
