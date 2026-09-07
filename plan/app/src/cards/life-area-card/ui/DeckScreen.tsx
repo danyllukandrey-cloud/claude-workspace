@@ -12,6 +12,7 @@
 // (правило залежностей, plan/app/CLAUDE.md).
 
 import { useEffect, useState } from 'react';
+import { AppError } from '../../../shared/errors';
 import { Banner, Button, EmptyState, Spinner } from '../../../shared/ui';
 import { DeckGrid } from './DeckGrid';
 import type { DeckGridItem } from './DeckGrid';
@@ -39,6 +40,13 @@ export interface DeckScreenProps {
   onOpenArchive: () => void;
   /** Викликається при кліку на кнопку "Вийти" (ISS-58). */
   onLogout: () => void;
+  /**
+   * Review 2026-09-07 C14 (AC-04): loadCards відхилено з AppError, чий
+   * httpStatus === 401 (сесія протермінована/невалідна, main.tsx) --
+   * викликається ЗАМІСТЬ показу Banner-помилки, щоб користувач не впирався
+   * в глухий кут (App.tsx поверне LoginScreen, той самий шлях, що onLogout).
+   */
+  onSessionExpired: () => void;
 }
 
 type LoadState =
@@ -54,8 +62,15 @@ export function DeckScreen({
   onCreateCard,
   onOpenArchive,
   onLogout,
+  onSessionExpired,
 }: DeckScreenProps): JSX.Element {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
+  // C14: "Спробувати ще раз" не може просто повторно викликати loadCards()
+  // напряму (ефект нижче має лишитись єдиним місцем, що читає/пише state) --
+  // інкремент цього лічильника в deps ефекту тригерить той самий цикл
+  // loading -> loaded/error заново, той самий підхід, що onBack у
+  // CardDetailScreen (ремаунт через зміну ключа стану, не прямий виклик).
+  const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,23 +83,34 @@ export function DeckScreen({
         }
       })
       .catch((error: unknown) => {
-        if (!cancelled) {
-          const message = error instanceof Error ? error.message : DEFAULT_ERROR_MESSAGE;
-          setState({ status: 'error', message });
+        if (cancelled) return;
+        // C14/AC-04: 401 -- сесія протермінована/невалідна, не "мережа
+        // недоступна" -- банер помилки тут був би глухим кутом (нема кнопки,
+        // що могла б це виправити). onSessionExpired повертає до LoginScreen.
+        if (error instanceof AppError && error.httpStatus === 401) {
+          onSessionExpired();
+          return;
         }
+        const message = error instanceof Error ? error.message : DEFAULT_ERROR_MESSAGE;
+        setState({ status: 'error', message });
       });
 
     return () => {
       cancelled = true;
     };
-  }, [loadCards]);
+  }, [loadCards, retryToken, onSessionExpired]);
 
   if (state.status === 'loading') {
     return <Spinner />;
   }
 
   if (state.status === 'error') {
-    return <Banner variant="error" text={state.message} />;
+    return (
+      <div>
+        <Banner variant="error" text={state.message} />
+        <Button label="Спробувати ще раз" onClick={() => setRetryToken((token) => token + 1)} />
+      </div>
+    );
   }
 
   if (state.items.length === 0) {

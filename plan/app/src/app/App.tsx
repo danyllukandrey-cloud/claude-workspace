@@ -140,6 +140,14 @@ export function App({
               clearStoredSession();
               setSession(null);
             }}
+            // Review 2026-09-07 C14 (AC-04): 401 при завантаженні колоди --
+            // той самий шлях, що ручний "Вийти" (сесія все одно недійсна,
+            // тримати її в сховищі означає знову впертись у 401 наступного
+            // разу).
+            onSessionExpired={() => {
+              clearStoredSession();
+              setSession(null);
+            }}
           />
         )}
       </main>

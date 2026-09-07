@@ -54,6 +54,8 @@ import {
   readCachedEntries,
   readCachedMetricBlocks,
 } from '../cards/life-area-card';
+import { AppError } from '../shared/errors';
+import { collectAllPages } from '../shared/pagination';
 import { createLocalStorageAdapter } from '../shared/storage/local';
 import { App } from './App';
 import type { StoredSession } from './App';
@@ -122,6 +124,8 @@ interface EntryDto {
 
 interface EntryPageDto {
   items: EntryDto[];
+  /** Review 2026-09-07 C15 (AC-09): курсор наступної сторінки -- сервер обмежує відповідь дефолтним лімітом 50 (entry-handlers.ts), null означає "останню сторінку вже отримано". */
+  next_cursor: string | null;
 }
 
 /** Спільні заголовки авторизації (Bearer JWT, D-109) -- той самий Session, що loadCards/createCard. */
@@ -244,7 +248,14 @@ async function loadCards(): Promise<DeckGridItem[]> {
   const response = await fetch('/api/v1/cards', { headers: authHeaders() });
 
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    const body = (await response.json().catch(() => null)) as { message?: string; code?: string } | null;
+    // Review 2026-09-07 C14 (AC-04): 401 -- сесія протермінована/невалідна,
+    // не звичайна мережева помилка -- AppError несе httpStatus, за яким
+    // DeckScreen (T48) розпізнає саме цей випадок і викликає onSessionExpired
+    // замість показу банера-глухого-кута.
+    if (response.status === 401) {
+      throw new AppError(body?.code ?? 'auth.invalid_token', body?.message ?? 'Сесія протермінована', 401);
+    }
     throw new Error(body?.message ?? 'Не вдалося завантажити колоду карток');
   }
 
@@ -325,26 +336,49 @@ function loadBackFromCache(cardId: string): CardBackData | null {
   return { metricBlocks, aggregateProgress, entries };
 }
 
+/**
+ * Review 2026-09-07 C15 (AC-09): одна сторінка GET .../entries -- підставляється
+ * як fetchPage у collectAllPages (shared/pagination.ts), яка сама слідує за
+ * next_cursor, поки сервер не поверне null. Кидає той самий текст помилки, що
+ * решта loadBack, аби фейл будь-якої сторінки виглядав для користувача
+ * однаково незалежно від того, перша це сторінка чи п'ята.
+ */
+async function fetchEntryPage(cardId: string, after: string | undefined): Promise<EntryPageDto> {
+  const url = `/api/v1/cards/${cardId}/entries${after ? `?after=${encodeURIComponent(after)}` : ''}`;
+  const response = await fetch(url, { headers: authHeaders() });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? 'Не вдалося завантажити картку');
+  }
+
+  return (await response.json()) as EntryPageDto;
+}
+
 async function loadBack(cardId: string): Promise<CardBackData> {
   let card: CardDetailDto;
   let blocks: MetricBlockDto[];
-  let entryPage: EntryPageDto;
+  let allEntries: EntryDto[];
   try {
-    const [cardResponse, blocksResponse, entriesResponse] = await Promise.all([
+    const [cardResponse, blocksResponse, entriesResult] = await Promise.all([
       fetch(`/api/v1/cards/${cardId}`, { headers: authHeaders() }),
       fetch(`/api/v1/cards/${cardId}/metric-blocks`, { headers: authHeaders() }),
-      fetch(`/api/v1/cards/${cardId}/entries`, { headers: authHeaders() }),
+      // C15/AC-09: раніше лише ПЕРША сторінка (сервер обмежує дефолтним
+      // лімітом 50, entry-handlers.ts) -- картка з понад 50 записами
+      // мовчки недорахувала прогрес блоків, чиї записи опинились за межею
+      // сторінки. collectAllPages слідує за next_cursor до кінця.
+      collectAllPages<EntryDto>((after) => fetchEntryPage(cardId, after)),
     ]);
 
-    if (!cardResponse.ok || !blocksResponse.ok || !entriesResponse.ok) {
-      const failed = [cardResponse, blocksResponse, entriesResponse].find((response) => !response.ok);
+    if (!cardResponse.ok || !blocksResponse.ok) {
+      const failed = [cardResponse, blocksResponse].find((response) => !response.ok);
       const body = (await failed?.json().catch(() => null)) as { message?: string } | null;
       throw new Error(body?.message ?? 'Не вдалося завантажити картку');
     }
 
     card = (await cardResponse.json()) as CardDetailDto;
     blocks = (await blocksResponse.json()) as MetricBlockDto[];
-    entryPage = (await entriesResponse.json()) as EntryPageDto;
+    allEntries = entriesResult;
   } catch (networkError) {
     // T45/QG-1: мережа недоступна (чи бекенд повернув помилку) -- відповідаємо
     // повністю з кешу, якщо є з чим; інакше пробрасуємо оригінальну помилку
@@ -356,15 +390,16 @@ async function loadBack(cardId: string): Promise<CardBackData> {
 
   // Успішна синхронізація -- кешуємо ОБИДВА джерела повним заміщенням (D-106,
   // review C13): наступне відкриття офлайн бачить рівно те, що бекенд щойно
-  // показав, не застарілий чи частковий стан.
+  // показав, не застарілий чи частковий стан. Кеш теж отримує ПОВНИЙ набір
+  // записів (усі сторінки), не лише першу -- той самий фікс, що C15 нижче.
   cacheMetricBlocks(storage, cardId, blocks.map(toCachedMetricBlock));
-  cacheEntries(storage, cardId, entryPage.items.map(toDomainEntry));
+  cacheEntries(storage, cardId, allEntries.map(toDomainEntry));
 
   // D-106: `blocks` -- лише метадані (label/unit/targetCount/isOngoing), БЕЗ
   // прогресу. Прогрес кожного блоку рахуємо тут з сирих подій (RawEntry) --
   // тільки так, ніколи з можливого pre-computed поля відповіді.
   const metricBlocks: MetricBlockViewModel[] = blocks.map((block) => {
-    const blockEntries = entryPage.items.filter((entry) => entry.metricBlockId === block.id);
+    const blockEntries = allEntries.filter((entry) => entry.metricBlockId === block.id);
     const goal: MetricBlockGoal = { targetCount: block.targetCount, isOngoing: block.isOngoing };
     const rawEntries: RawEntry[] = blockEntries.map((entry) => ({ amount: entry.amount, status: entry.status }));
 
@@ -378,7 +413,7 @@ async function loadBack(cardId: string): Promise<CardBackData> {
   });
 
   const blockById = new Map(blocks.map((block) => [block.id, block]));
-  const entries: EntryViewModel[] = entryPage.items.map((entry) => toEntryViewModel(entry, blockById.get(entry.metricBlockId)));
+  const entries: EntryViewModel[] = allEntries.map((entry) => toEntryViewModel(entry, blockById.get(entry.metricBlockId)));
 
   return { metricBlocks, aggregateProgress: card.aggregateProgress, entries };
 }

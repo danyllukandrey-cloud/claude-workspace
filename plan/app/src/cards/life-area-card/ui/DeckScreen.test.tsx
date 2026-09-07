@@ -1,5 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { DeckScreen } from './DeckScreen';
+import { AppError } from '../../../shared/errors';
 
 // AC-04 (T25 DoD, п.1): усі 4 стани зі screens.md SCR-01 (default / empty /
 // loading / error) рендеряться за відповідним триггером -- не лише
@@ -29,7 +30,7 @@ test('loading: показує Spinner одразу після монтуванн
   const loadCards = vi.fn().mockReturnValue(pending);
 
   render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={vi.fn()}
-      onLogout={vi.fn()} />);
+      onLogout={vi.fn()} onSessionExpired={vi.fn()} />);
 
   expect(screen.getByRole('status')).toBeTruthy();
   expect(loadCards).toHaveBeenCalledTimes(1);
@@ -45,7 +46,7 @@ test('default: після резолву loadCards із картками рен�
 
   render(
     <DeckScreen loadCards={loadCards} onOpenCard={onOpenCard} onCreateCard={vi.fn()} onOpenArchive={vi.fn()}
-      onLogout={vi.fn()} />,
+      onLogout={vi.fn()} onSessionExpired={vi.fn()} />,
   );
 
   const tile = await screen.findByText('Спорт');
@@ -60,7 +61,7 @@ test('empty: після резолву loadCards із порожнім маси�
   const loadCards = vi.fn().mockResolvedValue([]);
 
   render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={vi.fn()}
-      onLogout={vi.fn()} />);
+      onLogout={vi.fn()} onSessionExpired={vi.fn()} />);
 
   expect(await screen.findByText('Тут ще немає жодної картки')).toBeTruthy();
 });
@@ -69,7 +70,7 @@ test('error: після реджекту loadCards рендерить Banner і�
   const loadCards = vi.fn().mockRejectedValue(new Error('Мережа недоступна'));
 
   render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={vi.fn()}
-      onLogout={vi.fn()} />);
+      onLogout={vi.fn()} onSessionExpired={vi.fn()} />);
 
   expect(await screen.findByText('Мережа недоступна')).toBeTruthy();
 });
@@ -78,7 +79,7 @@ test('error: реджект без Error-повідомлення падає н�
   const loadCards = vi.fn().mockRejectedValue('щось пішло не так');
 
   render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={vi.fn()}
-      onLogout={vi.fn()} />);
+      onLogout={vi.fn()} onSessionExpired={vi.fn()} />);
 
   expect(await screen.findByText('Не вдалося завантажити колоду карток')).toBeTruthy();
 });
@@ -89,7 +90,7 @@ test('ISS-55: empty-стан показує кнопку "+ Створити к�
 
   render(
     <DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={onCreateCard} onOpenArchive={vi.fn()}
-      onLogout={vi.fn()} />,
+      onLogout={vi.fn()} onSessionExpired={vi.fn()} />,
   );
 
   await screen.findByText('Тут ще немає жодної картки');
@@ -107,7 +108,7 @@ test('ISS-55: default-стан (DeckGrid з картками) показує к�
 
   render(
     <DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={onCreateCard} onOpenArchive={vi.fn()}
-      onLogout={vi.fn()} />,
+      onLogout={vi.fn()} onSessionExpired={vi.fn()} />,
   );
 
   await screen.findByText('Спорт');
@@ -126,7 +127,7 @@ test('ISS-55 stage 3: empty-стан показує кнопку "Архів", �
   const onOpenArchive = vi.fn();
 
   render(
-    <DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={onOpenArchive} onLogout={vi.fn()} />,
+    <DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={onOpenArchive} onLogout={vi.fn()} onSessionExpired={vi.fn()} />,
   );
 
   await screen.findByText('Тут ще немає жодної картки');
@@ -143,7 +144,7 @@ test('ISS-55 stage 3: default-стан (DeckGrid з картками) показ
   const onOpenArchive = vi.fn();
 
   render(
-    <DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={onOpenArchive} onLogout={vi.fn()} />,
+    <DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={onOpenArchive} onLogout={vi.fn()} onSessionExpired={vi.fn()} />,
   );
 
   await screen.findByText('Спорт');
@@ -169,6 +170,7 @@ test('ISS-58: empty-стан показує кнопку "Вийти", клік 
       onCreateCard={vi.fn()}
       onOpenArchive={vi.fn()}
       onLogout={onLogout}
+      onSessionExpired={vi.fn()}
     />,
   );
 
@@ -178,4 +180,56 @@ test('ISS-58: empty-стан показує кнопку "Вийти", клік 
   fireEvent.click(button);
 
   expect(onLogout).toHaveBeenCalledTimes(1);
+});
+
+// Review 2026-09-07 C14 (RED, docs/features/life-area-card/_review/review-2026-09-07.md):
+// раніше 401 (сесія протермінована/невалідна) падав у той самий Banner, що
+// будь-яка інша мережева помилка -- глухий кут, користувач не міг нічого
+// зробити. Тепер loadCards (main.tsx) кидає AppError('...', ..., 401) саме
+// для 401 -- DeckScreen розпізнає це й викликає onSessionExpired замість
+// показу банера (App.tsx поверне LoginScreen, той самий шлях, що onLogout).
+
+test('C14/AC-04: AppError з httpStatus 401 викликає onSessionExpired замість Banner', async () => {
+  const loadCards = vi.fn().mockRejectedValue(new AppError('auth.invalid_token', 'Сесія протермінована', 401));
+  const onSessionExpired = vi.fn();
+
+  render(
+    <DeckScreen
+      loadCards={loadCards}
+      onOpenCard={vi.fn()}
+      onCreateCard={vi.fn()}
+      onOpenArchive={vi.fn()}
+      onLogout={vi.fn()}
+      onSessionExpired={onSessionExpired}
+    />,
+  );
+
+  await vi.waitFor(() => expect(onSessionExpired).toHaveBeenCalledTimes(1));
+  // Не звичайний банер помилки -- глухого кута більше нема.
+  expect(screen.queryByText('Сесія протермінована')).toBeNull();
+});
+
+// Review 2026-09-07 C14 (RED): стан помилки (мережева, не 401) отримує кнопку
+// "Спробувати ще раз" -- раніше не було ЖОДНОГО способу відновитись без
+// перезавантаження всієї сторінки.
+
+test('C14: стан помилки показує кнопку "Спробувати ще раз", клік повторно викликає loadCards', async () => {
+  const loadCards = vi.fn().mockRejectedValueOnce(new Error('Мережа недоступна')).mockResolvedValueOnce([]);
+
+  render(
+    <DeckScreen
+      loadCards={loadCards}
+      onOpenCard={vi.fn()}
+      onCreateCard={vi.fn()}
+      onOpenArchive={vi.fn()}
+      onLogout={vi.fn()}
+      onSessionExpired={vi.fn()}
+    />,
+  );
+
+  await screen.findByText('Мережа недоступна');
+  fireEvent.click(screen.getByRole('button', { name: 'Спробувати ще раз' }));
+
+  expect(await screen.findByText('Тут ще немає жодної картки')).toBeTruthy();
+  expect(loadCards).toHaveBeenCalledTimes(2);
 });

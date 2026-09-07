@@ -27,6 +27,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { App } from './App';
 import type { DeckGridItem, EntryViewModel } from '../cards/life-area-card';
+import { AppError } from '../shared/errors';
 
 const FIXED_NOW = () => new Date('2026-09-06T12:00:00.000Z');
 
@@ -440,5 +441,20 @@ test('ISS-58: клік "Вийти" в Колоді стирає сесію і �
   expect(props.clearStoredSession).toHaveBeenCalledTimes(1);
   // Той самий контракт, що тест "без токена в сховищі" вище -- LoginScreen
   // єдиний, хто монтує GIS-кнопку; DeckScreen більше не на екрані.
+  await waitFor(() => expect(props.renderGoogleButton).toHaveBeenCalledTimes(1));
+});
+
+// Review 2026-09-07 C14 (RED, AC-04): DeckScreen.onSessionExpired -- App
+// підключає його рівно так само, як внутрішній onLogout DeckScreen уже
+// робить (clearStoredSession + setSession(null)) -- 401 при завантаженні
+// колоди має привести до того самого LoginScreen, не до глухого банера.
+
+test('C14/AC-04: 401 (AppError, httpStatus 401) з loadCards стирає сесію і повертає на LoginScreen', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockRejectedValue(new AppError('auth.invalid_token', 'Сесія протермінована', 401));
+
+  render(<App {...props} />);
+
+  await waitFor(() => expect(props.clearStoredSession).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(props.renderGoogleButton).toHaveBeenCalledTimes(1));
 });
