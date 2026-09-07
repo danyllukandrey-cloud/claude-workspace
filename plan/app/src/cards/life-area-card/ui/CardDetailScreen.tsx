@@ -57,9 +57,14 @@ export function CardDetailScreen({
 }: CardDetailScreenProps): JSX.Element {
   const [side, setSide] = useState<Side>('face');
 
+  // D-111 (docs/DECISIONS.md): навігаційні кнопки одного класу (перегортання
+  // + повернення до Колоди) стоять РАЗОМ на кожній стороні, а не розкидані --
+  // на звороті "← Назад" уже поруч із "← лицьова" вгорі (без змін); на лиці
+  // "← Назад" переїжджає ВНИЗ, поруч із "перегорнути →" (CardFace власну
+  // кнопку не рухаємо -- лишається останньою в CardFace.tsx).
   return (
     <div>
-      <Button label="← Назад" onClick={onBack} />
+      {side === 'back' && <Button label="← Назад" onClick={onBack} />}
       {side === 'face' ? (
         <CardFace
           loadCard={loadCard}
@@ -78,6 +83,7 @@ export function CardDetailScreen({
           onAddEntry={onAddEntry}
         />
       )}
+      {side === 'face' && <Button label="← Назад" onClick={onBack} />}
     </div>
   );
 }

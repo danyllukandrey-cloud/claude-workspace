@@ -78,4 +78,33 @@ describe('MetricBlockForm (SCR-05)', () => {
     expect(banner.getAttribute('data-variant')).toBe('error');
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
+
+  // D-111 (docs/DECISIONS.md): порядок полів -- живе тестування показало, що
+  // "постійний процес" стосується того, ЩО рахуємо, тож іде одразу за ним.
+  it('D-111: renders fields in order — що рахуємо -> постійний процес -> одиниця -> ціль/дата', () => {
+    const { container } = render(<MetricBlockForm onSubmit={vi.fn()} />);
+    const text = container.textContent ?? '';
+
+    const idxLabel = text.indexOf('Що рахуємо:');
+    const idxOngoing = text.indexOf('Постійний процес');
+    const idxUnit = text.indexOf('Одиниця:');
+    const idxTarget = text.indexOf('Ціль:');
+
+    expect(idxLabel).toBeGreaterThan(-1);
+    expect(idxLabel).toBeLessThan(idxOngoing);
+    expect(idxOngoing).toBeLessThan(idxUnit);
+    expect(idxUnit).toBeLessThan(idxTarget);
+  });
+
+  // D-112 (docs/DECISIONS.md): "Що рахуємо"/"Одиниця" обовʼязкові, "Ціль" -- ні.
+  it('D-112: поля мають хмаринки-підказки з правильною позначкою обовʼязковості', () => {
+    render(<MetricBlockForm onSubmit={vi.fn()} />);
+
+    fireEvent.focus(screen.getByLabelText('Що рахуємо:'));
+    expect(screen.getByRole('tooltip').textContent).toContain('Обовʼязково');
+
+    fireEvent.blur(screen.getByLabelText('Що рахуємо:'));
+    fireEvent.focus(screen.getByLabelText('Ціль:'));
+    expect(screen.getByRole('tooltip').textContent).toContain('Необовʼязково');
+  });
 });

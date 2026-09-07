@@ -1,3 +1,5 @@
+и
+
 ---
 status: Living
 tool: code
@@ -5,7 +7,6 @@ figma_file: ""
 pen_file: ""
 updated_at: "2026-09-06"
 ---
-
 # Design system — ПЛАН
 
 > Проєктний **дизайн-канон**, вироблений один раз на весь репозиторій скілом `design-system` і читаний скілами `ux-flows` / `screens` / `implement` / `review`. Закомічений — вибір інструмента й перелік компонентів спільні для всього проєкту, не персональні. [`architecture-map.md` §Frontend / UI foundation](architecture-map.md) лишається інвентарем **коду**; цей файл — **дизайн-сторона** канону (інструмент, орієнтація, джерело токенів, компоненти, наскрізні конвенції). Оновлюється через `/sdd:design-system`, коли міняється фундамент.
@@ -28,16 +29,16 @@ updated_at: "2026-09-06"
 
 ## Component inventory
 
-| Component | Source (`file:line` / node / URL) | States it supports | Notes |
-|---|---|---|---|
-| `CardShell` | `plan/app/src/shared/ui/CardShell.tsx:17` | front, back (перемикається пропом `isFlipped`) | Каркас картки, що перевертається — одночасно видно лише одну сторону (T24) |
-| `Button` | `plan/app/src/shared/ui/Button.tsx:17` | default, disabled | Presentation-примітив: підпис + `onClick`, без бізнес-логіки (T27/T28/T29/T36/T37 підготовка, хвиля 7) |
-| `TextField` | `plan/app/src/shared/ui/TextField.tsx:21` | default, error (інлайн-помилка під полем) | Controlled текстове поле (хвиля 7) |
-| `NumberField` | `plan/app/src/shared/ui/NumberField.tsx:19` | default, error (інлайн-помилка під полем) | Controlled числове поле; `null` = порожньо, окремо від `0` (хвиля 7) |
-| `Banner` | `plan/app/src/shared/ui/Banner.tsx:15` | success, error, info (проп `variant`) | Інлайн-повідомлення — ніколи `alert` (T24) |
-| `Spinner` | `plan/app/src/shared/ui/Spinner.tsx:6` | — (без пропів, лише індикатор) | Індикатор завантаження (T24) |
-| `EmptyState` | `plan/app/src/shared/ui/EmptyState.tsx:13` | — (повідомлення + підказка наступної дії) | Стандартний порожній стан, без ілюстрацій (T24) |
-| `ConfirmDialog` | `plan/app/src/shared/ui/ConfirmDialog.tsx:20` | — (повідомлення + confirm/cancel) | Підтвердження дії з незворотними наслідками — ніколи `confirm()` (T24) |
+| Component         | Source (`file:line` / node / URL)             | States it supports                                                         | Notes                                                                                                                                               |
+| ----------------- | ----------------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CardShell`     | `plan/app/src/shared/ui/CardShell.tsx:17`     | front, back (перемикається пропом`isFlipped`)         | Каркас картки, що перевертається — одночасно видно лише одну сторону (T24)                |
+| `Button`        | `plan/app/src/shared/ui/Button.tsx:17`        | default, disabled                                                          | Presentation-примітив: підпис +`onClick`, без бізнес-логіки (T27/T28/T29/T36/T37 підготовка, хвиля 7) |
+| `TextField`     | `plan/app/src/shared/ui/TextField.tsx:21`     | default, error (інлайн-помилка під полем), hint (хмаринка-підказка, D-112)             | Controlled текстове поле (хвиля 7)                                                                                                 |
+| `NumberField`   | `plan/app/src/shared/ui/NumberField.tsx:19`   | default, error (інлайн-помилка під полем), hint (хмаринка-підказка, D-112)             | Controlled числове поле;`null` = порожньо, окремо від `0` (хвиля 7)                                            |
+| `Banner`        | `plan/app/src/shared/ui/Banner.tsx:15`        | success, error, info (проп`variant`)                                 | Інлайн-повідомлення — ніколи`alert` (T24)                                                                                |
+| `Spinner`       | `plan/app/src/shared/ui/Spinner.tsx:6`        | — (без пропів, лише індикатор)                      | Індикатор завантаження (T24)                                                                                                   |
+| `EmptyState`    | `plan/app/src/shared/ui/EmptyState.tsx:13`    | — (повідомлення + підказка наступної дії) | Стандартний порожній стан, без ілюстрацій (T24)                                                                 |
+| `ConfirmDialog` | `plan/app/src/shared/ui/ConfirmDialog.tsx:20` | — (повідомлення + confirm/cancel)                             | Підтвердження дії з незворотними наслідками — ніколи`confirm()` (T24)                               |
 
 `screens.md` кожної фічі описує екрани цими назвами; коли `implement` напише компонент насправді, рядок оновлюється реальним `file:line` і переліком станів.
 
@@ -50,3 +51,5 @@ updated_at: "2026-09-06"
 - **Loading:** спінер (не skeleton) — простіше зробити, відповідає обсягу MVP — *запропонований дефолт.*
 - **Validation:** on-submit (перевірка при спробі зберегти/підтвердити, не при виході з поля) — *запропонований дефолт.*
 - **Microcopy tone:** чесно й прямо, без пом'якшення формулювань («тон без вердикту» — [D-42](DECISIONS.md#d-42), [D-60](DECISIONS.md#d-60): продукт показує числа як є, без «добре/погано»).
+- **Field hints ([D-112](DECISIONS.md#d-112)):** хмаринка-підказка (приклад + навіщо, 1-2 речення) на `TextField`/`NumberField` — властивість поля, не окремий компонент. З'являється лише по фокусу на ПОРОЖНЬОМУ полі; зникає, щойно поле заповнено, або по "✕" без заповнення; ніколи не з'являється, якщо в поле не заходили. Перший рядок хмаринки — обов'язковість поля («Обов'язково»/«Необов'язково»). Поки застосовано лише в `MetricBlockForm` (life-area-card) — інші форми переходять на цей патерн поступово, не одразу всі.
+- **Navigation buttons ([D-111](DECISIONS.md#d-111)):** кнопки одного класу дії (перегортання картки, повернення на попередній екран) групуються РАЗОМ на кожній стороні/екрані — не розкидані по різних кутах. Сама позиція (вгорі/внизу) лишається на розсуд конкретного екрана; головне — щоб кнопки цього класу на одному екрані стояли поруч.

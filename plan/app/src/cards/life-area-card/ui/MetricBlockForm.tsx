@@ -108,9 +108,19 @@ export function MetricBlockForm({ initialValues, onSubmit }: MetricBlockFormProp
     <form onSubmit={handleSubmit}>
       <h2>Новий блок-метрика</h2>
       {submitError && <Banner variant="error" text={submitError} />}
-      <TextField label="Що рахуємо:" value={label} onChange={setLabel} error={labelError} />
-      <TextField label="Одиниця:" value={unit} onChange={setUnit} error={unitError} />
-      <NumberField label="Ціль:" value={targetCount} onChange={setTargetCount} />
+      {/* D-111 (docs/DECISIONS.md): порядок полів -- що рахуємо -> постійний
+          процес одразу після -> одиниця -> ціль+дата в одному рядку. Живе
+          тестування показало, що галочка "постійний процес" стосується саме
+          того, ЩО рахуємо (є в нього кінець чи ні), тож логічно йде одразу
+          за цим полем, не після одиниці й цілі. */}
+      <TextField
+        label="Що рахуємо:"
+        value={label}
+        onChange={setLabel}
+        error={labelError}
+        required
+        hint="Наприклад: «тренування», «книги», «схудлі кілограми». Навіщо: це те, що агент бачитиме й пропонуватиме рахувати далі."
+      />
       <label>
         <input
           type="checkbox"
@@ -119,16 +129,32 @@ export function MetricBlockForm({ initialValues, onSubmit }: MetricBlockFormProp
         />
         Постійний процес (без дати)
       </label>
-      {!isOngoing && (
-        <label>
-          До:
-          <input
-            type="date"
-            value={targetDate ?? ''}
-            onChange={(event) => setTargetDate(event.target.value === '' ? null : event.target.value)}
-          />
-        </label>
-      )}
+      <TextField
+        label="Одиниця:"
+        value={unit}
+        onChange={setUnit}
+        error={unitError}
+        required
+        hint="Наприклад: «раз», «кг», «сторінка». Навіщо: одиниця показується поруч із кожним записом і ціллю."
+      />
+      <div>
+        <NumberField
+          label="Ціль:"
+          value={targetCount}
+          onChange={setTargetCount}
+          hint="Наприклад: 12 (тренувань), 5 (кг). Навіщо: ціль визначає, коли прогрес по цьому блоку вважається завершеним."
+        />
+        {!isOngoing && (
+          <label>
+            До:
+            <input
+              type="date"
+              value={targetDate ?? ''}
+              onChange={(event) => setTargetDate(event.target.value === '' ? null : event.target.value)}
+            />
+          </label>
+        )}
+      </div>
       <Button label="Зберегти" type="submit" disabled={isSubmitting} />
     </form>
   );

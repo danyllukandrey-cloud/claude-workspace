@@ -159,3 +159,35 @@ test('ISS-60/D-110: onCreateMetricBlock/onAddEntry, якщо передані, �
   expect(onCreateMetricBlock).not.toHaveBeenCalled();
   expect(onAddEntry).not.toHaveBeenCalled();
 });
+
+// D-111 (docs/DECISIONS.md): навігаційні кнопки одного класу (перегортання +
+// повернення до Колоди) стоять РАЗОМ на кожній стороні -- живе тестування
+// показало, що на лиці вони були розкидані (одна вгорі, одна внизу).
+
+test('D-111: на лицьовій стороні "← Назад" стоїть ПІСЛЯ "перегорнути →" (внизу, поруч)', async () => {
+  const props = baseProps();
+  const { container } = render(<CardDetailScreen {...props} />);
+  await screen.findByText('Спорт');
+
+  const buttons = Array.from(container.querySelectorAll('button')).map((button) => button.textContent);
+  const flipIndex = buttons.findIndex((text) => text?.includes('перегорнути'));
+  const backIndex = buttons.findIndex((text) => text === '← Назад');
+
+  expect(flipIndex).toBeGreaterThan(-1);
+  expect(backIndex).toBeGreaterThan(flipIndex);
+});
+
+test('D-111: на звороті "← Назад" стоїть ПЕРЕД "← лицьова" (вгорі, поруч, без змін)', async () => {
+  const props = baseProps();
+  const { container } = render(<CardDetailScreen {...props} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: /перегорнути/ }));
+  await screen.findByText('Ще немає жодної активної метрики');
+
+  const buttons = Array.from(container.querySelectorAll('button')).map((button) => button.textContent);
+  const backIndex = buttons.findIndex((text) => text === '← Назад');
+  const flipIndex = buttons.findIndex((text) => text?.includes('лицьова'));
+
+  expect(backIndex).toBeGreaterThan(-1);
+  expect(backIndex).toBeLessThan(flipIndex);
+});
