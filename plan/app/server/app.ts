@@ -108,6 +108,18 @@ async function upsertAppUser(db: Db, googleSub: string, email: string): Promise<
 export function createApp(deps: AppDeps): express.Express {
   const app = express();
   app.use(express.json());
+  // Review 2026-09-07 (backend hardening, T50, "Express 5 req.body===undefined"):
+  // express.json() лишає req.body undefined, коли Content-Type не збігається
+  // (чи взагалі відсутній) -- не {}, як можна було б очікати. Кожен обробник
+  // нижче (cardHandlers.*, entryHandlers.*, metricBlockHandlers.*) читає
+  // поля тіла напряму (`body.status`, `body.name`, ...) без перевірки на
+  // undefined -- без цього рядка такий запит кидав TypeError ДО будь-якого
+  // AppError/domain-branch в error-middleware, тож завжди падав у generic 500
+  // замість контрактної відповіді про валідацію.
+  app.use((req, _res, next) => {
+    if (req.body === undefined) req.body = {};
+    next();
+  });
 
   // POST /api/v1/session -- ЄДИНИЙ маршрут без BearerAuth (D-109, ADR-0006 §Додаток):
   // видає перепустку, тому не може сам її вимагати.

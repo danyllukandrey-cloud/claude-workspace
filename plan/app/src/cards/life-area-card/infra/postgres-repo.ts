@@ -119,12 +119,42 @@ export async function insertCard(
   return toCardRecord(rows[0]);
 }
 
+/**
+ * Postgres відхиляє значення, що не парситься як UUID, кодом помилки 22P02
+ * ("invalid input syntax for type uuid") ЩЕ ДО порівняння WHERE -- фізично та
+ * сама ситуація, що "рядка з таким id не існує" (жоден рядок не міг би
+ * збігтись), тому non-disclosure (AC-04, коментар вище) трактує їх однаково.
+ * Review 2026-09-07 (backend hardening, T50, "не-UUID id в шляху -- 500
+ * замість 404"): без цього malformed path-параметр пробивав до generic
+ * 500-гілки error-middleware (server/app.ts) замість контрактного 404, який
+ * findXById-виклики й так дають для звичайного "не існує".
+ */
+function isInvalidUuidError(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === '22P02';
+}
+
+/** SELECT-обгортка для findXById-функцій нижче -- malformed uuid -> [] (те саме, що "рядків нема"), решта помилок пробрасуються як є. */
+async function selectRowsOrEmptyOnInvalidUuid<T extends QueryResultRow>(
+  db: Db,
+  text: string,
+  params: unknown[]
+): Promise<T[]> {
+  try {
+    const { rows } = await db.query<T>(text, params);
+    return rows;
+  } catch (err) {
+    if (isInvalidUuidError(err)) return [];
+    throw err;
+  }
+}
+
 /** Non-disclosure (AC-04): чужа картка й неіснуюча картка повертають однаковий null. */
 export async function findCardById(db: Db, ownerUserId: string, cardId: string): Promise<CardRecord | null> {
-  const { rows } = await db.query<RawCardRow>(`SELECT ${CARD_COLUMNS} FROM card WHERE id = $1 AND owner_user_id = $2`, [
-    cardId,
-    ownerUserId,
-  ]);
+  const rows = await selectRowsOrEmptyOnInvalidUuid<RawCardRow>(
+    db,
+    `SELECT ${CARD_COLUMNS} FROM card WHERE id = $1 AND owner_user_id = $2`,
+    [cardId, ownerUserId]
+  );
   return rows[0] ? toCardRecord(rows[0]) : null;
 }
 
@@ -327,9 +357,11 @@ export async function updateMetricBlock(
  * власності над карткою-джерелом (record.cardId) робить use-case, ПІСЛЯ цього виклику.
  */
 export async function findMetricBlockById(db: Db, metricBlockId: string): Promise<MetricBlockRecord | null> {
-  const { rows } = await db.query<RawMetricBlockRow>(`SELECT ${METRIC_BLOCK_COLUMNS} FROM metric_block WHERE id = $1`, [
-    metricBlockId,
-  ]);
+  const rows = await selectRowsOrEmptyOnInvalidUuid<RawMetricBlockRow>(
+    db,
+    `SELECT ${METRIC_BLOCK_COLUMNS} FROM metric_block WHERE id = $1`,
+    [metricBlockId]
+  );
   return rows[0] ? toMetricBlockRecord(rows[0]) : null;
 }
 
@@ -420,7 +452,9 @@ export async function insertEntry(
  * карткою робить use-case, ПІСЛЯ цього виклику.
  */
 export async function findEntryById(db: Db, entryId: string): Promise<EntryRecord | null> {
-  const { rows } = await db.query<RawEntryRow>(`SELECT ${ENTRY_COLUMNS} FROM entry WHERE id = $1`, [entryId]);
+  const rows = await selectRowsOrEmptyOnInvalidUuid<RawEntryRow>(db, `SELECT ${ENTRY_COLUMNS} FROM entry WHERE id = $1`, [
+    entryId,
+  ]);
   return rows[0] ? toEntryRecord(rows[0]) : null;
 }
 

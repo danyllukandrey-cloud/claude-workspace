@@ -219,4 +219,31 @@ describe('transferMetricBlock use-case', () => {
       transferMetricBlock(db, { ownerUserId: 'user-1', targetCardId: 'not-mine', metricBlockId: 'block-1' })
     ).rejects.toMatchObject({ code: 'card.not_found', httpStatus: 404 });
   });
+
+  // Review 2026-09-07 (backend hardening, T50, "трансфер у архівовану цільову
+  // картку приймається"): картка-ПРИЗНАЧЕННЯ архівована -- раніше проходило
+  // лише перевірку "існує й моя" (findCardById не фільтрує за status), тому
+  // блок міг опинитись у картці, якої немає в Колоді й нема способу
+  // відкрити. Той самий код 404 card.not_found, що й "не знайдено" (контракт
+  // не документує окремого коду для цього випадку, non-disclosure-стиль, що
+  // вже застосований для решти причин цього ендпоінту). Картка-ДЖЕРЕЛО
+  // навпаки МАЄ право бути архівованою (AC-14: трансфер відбувається САМЕ
+  // тому, що джерело закривається) -- SOURCE_CARD_ROW вище архівована в
+  // усіх тестах цього файлу, і жоден з них не мав зламатись.
+  it('throws card.not_found when the target card is archived', async () => {
+    const archivedTargetRow = { ...TARGET_CARD_ROW, status: 'archived' };
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [METRIC_BLOCK_ROW] }) // findMetricBlockById
+      .mockResolvedValueOnce({ rows: [archivedTargetRow] }) // findCardById(target) -- архівована
+      .mockResolvedValueOnce({ rows: [SOURCE_CARD_ROW] }); // findCardById(source)
+    const db: Db = { query };
+
+    await expect(
+      transferMetricBlock(db, { ownerUserId: 'user-1', targetCardId: 'card-target', metricBlockId: 'block-1' })
+    ).rejects.toMatchObject({ code: 'card.not_found', httpStatus: 404 });
+    // Ніякого запису колізії/переносу не відбулось -- перевірка статусу
+    // зупиняє use-case ДО findMetricBlockByCardLabelUnit/updateMetricBlock.
+    expect(query).toHaveBeenCalledTimes(3);
+  });
 });

@@ -8,6 +8,7 @@ import { SignJWT, jwtVerify } from 'jose';
 import { OAuth2Client } from 'google-auth-library';
 import { createApp, type GoogleIdTokenPayload, type JwtPayload } from './app';
 import { createDb } from './db';
+import { assertJwtSigningKeyStrength } from './jwt-config';
 
 const PORT = Number(process.env.PORT ?? 3000);
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -16,6 +17,10 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 if (!JWT_SECRET) {
   throw new Error('JWT_SECRET не задано (.env) -- потрібен для підпису/перевірки власного JWT (ADR-0006 §Додаток)');
 }
+// Review 2026-09-07 (backend hardening, T50): довжина, не лише наявність --
+// слабкий (закороткий) секрет технічно "задано", але робить HS256-підпис
+// підбірним (jwt-config.ts).
+assertJwtSigningKeyStrength(JWT_SECRET);
 if (!GOOGLE_CLIENT_ID) {
   throw new Error('GOOGLE_CLIENT_ID не задано (.env) -- потрібен як audience для verifyIdToken');
 }

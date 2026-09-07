@@ -54,7 +54,7 @@
 | T47 | UI: wire entry correction + always-visible add-metric-block button | ui | TBD | M | T24, T23 | done |
 | T48 | UI: 401 recovery on deck load + full-history progress | ui | TBD | M | T25 | done |
 | T49 | UI: surface add-entry failure, guard double-submit | ui | TBD | S | T26 | done |
-| T50 | Backend hardening: secret strength, malformed input, terminal-state guards | ports | TBD | M | T30 | todo |
+| T50 | Backend hardening: secret strength, malformed input, terminal-state guards | ports | TBD | M | T30 | done |
 | T51 | Migrations+tooling: down-migration data loss, drift detection, contract-test types | migration | TBD | M | T5, T32 | todo |
 | T52 | Frontend resilience+accessibility hardening batch | ui | TBD | L | T24 | todo |
 

@@ -164,4 +164,55 @@ describe('resolveEntry use-case', () => {
       AppError
     );
   });
+
+  // Review 2026-09-07 (backend hardening, T50, "подвійна резолюція одної
+  // конфліктної пари не блокується"): resolveEntry раніше приймало БУДЬ-ЯКУ
+  // резолюцію запису, що вже в термінальному стані (confirmed/rejected), і
+  // мовчки перезаписувало його вдруге (confirmEntry/rejectEntry -- чисті
+  // функції, не звіряють поточний стан). ЄДИНИЙ легітимний перехід між двома
+  // термінальними станами лишається confirmed->rejected (AC-12 "виправити",
+  // тест вище, T47/C11) -- усе інше (той самий status вдруге, чи
+  // rejected->confirmed, якого жоден AC не документує) тепер 409.
+  describe('T50: guard against reapplying a resolution to an already-resolved entry (409)', () => {
+    it('409 when re-confirming an already-confirmed entry (idempotent double-submit)', async () => {
+      const query = vi
+        .fn()
+        .mockResolvedValueOnce({ rows: [CONFIRMED_ENTRY_ROW] }) // findEntryById
+        .mockResolvedValueOnce({ rows: [CARD_ROW] }); // findCardById
+      const db: Db = { query };
+
+      await expect(
+        resolveEntry(db, { ownerUserId: 'user-1', entryId: 'entry-2', status: 'confirmed' })
+      ).rejects.toMatchObject({ code: 'entry.already_resolved', httpStatus: 409 });
+      expect(query.mock.calls.some((call) => /UPDATE entry/.test(call[0] as string))).toBe(false);
+    });
+
+    it('409 when re-rejecting an already-rejected entry (idempotent double-submit)', async () => {
+      const rejectedRow = { ...CONFIRMED_ENTRY_ROW, status: 'rejected' };
+      const query = vi
+        .fn()
+        .mockResolvedValueOnce({ rows: [rejectedRow] }) // findEntryById
+        .mockResolvedValueOnce({ rows: [CARD_ROW] }); // findCardById
+      const db: Db = { query };
+
+      await expect(
+        resolveEntry(db, { ownerUserId: 'user-1', entryId: 'entry-2', status: 'rejected' })
+      ).rejects.toMatchObject({ code: 'entry.already_resolved', httpStatus: 409 });
+      expect(query.mock.calls.some((call) => /UPDATE entry/.test(call[0] as string))).toBe(false);
+    });
+
+    it('409 when trying to move a rejected entry back to confirmed ("un-reject" is not a supported transition)', async () => {
+      const rejectedRow = { ...CONFIRMED_ENTRY_ROW, status: 'rejected' };
+      const query = vi
+        .fn()
+        .mockResolvedValueOnce({ rows: [rejectedRow] }) // findEntryById
+        .mockResolvedValueOnce({ rows: [CARD_ROW] }); // findCardById
+      const db: Db = { query };
+
+      await expect(
+        resolveEntry(db, { ownerUserId: 'user-1', entryId: 'entry-2', status: 'confirmed' })
+      ).rejects.toMatchObject({ code: 'entry.already_resolved', httpStatus: 409 });
+      expect(query.mock.calls.some((call) => /UPDATE entry/.test(call[0] as string))).toBe(false);
+    });
+  });
 });

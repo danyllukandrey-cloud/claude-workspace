@@ -185,4 +185,73 @@ describe('composition root -- auth middleware on mounted routes (T30, D-107)', (
       server.close();
     }
   });
+
+  // Review 2026-09-07 (backend hardening, T50, "не-UUID id в шляху -- 500
+  // замість 404"): раніше пробивало до generic 500-гілки error-middleware
+  // (Postgres 22P02 не оброблений на жодному рівні нижче) -- тепер
+  // postgres-repo.ts (findCardById) ловить саме цей код і повертає null, той
+  // самий сигнал, що "картки не існує" (AC-04 non-disclosure).
+  it('T50: non-UUID cardId у шляху повертає контрактний 404, не сирий Postgres 500', async () => {
+    const invalidUuidError = Object.assign(new Error('invalid input syntax for type uuid: "not-a-uuid"'), { code: '22P02' });
+    const query = vi.fn().mockRejectedValue(invalidUuidError);
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/cards/not-a-uuid`, {
+        headers: { Authorization: 'Bearer a-valid-looking-jwt' },
+      });
+      const body = await res.json();
+
+      expect(res.status).toBe(404);
+      expect(body).toEqual({ code: 'card.not_found', message: expect.any(String) });
+    } finally {
+      server.close();
+    }
+  });
+
+  // Review 2026-09-07 (backend hardening, T50, "Express 5 req.body===undefined
+  // -- 500 замість контрактного 401" [sic, фактично 422 тут] -- запит без
+  // Content-Type: application/json (чи взагалі без тіла) лишає req.body
+  // undefined (express.json() не парсить, коли Content-Type не збігається).
+  // ports/entry-handlers.ts.resolveEntry читає `body.status` без перевірки --
+  // undefined.status кидав би TypeError ДО будь-якого AppError/domain-branch
+  // в error-middleware, тому пробивав до generic 500.
+  const PENDING_ENTRY_ROW_FOR_BODY_TEST = {
+    id: 'entry-1',
+    metric_block_id: 'block-1',
+    card_id: 'card-1',
+    amount: '5',
+    raw_text: 'пробіг 5 км',
+    status: 'pending',
+    source_device_id: 'device-a',
+    recorded_at: new Date('2026-01-03T00:00:00Z'),
+    confirmed_at: null,
+    created_at: new Date('2026-01-03T00:00:00Z'),
+  };
+
+  it('T50: PATCH /entries/{id} без тіла запиту (req.body undefined, Express 5) не падає в сирий 500', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [PENDING_ENTRY_ROW_FOR_BODY_TEST] }) // findEntryById
+      .mockResolvedValueOnce({ rows: [CARD_ROW] }); // findCardById
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/entries/entry-1`, {
+        method: 'PATCH',
+        // Навмисно БЕЗ Content-Type і без тіла -- express.json() лишає
+        // req.body undefined, не {} (той самий випадок, що реальний клієнт
+        // із мережевим збоєм посеред запиту чи криво написаний curl).
+        headers: { Authorization: 'Bearer a-valid-looking-jwt' },
+      });
+      const body = await res.json();
+
+      expect(res.status).not.toBe(500);
+      expect(body).toEqual({ code: 'entry.invalid_status', message: expect.any(String) });
+    } finally {
+      server.close();
+    }
+  });
 });

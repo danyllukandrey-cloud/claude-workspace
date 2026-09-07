@@ -68,6 +68,21 @@ export async function resolveEntry(db: Db, input: ResolveEntryInput): Promise<En
     throw new AppError('entry.invalid_status', 'status має бути "confirmed" або "rejected"', 422);
   }
 
+  // Review 2026-09-07 (backend hardening, T50, "подвійна резолюція одної
+  // конфліктної пари не блокується"): запис уже в термінальному стані
+  // (confirmed/rejected) -- confirmEntry/rejectEntry нижче ЧИСТІ функції, не
+  // звіряють поточний стан, тому будь-яка повторна резолюція мовчки
+  // перезаписувала статус вдруге. ЄДИНИЙ задокументований легітимний перехід
+  // між двома термінальними станами -- confirmed->rejected (AC-12
+  // "виправити" з історії, тест вище "rejects an already-confirmed entry");
+  // усе інше (той самий status вдруге -- idempotent-подвійний сабміт; чи
+  // rejected->confirmed -- "розвідхилення", якого жоден AC не документує)
+  // тепер явний 409, а не тиха мутація.
+  const isDocumentedCorrection = record.status === 'confirmed' && input.status === 'rejected';
+  if (record.status !== 'pending' && !isDocumentedCorrection) {
+    throw new AppError('entry.already_resolved', 'Запис уже вирішено', 409);
+  }
+
   const entry: Entry = {
     id: record.id,
     metricBlockId: record.metricBlockId,
