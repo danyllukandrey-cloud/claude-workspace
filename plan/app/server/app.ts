@@ -225,7 +225,14 @@ export function createApp(deps: AppDeps): express.Express {
   app.post(
     '/api/v1/cards/:cardId/metric-blocks/transfer',
     asyncHandler(async (req, res) => {
-      const block = await metricBlockHandlers.transferMetricBlock(deps.db, ownerUserId(req), param(req, 'cardId'), req.body);
+      // Review 2026-09-07 B5 (remainder, T41): updateMetricBlock (card_id) +
+      // reassignEntriesToCard (entry.card_id денормалізовано, AC-14) --
+      // ОБОВ'ЯЗКОВА пара (коментар у use-case), той самий клас бага, що T40:
+      // без транзакції відмова другого запису лишила б блок на новій картці,
+      // а його записи -- на старій.
+      const block = await deps.withTransaction((txDb) =>
+        metricBlockHandlers.transferMetricBlock(txDb, ownerUserId(req), param(req, 'cardId'), req.body)
+      );
       res.status(200).json(block);
     })
   );
@@ -235,7 +242,14 @@ export function createApp(deps: AppDeps): express.Express {
   app.post(
     '/api/v1/cards/:cardId/metric-blocks/:metricBlockId/entries',
     asyncHandler(async (req, res) => {
-      const entry = await entryHandlers.createEntry(deps.db, ownerUserId(req), param(req, 'cardId'), param(req, 'metricBlockId'), req.body);
+      // Review 2026-09-07 B5 (remainder, T41): insertEntry + (за потреби)
+      // updateEntryStatus конфліктного запису на 'pending' (AC-06) -- без
+      // транзакції відмова другого запису лишила б нову подію вставленою, а
+      // конфліктну -- досі 'confirmed', тобто AC-06 (обидва pending) мовчки
+      // порушено.
+      const entry = await deps.withTransaction((txDb) =>
+        entryHandlers.createEntry(txDb, ownerUserId(req), param(req, 'cardId'), param(req, 'metricBlockId'), req.body)
+      );
       res.status(201).json(entry);
     })
   );
