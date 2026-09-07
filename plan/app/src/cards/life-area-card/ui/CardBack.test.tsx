@@ -275,6 +275,26 @@ test('ISS-60: успішне збереження форми викликає on
 // нічого не знає про metricBlockId (лише amount), тому саме CardBack додає
 // його при передачі.
 
+// Review 2026-09-07 A4 (RED, docs/features/life-area-card/_review/review-2026-09-07.md):
+// раніше кнопка "+ Додати блок-метрику" рендерилась лише коли
+// metricBlocks.length===0 -- користувач, у якого вже є хоч один блок, не мав
+// способу додати другий (AC-07/AC-08 вимагають декількох блоків на картку).
+
+test('A4: "+ Додати блок-метрику" видима і коли в картці вже є блок (review 2026-09-07 A4, AC-07/AC-08)', async () => {
+  const data: CardBackData = {
+    metricBlocks: [
+      { id: 'mb1', label: 'Тренування', unit: 'раз', progress: { kind: 'bounded', share: 0.5, overGoal: 0 }, hasPendingEntry: false },
+    ],
+    aggregateProgress: 0.5,
+    entries: [],
+  };
+  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateMetricBlock={vi.fn()} />);
+
+  await screen.findByText(/Тренування: 50%/);
+
+  expect(screen.getByRole('button', { name: '+ Додати блок-метрику' })).toBeTruthy();
+});
+
 test('D-110: onAddEntry, якщо переданий, прокидається в MetricBlockCard замкнутим над id блоку', async () => {
   const data: CardBackData = {
     metricBlocks: [

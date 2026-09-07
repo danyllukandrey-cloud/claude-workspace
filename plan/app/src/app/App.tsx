@@ -58,6 +58,8 @@ export interface AppProps {
   addEntry: (cardId: string, metricBlockId: string, amount: number) => Promise<void>;
   /** Review C10 (AC-03) -- зберігає Опис/markFilled обраної картки (PATCH /cards/{id}, CardFace.onUpdateDescription). */
   onUpdateDescription: (cardId: string, input: { description: string; markFilled: boolean }) => Promise<void>;
+  /** Review 2026-09-07 C11 (AC-12) -- позначає запис в історії обраної картки помилковим (PATCH /entries/{id}, CardBack.onFlagEntry) і повертає свіжий зворот. */
+  onFlagEntry: (cardId: string, entryId: string) => Promise<CardBackData>;
 }
 
 type Screen = { screen: 'deck' } | { screen: 'create' } | { screen: 'detail'; cardId: string } | { screen: 'archive' };
@@ -86,6 +88,7 @@ export function App({
   createMetricBlock,
   addEntry,
   onUpdateDescription,
+  onFlagEntry,
 }: AppProps): JSX.Element {
   const [session, setSession] = useState<StoredSession | null>(() => readStoredSession());
   const [screen, setScreen] = useState<Screen>({ screen: 'deck' });
@@ -114,6 +117,7 @@ export function App({
             onCreateMetricBlock={(values) => createMetricBlock(screen.cardId, values)}
             onAddEntry={(metricBlockId, amount) => addEntry(screen.cardId, metricBlockId, amount)}
             onUpdateDescription={(input) => onUpdateDescription(screen.cardId, input)}
+            onFlagEntry={(entryId) => onFlagEntry(screen.cardId, entryId)}
           />
         )}
         {screen.screen === 'archive' && (

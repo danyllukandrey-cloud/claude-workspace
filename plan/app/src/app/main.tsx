@@ -505,6 +505,31 @@ async function createMetricBlock(cardId: string, values: MetricBlockFormValues):
   }
 }
 
+/**
+ * Review 2026-09-07 C11 (AC-12): реальний PATCH /entries/{entryId} --
+ * CardBack.onFlagEntry. "Виправити" переводить підтверджений запис у
+ * 'rejected' -- "відкат" із формулювання AC-12 ("agent walks through
+ * correcting or rolling it back"); сам діалог із агентом -- поза межами
+ * цього UI (D-110, тимчасово), тут лише механіка "більше не рахується".
+ * Повертає СВІЖИЙ CardBackData через повторний loadBack (не власний
+ * response) -- CardBack.onFlagEntry вимагає саме це (той самий підхід, що
+ * refresh() у CardBack.tsx для інших мутацій).
+ */
+async function onFlagEntry(cardId: string, entryId: string): Promise<CardBackData> {
+  const response = await fetch(`/api/v1/entries/${entryId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ status: 'rejected' }),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? 'Не вдалося виправити запис');
+  }
+
+  return loadBack(cardId);
+}
+
 /** ТИМЧАСОВО (D-110, docs/DECISIONS.md) -- реальний POST .../metric-blocks/{metricBlockId}/entries -- CardBack.onAddEntry. */
 async function addEntry(cardId: string, metricBlockId: string, amount: number): Promise<void> {
   const response = await fetch(`/api/v1/cards/${cardId}/metric-blocks/${metricBlockId}/entries`, {
@@ -551,6 +576,7 @@ createRoot(root).render(
       createMetricBlock={createMetricBlock}
       addEntry={addEntry}
       onUpdateDescription={onUpdateDescription}
+      onFlagEntry={onFlagEntry}
     />
   </StrictMode>,
 );

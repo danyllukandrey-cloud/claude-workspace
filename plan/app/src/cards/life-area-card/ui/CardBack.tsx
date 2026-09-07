@@ -159,22 +159,24 @@ export function CardBack({
         </div>
       )}
 
+      {/* D-111 (docs/DECISIONS.md): кнопка/форма створення -- ПЕРЕД будь-яким
+          контентом звороту, не лише перед порожнім станом (Andrii: "+ Додати
+          блок-метрику" має бути першим, що бачить користувач згори).
+          Review 2026-09-07 A4 (AC-07/AC-08): рендериться НЕЗАЛЕЖНО від
+          metricBlocks.length -- раніше з'являлась лише в порожньому стані,
+          тож у картки з хоч одним блоком не було способу додати другий. */}
+      {onCreateMetricBlock &&
+        (isCreatingBlock ? (
+          <MetricBlockForm onSubmit={handleCreateMetricBlock} />
+        ) : (
+          <Button label="+ Додати блок-метрику" onClick={() => setIsCreatingBlock(true)} />
+        ))}
+
       {data.metricBlocks.length === 0 ? (
-        <>
-          {/* D-111 (docs/DECISIONS.md): кнопка/форма створення -- ПЕРЕД
-              текстом порожнього стану, не після (Andrii: "+ Додати
-              блок-метрику" має бути першим, що бачить користувач згори). */}
-          {onCreateMetricBlock &&
-            (isCreatingBlock ? (
-              <MetricBlockForm onSubmit={handleCreateMetricBlock} />
-            ) : (
-              <Button label="+ Додати блок-метрику" onClick={() => setIsCreatingBlock(true)} />
-            ))}
-          <EmptyState
-            message="Ще немає жодної активної метрики"
-            actionHint="Додайте блок-метрику, щоб почати відстежувати прогрес"
-          />
-        </>
+        <EmptyState
+          message="Ще немає жодної активної метрики"
+          actionHint="Додайте блок-метрику, щоб почати відстежувати прогрес"
+        />
       ) : (
         <>
           {data.aggregateProgress !== null && <p>Загальний прогрес: {Math.round(data.aggregateProgress * 100)}%</p>}

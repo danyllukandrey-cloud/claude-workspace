@@ -72,6 +72,11 @@ function baseProps() {
     // Review C10 (AC-03): реальний PATCH /cards/{cardId} (description/markFilled,
     // main.tsx) -- App замикає над cardId, той самий стиль, що onRename.
     onUpdateDescription: vi.fn().mockResolvedValue(undefined),
+    // Review 2026-09-07 A4/C11 (T47): реальний PATCH /entries/{entryId} +
+    // повторний loadBack (main.tsx) -- App замикає над cardId, той самий
+    // стиль, що onRename; повертає СВІЖИЙ CardBackData (як CardBack.onFlagEntry
+    // сам вимагає), не Promise<void>.
+    onFlagEntry: vi.fn().mockResolvedValue({ metricBlocks: [], aggregateProgress: null, entries: [] }),
   };
 }
 
@@ -253,6 +258,33 @@ test('ISS-55 stage 2: перейменування картки в деталя�
   // onRename в AppProps приймає (cardId, name) -- App сам звужує до
   // CardDetailScreen-контракту (name: string) => Promise<void> через замикання.
   expect(props.onRename).toHaveBeenCalledWith('card-1', 'Спорт і здоров’я');
+});
+
+// Review 2026-09-07 C11 (RED, docs/features/life-area-card/_review/review-2026-09-07.md,
+// AC-12): кнопка "виправити" в історії записів раніше нікуди не була
+// підключена від App.tsx -- клік нічого не робив. AppProps отримує новий
+// injected onFlagEntry(cardId, entryId), App замикає над cardId (той самий
+// стиль, що onRename) і прокидає в CardDetailScreen -> CardBack без змін.
+
+test('C11/AC-12: клік "виправити" в історії записів викликає injected onFlagEntry(cardId, entryId)', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
+  props.loadBack.mockResolvedValue({
+    metricBlocks: [],
+    aggregateProgress: null,
+    entries: [
+      { id: 'entry-1', metricBlockId: 'mb1', amount: 2, status: 'confirmed', recordedAtLabel: '07.09', summary: '+2 раз' },
+    ],
+  });
+
+  render(<App {...props} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Спорт' }));
+  fireEvent.click(await screen.findByRole('button', { name: /перегорнути/ }));
+  fireEvent.click(await screen.findByRole('button', { name: /Історія записів/ }));
+  fireEvent.click(await screen.findByRole('button', { name: 'виправити' }));
+
+  expect(props.onFlagEntry).toHaveBeenCalledWith('card-1', 'entry-1');
 });
 
 // ISS-55, stage 3/3 (RED): App.tsx отримує четвертий екран 'archive' -- клік
