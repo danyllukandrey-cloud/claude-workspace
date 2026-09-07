@@ -58,6 +58,26 @@ function resolveSchema(schema: JsonSchema): JsonSchema {
  * рекурсивно для object/array. Досить, щоб зловити "хендлер повернув поле, якого
  * немає в контракті" чи "забув обов'язкове поле" -- найчастіший клас дрейфу.
  */
+/** Чи JS-значення відповідає одному JSON Schema `type` (T51) -- 'object'/'array' тут лише для повноти switch, реальну перевірку їхньої форми робить properties/items-гілка нижче. */
+function matchesJsonType(value: unknown, jsonType: string): boolean {
+  switch (jsonType) {
+    case 'string':
+      return typeof value === 'string';
+    case 'number':
+      return typeof value === 'number';
+    case 'integer':
+      return typeof value === 'number' && Number.isInteger(value);
+    case 'boolean':
+      return typeof value === 'boolean';
+    case 'object':
+      return typeof value === 'object' && !Array.isArray(value);
+    case 'array':
+      return Array.isArray(value);
+    default:
+      return true;
+  }
+}
+
 function assertMatchesSchema(value: unknown, rawSchema: JsonSchema, pathLabel: string): void {
   const schema = resolveSchema(rawSchema);
   const types = Array.isArray(schema.type) ? schema.type : schema.type ? [schema.type] : undefined;
@@ -67,6 +87,20 @@ function assertMatchesSchema(value: unknown, rawSchema: JsonSchema, pathLabel: s
       throw new Error(`${pathLabel}: null не дозволений цією схемою (type: ${JSON.stringify(schema.type)})`);
     }
     return;
+  }
+
+  // Review 2026-09-07 (group D remainder, T51): раніше `type` звірявся ЛИШЕ
+  // у null-гілці вище -- будь-яке НЕ-null "листове" значення (string/number/
+  // integer/boolean без properties/items) проходило без жодної перевірки
+  // типу взагалі. object/array тут теж покриті (типова помилка -- масив там,
+  // де контракт документує object, чи навпаки), хоча їхню ВНУТРІШНЮ форму
+  // все одно звіряє properties/items-гілка нижче.
+  if (types) {
+    const matchesAny = types.some((type) => matchesJsonType(value, type));
+    expect(
+      matchesAny,
+      `${pathLabel}: тип значення (${typeof value}) не відповідає жодному з дозволених у контракті (type: ${JSON.stringify(schema.type)})`
+    ).toBe(true);
   }
 
   if (schema.enum) {
@@ -168,5 +202,32 @@ describe('contract test -- handler responses vs contracts/openapi.yaml (ADR-0006
     const error = new AppError('card.not_found', 'Картку не знайдено', 404);
 
     assertMatchesSchema({ code: error.code, message: error.message }, { $ref: '#/components/schemas/Error' }, 'Error');
+  });
+});
+
+// Review 2026-09-07 (group D remainder, T51): assertMatchesSchema перевіряв
+// `type` ЛИШЕ в null-гілці (`if (value === null) { if (!types.includes('null')) throw }`)
+// -- для будь-якого НЕ-null значення без `properties`/`items` (тобто "листового"
+// значення -- string/number/integer/boolean) тип узагалі не звірявся. Хендлер,
+// що повернув число там, де контракт документує string (чи навпаки), пройшов
+// би цей тест мовчки -- сама мета контрактного тесту (шапка файлу) не
+// виконувалась для найпростішого й найчастішого класу дрейфу.
+describe('T51: assertMatchesSchema звіряє `type` для НЕ-null листових значень, не лише null-гілку', () => {
+  it('відхиляє число там, де схема документує type: string', () => {
+    expect(() => assertMatchesSchema(42, { type: 'string' }, 'field')).toThrow();
+  });
+
+  it('відхиляє рядок там, де схема документує type: boolean', () => {
+    expect(() => assertMatchesSchema('true', { type: 'boolean' }, 'field')).toThrow();
+  });
+
+  it('відхиляє нецілий number там, де схема документує type: integer', () => {
+    expect(() => assertMatchesSchema(1.5, { type: 'integer' }, 'field')).toThrow();
+  });
+
+  it('контрольний випадок -- не надто суворий: відповідні типи не кидають', () => {
+    expect(() => assertMatchesSchema('Спорт', { type: 'string' }, 'field')).not.toThrow();
+    expect(() => assertMatchesSchema(5, { type: 'integer' }, 'field')).not.toThrow();
+    expect(() => assertMatchesSchema(true, { type: 'boolean' }, 'field')).not.toThrow();
   });
 });

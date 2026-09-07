@@ -27,9 +27,27 @@ ALTER TABLE card_lifecycle_event
 
 -- life-area-card: revert card.status + card_lifecycle_event.transition extension
 -- Staged migration — NOT live.
+--
+-- DATA LOSS (T51, review 2026-09-07 group D): re-adding the narrower CHECK below
+-- fails outright if any row already has a transition value outside its allowed
+-- set (Postgres validates EVERY existing row against a newly added constraint) --
+-- card_lifecycle_event is an append-only audit log (postgres-repo.ts: "жодного
+-- UPDATE/DELETE тут немає"), so there is no way to fix such a row instead of
+-- deleting it. Rolling back past this migration on a database with real
+-- archive/restore history permanently loses the audit record of those events.
+-- Deliberate trade-off -- failing outright would leave the down-migration useless
+-- for its one job (get back to a working schema), not an oversight.
+--
+-- NOT IN (not a literal `= 'archived'`) on purpose: this file's own down-migration
+-- only ever removes 'archived' from the allowed set, but 06_add_card_restore's
+-- up-migration (applied later, if it ever ran) could have left 'restored' rows
+-- too -- those would ALSO violate this narrower CHECK if this migration is rolled
+-- back out of the normal reverse order (or its own down-migration is run first).
 
 ALTER TABLE card_lifecycle_event
     DROP CONSTRAINT IF EXISTS card_lifecycle_event_transition_check;
+
+DELETE FROM card_lifecycle_event WHERE transition NOT IN ('created', 'filled', 'in_use');
 
 ALTER TABLE card_lifecycle_event
     ADD CONSTRAINT card_lifecycle_event_transition_check
