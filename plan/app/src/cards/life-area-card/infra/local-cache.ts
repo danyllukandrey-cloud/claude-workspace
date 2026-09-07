@@ -104,6 +104,33 @@ export function computeProgressFromCache(
   return computeProgress(goal, blockEntries);
 }
 
+// --- Лицьова сторона картки (review-followup C13) --------------------------
+//
+// CardBack (зворот) мав кеш метаданих блоків/записів з T45 -- CardFace
+// (назва+опис) не мав нічого, тож картку без мережі неможливо було навіть
+// ВІДКРИТИ: loadCard падав одразу, ще до того, як користувач міг
+// перегорнути на вже кешований зворот. dataWarning свідомо НЕ кешується --
+// це результат живої (онлайн) перевірки Claude, offline його чесно
+// невідомо, а не "останнє відоме значення".
+
+export interface CachedCardFace {
+  name: string;
+  description: string | null;
+}
+
+function cardFaceCacheKey(ownerUserId: string, cardId: string): string {
+  return `life-area-card/${ownerUserId}/${cardId}/face`;
+}
+
+export function readCachedCardFace(storage: StoragePort, ownerUserId: string, cardId: string): CachedCardFace | null {
+  return storage.read<CachedCardFace>(cardFaceCacheKey(ownerUserId, cardId));
+}
+
+/** Повне заміщення -- GET /cards/{id} завжди повертає актуальний стан, не приріст (той самий підхід, що cacheMetricBlocks). */
+export function cacheCardFace(storage: StoragePort, ownerUserId: string, cardId: string, face: CachedCardFace): void {
+  storage.write(cardFaceCacheKey(ownerUserId, cardId), face);
+}
+
 /**
  * Review 2026-09-07 E (T52): викликається на logout (main.tsx) -- StoragePort
  * навмисно не дає enumerate/scope-remove за ownerUserId (порт лишається

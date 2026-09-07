@@ -47,11 +47,13 @@ import type {
 import {
   computeProgress,
   computeAggregateProgress,
+  cacheCardFace,
   cacheEntries,
   cacheEntry,
   cacheMetricBlocks,
   clearAllCachedData,
   computeProgressFromCache,
+  readCachedCardFace,
   readCachedEntries,
   readCachedMetricBlocks,
 } from '../cards/life-area-card';
@@ -352,15 +354,35 @@ async function createCard(input: { name: string }): Promise<void> {
   }
 }
 
+/**
+ * Review 2026-09-07, post-ship follow-up review (C13, "офлайн-читання
+ * картки взагалі не підключене"): раніше НІЯКОГО кеш-фолбеку тут не було --
+ * офлайн лицьова сторона одразу падала в Banner-помилку без жодного
+ * "перегорнути →", тож користувач не міг дістатись навіть до вже
+ * кешованого (T45) звороту. Лише СПРАВЖНЯ мережева недоступність (fetch()
+ * сам відхилився -- офлайн/DNS/timeout) падає в кеш; HTTP-статус (401/404)
+ * обробляється ПОЗА цим catch і кидається як AppError, ніколи не
+ * підмінюється застарілим кешем (сесія протермінована чи картка більше не
+ * твоя -- показувати стару картку тут гірше, ніж чесно повідомити помилку).
+ */
 async function loadCard(cardId: string): Promise<CardFaceData> {
-  const response = await fetch(`/api/v1/cards/${cardId}`, { headers: authHeaders() });
+  const ownerUserId = currentOwnerUserId() ?? '';
+  let response: Response;
+  try {
+    response = await fetch(`/api/v1/cards/${cardId}`, { headers: authHeaders() });
+  } catch (networkError) {
+    const cached = readCachedCardFace(storage, ownerUserId, cardId);
+    if (cached) return { ...cached, dataWarning: null };
+    throw networkError;
+  }
 
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { message?: string } | null;
-    throw new Error(body?.message ?? 'Не вдалося завантажити картку');
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    throw new AppError(body?.code ?? 'card.request_failed', body?.message ?? 'Не вдалося завантажити картку', response.status);
   }
 
   const card = (await response.json()) as CardDetailDto;
+  cacheCardFace(storage, ownerUserId, cardId, { name: card.name, description: card.description });
   return { name: card.name, description: card.description, dataWarning: card.dataWarning };
 }
 
@@ -425,8 +447,11 @@ async function fetchEntryPage(cardId: string, after: string | undefined): Promis
   const response = await fetch(url, { headers: authHeaders() });
 
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { message?: string } | null;
-    throw new Error(body?.message ?? 'Не вдалося завантажити картку');
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    // AppError (несе httpStatus), не plain Error -- review-followup C13:
+    // loadBack нижче має вміти відрізнити "сервер відповів негативно" від
+    // "мережі взагалі нема", а plain Error з обох джерел виглядав однаково.
+    throw new AppError(body?.code ?? 'card.request_failed', body?.message ?? 'Не вдалося завантажити картку', response.status);
   }
 
   return (await response.json()) as EntryPageDto;
@@ -449,17 +474,22 @@ async function loadBack(cardId: string): Promise<CardBackData> {
 
     if (!cardResponse.ok || !blocksResponse.ok) {
       const failed = [cardResponse, blocksResponse].find((response) => !response.ok);
-      const body = (await failed?.json().catch(() => null)) as { message?: string } | null;
-      throw new Error(body?.message ?? 'Не вдалося завантажити картку');
+      const body = (await failed?.json().catch(() => null)) as { code?: string; message?: string } | null;
+      throw new AppError(body?.code ?? 'card.request_failed', body?.message ?? 'Не вдалося завантажити картку', failed?.status ?? 500);
     }
 
     card = (await cardResponse.json()) as CardDetailDto;
     blocks = (await blocksResponse.json()) as MetricBlockDto[];
     allEntries = entriesResult;
   } catch (networkError) {
-    // T45/QG-1: мережа недоступна (чи бекенд повернув помилку) -- відповідаємо
-    // повністю з кешу, якщо є з чим; інакше пробрасуємо оригінальну помилку
-    // (той самий текст, що бачив би користувач і без цього фіксу).
+    // Review 2026-09-07, post-ship follow-up review (C13 x C14): AppError
+    // означає, що СЕРВЕР реально відповів (401 сесія протермінована, 404
+    // card.not_found -- AC-04 non-disclosure) -- це НІКОЛИ не мережева
+    // недоступність, тож ніколи не підміняється застарілим кешем (інакше
+    // користувач без доступу далі бачив би стару картку). Лише СПРАВЖНЯ
+    // мережева помилка (fetch() сам відхилився -- offline/DNS/timeout)
+    // падає в кеш-фолбек.
+    if (networkError instanceof AppError) throw networkError;
     const fromCache = loadBackFromCache(cardId);
     if (fromCache) return fromCache;
     throw networkError;

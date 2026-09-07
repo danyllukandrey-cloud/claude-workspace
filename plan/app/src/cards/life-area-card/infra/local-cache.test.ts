@@ -11,6 +11,8 @@ import {
   readCachedMetricBlocks,
   cacheMetricBlocks,
   clearAllCachedData,
+  readCachedCardFace,
+  cacheCardFace,
 } from './local-cache';
 import type { CachedMetricBlock } from './local-cache';
 
@@ -211,6 +213,37 @@ describe('T52: ключі кешу namespaced за ownerUserId', () => {
 
     expect(readCachedMetricBlocks(storage, OWNER, 'card-1')).toEqual([blockOwner1]);
     expect(readCachedMetricBlocks(storage, OTHER_OWNER, 'card-1')).toEqual([blockOwner2]);
+  });
+});
+
+// Review 2026-09-07, post-ship follow-up review (C13, "офлайн-читання
+// картки взагалі не підключене"): CardBack (зворот) уже мав кеш метаданих
+// блоків/записів (T45) -- CardFace (лицьова сторона, назва+опис) не мав
+// НІЧОГО, тож картку без мережі неможливо було навіть ВІДКРИТИ (loadCard
+// падав одразу, ще до того, як користувач міг перегорнути картку й побачити
+// вже кешований зворот).
+
+describe("readCachedCardFace / cacheCardFace (review-followup C13 -- лицьова сторона теж має офлайн-кеш)", () => {
+  it('reads previously cached face data (name/description) back without any network call', () => {
+    const storage = createFakeStorage();
+    cacheCardFace(storage, OWNER, 'card-1', { name: 'Спорт', description: 'Регулярні тренування' });
+
+    expect(readCachedCardFace(storage, OWNER, 'card-1')).toEqual({ name: 'Спорт', description: 'Регулярні тренування' });
+  });
+
+  it('returns null when nothing has been synced yet', () => {
+    const storage = createFakeStorage();
+
+    expect(readCachedCardFace(storage, OWNER, 'card-1')).toBeNull();
+  });
+
+  it('namespaced by ownerUserId, same as the other caches (T52)', () => {
+    const storage = createFakeStorage();
+    cacheCardFace(storage, OWNER, 'card-1', { name: 'Спорт', description: null });
+    cacheCardFace(storage, OTHER_OWNER, 'card-1', { name: 'Чуже', description: null });
+
+    expect(readCachedCardFace(storage, OWNER, 'card-1')?.name).toBe('Спорт');
+    expect(readCachedCardFace(storage, OTHER_OWNER, 'card-1')?.name).toBe('Чуже');
   });
 });
 

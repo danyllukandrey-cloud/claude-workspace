@@ -35,5 +35,7 @@ export {
   cacheMetricBlocks,
   computeProgressFromCache,
   clearAllCachedData,
+  readCachedCardFace,
+  cacheCardFace,
 } from './infra/local-cache';
-export type { CachedMetricBlock } from './infra/local-cache';
+export type { CachedMetricBlock, CachedCardFace } from './infra/local-cache';
