@@ -36,4 +36,22 @@ describe('detectConflict', () => {
     ];
     expect(detectConflict(newEntry, existingEntries, windowMs)).toBe(false);
   });
+
+  // Review 2026-09-07 B7 (AC-06): sourceDeviceId відсутній (null) з обох боків
+  // -- це типовий випадок, коли клієнт не передає пристрій. `null !== null`
+  // хибне, тож наївне порівняння вважало б це "тим самим пристроєм" і НІКОЛИ
+  // не зафіксувало б конфлікт. Ми не знаємо, що це один і той самий пристрій
+  // -- тож вважаємо це МОЖЛИВИМ конфліктом (безпечніше уточнити зайвий раз,
+  // ніж мовчки зарахувати обидва -- дух AC-06).
+  it('flags a possible conflict when both entries have no device id, within the window', () => {
+    const newEntry: RawEntryWithTiming = { sourceDeviceId: null, recordedAt: 1_000_000 };
+    const existingEntries: RawEntryWithTiming[] = [{ sourceDeviceId: null, recordedAt: 1_000_000 - 30_000 }];
+    expect(detectConflict(newEntry, existingEntries, windowMs)).toBe(true);
+  });
+
+  it('does not flag a conflict when both entries have no device id, outside the window', () => {
+    const newEntry: RawEntryWithTiming = { sourceDeviceId: null, recordedAt: 1_000_000 };
+    const existingEntries: RawEntryWithTiming[] = [{ sourceDeviceId: null, recordedAt: 1_000_000 - 90_000 }];
+    expect(detectConflict(newEntry, existingEntries, windowMs)).toBe(false);
+  });
 });
