@@ -20,7 +20,16 @@ export async function checkSuspiciousData(
   facts: string
 ): Promise<string | null> {
   const prompt = buildPrompt(cardDescription, facts);
-  const explanation = await callClaude(prompt);
+  let explanation: string;
+  try {
+    explanation = await callClaude(prompt);
+  } catch {
+    // Review 2026-09-07 A3, fail-open (test-plan.md, "Claude API unavailable ->
+    // card still opens, no dataWarning, no user-facing error"): перевірка на
+    // суперечність необов'язкова (AC-10 -- лише коли ЩОСЬ реально знайдено),
+    // тож її недоступність не має валити решту картки в 500.
+    return null;
+  }
   return explanation.length > 0 ? explanation : null;
 }
 

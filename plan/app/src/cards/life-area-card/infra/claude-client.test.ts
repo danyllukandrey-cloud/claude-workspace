@@ -32,4 +32,19 @@ describe('checkSuspiciousData', () => {
 
     expect(result).toBeNull();
   });
+
+  // Review 2026-09-07 A3 (fail-open, test-plan.md рядок 56): "Claude API unavailable
+  // during a suspicious-data check -> card still opens, no dataWarning, no user-facing
+  // error (fail-open, not fail-closed)". До цього фіксу відхилений callClaude просто
+  // прокидав помилку вище (getCardWithProgress -> error-middleware -> 500) -- картка
+  // взагалі не відкривалась через недоступність необов'язкової перевірки.
+  it('повертає null (fail-open), коли callClaude відхиляється -- Claude API недоступний, картка все одно відкривається', async () => {
+    const fakeCallClaude = async (_prompt: string): Promise<string> => {
+      throw new Error('Claude API timeout -- симуляція недоступності');
+    };
+
+    const result = await checkSuspiciousData(fakeCallClaude, 'опис', 'факти');
+
+    expect(result).toBeNull();
+  });
 });

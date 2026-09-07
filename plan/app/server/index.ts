@@ -52,8 +52,42 @@ async function verifyJwt(token: string): Promise<JwtPayload> {
   return { sub: payload.sub };
 }
 
+// Review 2026-09-07 A3: реальний Claude API (Messages, тонкий fetch -- ADR-0006
+// §Рушії рішення, "переінженерія на цьому масштабі -- мінус", жодного SDK заради
+// одного виклику). Ключа може не бути в .env (AC-10 необов'язкова) -- кидає
+// одразу, без мережевого виклику; checkSuspiciousData (infra/claude-client.ts)
+// ловить це так само, як і будь-яку іншу відмову, fail-open, не валить getCard.
+async function callClaude(prompt: string): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error('ANTHROPIC_API_KEY не задано (.env) -- AC-10 необов’язкова, fail-open вище');
+  }
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 500,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`Claude API відповів ${res.status}`);
+  }
+  const data = (await res.json()) as { content?: Array<{ text?: string }> };
+  const text = data.content?.[0]?.text;
+  if (typeof text !== 'string') {
+    throw new Error('Claude API: неочікувана форма відповіді');
+  }
+  return text.trim();
+}
+
 const db = createDb();
-const app = createApp({ db, withTransaction: db.withTransaction, verifyGoogleIdToken, signJwt, verifyJwt });
+const app = createApp({ db, withTransaction: db.withTransaction, verifyGoogleIdToken, signJwt, verifyJwt, callClaude });
 
 app.listen(PORT, () => {
   // eslint-disable-next-line no-console -- немає власного логера (one-person MVP, ADR-0006).

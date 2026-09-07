@@ -22,6 +22,7 @@ import { ProgressValidationError } from '../src/cards/life-area-card/domain/prog
 import * as cardHandlers from '../src/cards/life-area-card/ports/card-handlers';
 import * as metricBlockHandlers from '../src/cards/life-area-card/ports/metric-block-handlers';
 import * as entryHandlers from '../src/cards/life-area-card/ports/entry-handlers';
+import type { CallClaude } from '../src/cards/life-area-card/app/get-card';
 // Review 2026-09-07 A2/B5: composition root -- ЄДИНЕ місце, де life-area-card
 // і structure зустрічаються (ADR-0004, life-area-card НЕ імпортує structure/
 // напряму). archiveCard приймає closeStructurePosition як опційний
@@ -67,6 +68,15 @@ export interface AppDeps {
   signJwt: (payload: JwtPayload) => Promise<SignJwtResult>;
   /** Перевіряє наш JWT (jose у реальній реалізації) -- кидає при невалідному/протермінованому токені. */
   verifyJwt: (token: string) => Promise<JwtPayload>;
+  /**
+   * Review 2026-09-07 A3: до цього фіксу getCard ніколи не отримував
+   * callClaude у production -- dataWarning (AC-10) був назавжди недосяжний,
+   * попри готовий і протестований infra/claude-client.ts (T12). Опційне,
+   * не обов'язкове (як і в get-card.ts): відсутність -- "перевірка поки не
+   * підключена", не помилка; відхилення реального виклику -- fail-open
+   * (claude-client.ts саме тепер це гарантує), не 500.
+   */
+  callClaude?: CallClaude;
 }
 
 /** req розширюється ownerUserId (з JWT sub) -- кладе authMiddleware, читають хендлери-обгортки нижче. */
@@ -169,7 +179,7 @@ export function createApp(deps: AppDeps): express.Express {
   app.get(
     '/api/v1/cards/:cardId',
     asyncHandler(async (req, res) => {
-      const card = await cardHandlers.getCard(deps.db, ownerUserId(req), param(req, 'cardId'));
+      const card = await cardHandlers.getCard(deps.db, ownerUserId(req), param(req, 'cardId'), deps.callClaude);
       res.status(200).json(card);
     })
   );
