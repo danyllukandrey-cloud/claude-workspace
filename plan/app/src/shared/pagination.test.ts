@@ -47,3 +47,34 @@ test('порожня перша сторінка (картка без жодно
   expect(result).toEqual([]);
   expect(fetchPage).toHaveBeenCalledTimes(1);
 });
+
+// Review 2026-09-07, post-ship follow-up review (E remainder, RED): якщо
+// сервер повертає ТОЙ САМИЙ next_cursor двічі поспіль (напр. запис-курсор
+// вибув зі списку між двома викликами -- entry-handlers.ts "Прострочений/
+// невалідний cursor -- падаємо на першу сторінку, не помилка"), for(;;) тут
+// ніколи не завершувався б -- та сама сторінка знову й знову.
+
+test('той самий next_cursor повторюється -- зупиняється замість нескінченного циклу', async () => {
+  const fetchPage = vi
+    .fn()
+    .mockResolvedValueOnce(page(['a'], 'cursor-1'))
+    .mockResolvedValue(page(['a'], 'cursor-1')); // сервер "застряг" на тому самому курсорі
+
+  const result = await collectAllPages(fetchPage);
+
+  expect(result).toEqual(['a', 'a']); // одна фактична повторна спроба, потім зупинка -- не зависання
+  expect(fetchPage.mock.calls.length).toBeLessThan(10);
+});
+
+test('аварійний захист: навіть без повторення курсора зупиняється після розумної межі сторінок', async () => {
+  let call = 0;
+  const fetchPage = vi.fn().mockImplementation(async () => {
+    call += 1;
+    return page([call], `cursor-${call}`); // next_cursor щоразу НОВИЙ -- ніколи не null
+  });
+
+  const result = await collectAllPages(fetchPage);
+
+  expect(fetchPage.mock.calls.length).toBeLessThan(10_000);
+  expect(result.length).toBe(fetchPage.mock.calls.length);
+});

@@ -51,6 +51,19 @@ test('role=dialog + aria-modal -- допоміжні технології впі
   expect(dialog.getAttribute('aria-modal')).toBe('true');
 });
 
+// Review 2026-09-07, post-ship follow-up review (E remainder, RED):
+// role="dialog" без aria-labelledby/aria-label -- axe-порушення
+// "aria-dialog-name": скрінрідер оголошує безіменний діалог, не текст
+// підтвердження.
+test('дialog має aria-labelledby, що вказує на текст повідомлення (доступна назва діалогу)', () => {
+  render(<ConfirmDialog {...baseProps()} />);
+
+  const dialog = screen.getByRole('dialog');
+  const labelledBy = dialog.getAttribute('aria-labelledby');
+  expect(labelledBy).toBeTruthy();
+  expect(document.getElementById(labelledBy ?? '')?.textContent).toBe('Видалити картку «Спорт»?');
+});
+
 test('початковий фокус -- на кнопці "Скасувати" (безпечний дефолт для деструктивної дії, Enter одразу після відкриття не підтверджує)', () => {
   render(<ConfirmDialog {...baseProps()} />);
 

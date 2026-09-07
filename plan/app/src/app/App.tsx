@@ -105,6 +105,19 @@ export function App({
   const loadCardForDetail = useCallback(() => loadCard(detailCardId as string), [detailCardId, loadCard]);
   const loadBackForDetail = useCallback(() => loadBack(detailCardId as string), [detailCardId, loadBack]);
 
+  // Review 2026-09-07, post-ship follow-up review (E, referential stability):
+  // onLogout/onSessionExpired do the exact same thing (clear session, reset
+  // state) and were both passed as fresh inline lambdas every App render --
+  // onSessionExpired is a dependency of DeckScreen's own load-effect
+  // (DeckScreen.tsx useEffect deps), so an unrelated App re-render while the
+  // deck screen stayed mounted would re-trigger GET /cards, violating the
+  // same referential-stability contract DeckScreen.loadCards already
+  // documents (and that loadCardForDetail above was just fixed to honour).
+  const endSession = useCallback(() => {
+    clearStoredSession();
+    setSession(null);
+  }, [clearStoredSession]);
+
   if (isSessionValid(session, now)) {
     return (
       <main style={{ fontFamily: 'system-ui, sans-serif', padding: '2rem' }}>
@@ -148,18 +161,12 @@ export function App({
             onOpenCard={(cardId) => setScreen({ screen: 'detail', cardId })}
             onCreateCard={() => setScreen({ screen: 'create' })}
             onOpenArchive={() => setScreen({ screen: 'archive' })}
-            onLogout={() => {
-              clearStoredSession();
-              setSession(null);
-            }}
+            onLogout={endSession}
             // Review 2026-09-07 C14 (AC-04): 401 при завантаженні колоди --
             // той самий шлях, що ручний "Вийти" (сесія все одно недійсна,
             // тримати її в сховищі означає знову впертись у 401 наступного
             // разу).
-            onSessionExpired={() => {
-              clearStoredSession();
-              setSession(null);
-            }}
+            onSessionExpired={endSession}
           />
         )}
       </main>

@@ -13,7 +13,7 @@
 // викликач (ArchiveCardDialog) вмикає його на час виконання onArchive,
 // щоб подвійний клік не викликав дію вдруге.
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef } from 'react';
 
 export interface ConfirmDialogProps {
   /** Що саме підтверджуємо. */
@@ -39,6 +39,10 @@ export function ConfirmDialog({
   confirmDisabled,
 }: ConfirmDialogProps): JSX.Element {
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
+  // Review 2026-09-07, post-ship follow-up review (E remainder): role="dialog"
+  // без aria-labelledby -- axe "aria-dialog-name" -- скрінрідер оголошував
+  // безіменний діалог замість тексту підтвердження.
+  const messageId = useId();
 
   useEffect(() => {
     cancelButtonRef.current?.focus();
@@ -48,11 +52,12 @@ export function ConfirmDialog({
     <div
       role="dialog"
       aria-modal="true"
+      aria-labelledby={messageId}
       onKeyDown={(event) => {
         if (event.key === 'Escape') onCancel();
       }}
     >
-      <p>{message}</p>
+      <p id={messageId}>{message}</p>
       <button type="button" onClick={onConfirm} disabled={confirmDisabled}>
         {confirmLabel}
       </button>

@@ -238,7 +238,11 @@ export function CardBack({
         Історія записів {historyExpanded ? '▴' : '▾'}
       </button>
       {historyExpanded && (
-        <EntryHistoryList entries={data.entries} onFlagEntry={handleFlagEntry} isFlagEntryDisabled={isFlaggingEntry} />
+        <EntryHistoryList
+          entries={data.entries}
+          onFlagEntry={onFlagEntry ? handleFlagEntry : undefined}
+          isFlagEntryDisabled={isFlaggingEntry}
+        />
       )}
 
       {/* D-111 (docs/DECISIONS.md, виправлено): "← лицьова" -- ОСТАННІЙ

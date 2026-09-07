@@ -238,6 +238,26 @@ test('ISS-55 stage 2: клік на тайл картки в Колоді від
 // посилання -- нестабільна функція означає повторний непотрібний запит
 // щоразу, як App перерендериться з будь-якої іншої причини.
 
+// Review 2026-09-07, post-ship follow-up review (E remainder): onSessionExpired
+// -- інлайн-лямбда прямо в JSX (як і onLogout) -- перестворювалась щорендера
+// App, а onSessionExpired водночас є залежністю ефекту DeckScreen (T48) --
+// той самий баг, що loadCard/loadBack мали до T52's useCallback-фіксу.
+
+test('review-followup: onSessionExpired передається в DeckScreen референційно стабільним -- повторний рендер App НЕ викликає loadCards знову', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
+
+  const { rerender } = render(<App {...props} />);
+
+  await screen.findByText('Спорт');
+  expect(props.loadCards).toHaveBeenCalledTimes(1);
+
+  rerender(<App {...props} />);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  expect(props.loadCards).toHaveBeenCalledTimes(1);
+});
+
 test('T52: loadCard передається в CardDetailScreen референційно стабільним -- повторний рендер App без навігації НЕ викликає його знову', async () => {
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);

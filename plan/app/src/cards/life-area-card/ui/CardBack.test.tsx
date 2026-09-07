@@ -112,6 +112,26 @@ test('SCR-03 history-expanded: розгортає історію записів 
   expect(screen.getByText('27.08')).toBeTruthy();
 });
 
+// Review 2026-09-07, post-ship follow-up review (C11 remainder, RED): без
+// onFlagEntry кнопка "виправити" й досі рендерилась (handleFlagEntry
+// прокидався безумовно, сам рано повертався всередині) -- клік нічого не
+// робив, той самий СИМПТОМ, що C11 називав "мертва", тепер лише за іншої
+// причини (умовний no-op замість абсолютного).
+
+test('C11-remainder: без onFlagEntry кнопка "виправити" НЕ рендериться (не мертва кнопка)', async () => {
+  const data: CardBackData = {
+    metricBlocks: [],
+    aggregateProgress: null,
+    entries: [makeEntry({ id: 'e1', status: 'confirmed', summary: '+1 тренування' })],
+  };
+  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: /Історія записів/ }));
+  await screen.findByText('+1 тренування');
+
+  expect(screen.queryByRole('button', { name: 'виправити' })).toBeNull();
+});
+
 test('SCR-03 AC-12: клік "виправити" в історії викликає onFlagEntry і оновлює зворот', async () => {
   const initial: CardBackData = {
     metricBlocks: [],

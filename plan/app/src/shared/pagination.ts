@@ -14,14 +14,25 @@ export interface Page<T> {
   next_cursor: string | null;
 }
 
+// Review 2026-09-07, post-ship follow-up review (E remainder): без обмеження
+// сервер, що "застряг" на тому самому cursor (напр. запис-курсор вибув зі
+// списку між двома запитами -- entry-handlers.ts: "Прострочений/невалідний
+// cursor -- падаємо на першу сторінку, не помилка") чи просто ніколи не
+// повертає next_cursor: null, спричиняв справжній нескінченний цикл --
+// підтверджено живим прогоном: процес упав з "JavaScript heap out of
+// memory", не просто "тест довго висів". MAX_PAGES -- останній рубіж, коли
+// навіть повторення курсора не спрацювало (кожен курсор новий, але їх
+// нескінченно багато).
+const MAX_PAGES = 1000;
+
 export async function collectAllPages<T>(fetchPage: (after: string | undefined) => Promise<Page<T>>): Promise<T[]> {
   const all: T[] = [];
   let after: string | undefined;
 
-  for (;;) {
+  for (let pageCount = 0; pageCount < MAX_PAGES; pageCount += 1) {
     const page = await fetchPage(after);
     all.push(...page.items);
-    if (!page.next_cursor) break;
+    if (!page.next_cursor || page.next_cursor === after) break;
     after = page.next_cursor;
   }
 

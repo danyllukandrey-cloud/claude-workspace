@@ -11,7 +11,14 @@ import type { EntryViewModel } from './types';
 
 export interface EntryHistoryListProps {
   entries: EntryViewModel[];
-  onFlagEntry: (entryId: string) => void;
+  /**
+   * Review 2026-09-07, post-ship follow-up review (C11 remainder): опційний,
+   * як onAddEntry/onCreateMetricBlock деінде в цій картці (D-110/ISS-60
+   * прецедент) -- відсутність означає "кнопка не рендериться взагалі", не
+   * "рендериться, але клік нічого не робить" (саме це й було C11 -- мертва
+   * кнопка).
+   */
+  onFlagEntry?: (entryId: string) => void;
   /** Review 2026-09-07 (AC-12/E remainder, T52-style guard): вимикає ВСІ кнопки "виправити", поки один такий запит уже в польоті -- захист від подвійного кліку. */
   isFlagEntryDisabled?: boolean;
 }
@@ -24,7 +31,7 @@ export function EntryHistoryList({ entries, onFlagEntry, isFlagEntryDisabled }: 
         {entries.map((entry) => (
           <li key={entry.id}>
             <span>{entry.recordedAtLabel}</span> <span>{entry.summary}</span>{' '}
-            {entry.status === 'confirmed' && (
+            {entry.status === 'confirmed' && onFlagEntry && (
               <button type="button" onClick={() => onFlagEntry(entry.id)} disabled={isFlagEntryDisabled}>
                 виправити
               </button>

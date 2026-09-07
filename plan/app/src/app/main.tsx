@@ -571,16 +571,17 @@ async function onRestoreCard(cardId: string): Promise<void> {
   }
 }
 
+/**
+ * Review 2026-09-07, post-ship follow-up review (E remainder): той самий
+ * клас багу, що C15 (T48) уже виправив у loadBack -- читав лише ПЕРШУ
+ * сторінку GET .../entries (дефолтний ліміт сервера 50), архівна картка з
+ * понад 50 записами мовчки показувала обрізану історію без жодної ознаки,
+ * що там є ще. collectAllPages (той самий, що loadBack) слідує за
+ * next_cursor до кінця.
+ */
 async function loadArchivedCardHistory(cardId: string): Promise<EntryViewModel[]> {
-  const response = await fetch(`/api/v1/cards/${cardId}/entries`, { headers: authHeaders() });
-
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { message?: string } | null;
-    throw new Error(body?.message ?? 'Не вдалося завантажити історію записів');
-  }
-
-  const entryPage = (await response.json()) as EntryPageDto;
-  return entryPage.items.map((entry) => toEntryViewModel(entry, undefined));
+  const allEntries = await collectAllPages<EntryDto>((after) => fetchEntryPage(cardId, after));
+  return allEntries.map((entry) => toEntryViewModel(entry, undefined));
 }
 
 async function onRename(cardId: string, name: string): Promise<void> {
