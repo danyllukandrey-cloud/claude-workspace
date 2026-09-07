@@ -161,16 +161,19 @@ export function CardBack({
 
       {data.metricBlocks.length === 0 ? (
         <>
-          <EmptyState
-            message="Ще немає жодної активної метрики"
-            actionHint="Додайте блок-метрику, щоб почати відстежувати прогрес"
-          />
+          {/* D-111 (docs/DECISIONS.md): кнопка/форма створення -- ПЕРЕД
+              текстом порожнього стану, не після (Andrii: "+ Додати
+              блок-метрику" має бути першим, що бачить користувач згори). */}
           {onCreateMetricBlock &&
             (isCreatingBlock ? (
               <MetricBlockForm onSubmit={handleCreateMetricBlock} />
             ) : (
               <Button label="+ Додати блок-метрику" onClick={() => setIsCreatingBlock(true)} />
             ))}
+          <EmptyState
+            message="Ще немає жодної активної метрики"
+            actionHint="Додайте блок-метрику, щоб почати відстежувати прогрес"
+          />
         </>
       ) : (
         <>

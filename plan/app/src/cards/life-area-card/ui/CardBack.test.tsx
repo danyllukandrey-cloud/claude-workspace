@@ -190,6 +190,30 @@ test('SCR-03: клік "← лицьова" викликає onFlip', async () =
 // повертає лише Promise<void>, не свіжі дані, тому свіжість забезпечує
 // повторний виклик loadBack, не повернене значення.
 
+// D-111 (docs/DECISIONS.md): порожній стан -- "+ Додати блок-метрику"
+// ПЕРЕД текстом "Ще немає...", а "← лицьова" -- ОСТАННІМ елементом (унизу,
+// перед тим, як CardDetailScreen додасть "← Назад").
+
+test('D-111: порожній стан -- порядок "+ Додати блок-метрику" -> "Ще немає..." -> "Історія записів" -> "← лицьова"', async () => {
+  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
+  const { container } = render(
+    <CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateMetricBlock={vi.fn()} />,
+  );
+
+  await screen.findByText('Ще немає жодної активної метрики');
+  const text = container.textContent ?? '';
+
+  const idxCreate = text.indexOf('Додати блок-метрику');
+  const idxEmpty = text.indexOf('Ще немає жодної активної метрики');
+  const idxHistory = text.indexOf('Історія записів');
+  const idxFlip = text.indexOf('лицьова');
+
+  expect(idxCreate).toBeGreaterThan(-1);
+  expect(idxCreate).toBeLessThan(idxEmpty);
+  expect(idxEmpty).toBeLessThan(idxHistory);
+  expect(idxHistory).toBeLessThan(idxFlip);
+});
+
 test('ISS-60: без onCreateMetricBlock порожній стан не показує кнопку створення блоку', async () => {
   const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
   render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
