@@ -97,6 +97,18 @@ test('перейменування на лицьовій стороні викл
   expect(props.onRename).toHaveBeenCalledWith('Спорт і здоров’я');
 });
 
+test('редагування Опису на лицьовій стороні викликає injected onUpdateDescription (review C10/AC-03 наскрізь через композицію)', async () => {
+  const props = baseProps();
+  const onUpdateDescription = vi.fn().mockResolvedValue(undefined);
+  render(<CardDetailScreen {...props} onUpdateDescription={onUpdateDescription} />);
+
+  fireEvent.click(await screen.findByText('Регулярні тренування'));
+  fireEvent.change(screen.getByLabelText('Опис (навіщо)'), { target: { value: 'новий опис' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+
+  expect(onUpdateDescription).toHaveBeenCalledWith({ description: 'новий опис', markFilled: false });
+});
+
 test('onFlagEntry/onRenameTransferredBlock, якщо передані, прокидаються в CardBack', async () => {
   const props = baseProps();
   const onFlagEntry = vi.fn().mockResolvedValue(BACK_DATA);

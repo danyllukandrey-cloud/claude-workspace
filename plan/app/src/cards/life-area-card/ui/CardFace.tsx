@@ -42,14 +42,22 @@ export interface CardFaceProps {
   onArchive: () => Promise<void>;
   /** ISS-56: сигнал батькові -- картку архівовано, є куди піти (App повертає до Колоди). */
   onArchived: () => void;
+  /**
+   * Review 2026-09-07 C10 (AC-03): зберігає Опис і/чи позначку "заповнена"
+   * (PATCH /cards/{id} description/markFilled -- update-card.ts, контракт
+   * уже готовий). Опційний, як onAddEntry в MetricBlockCard -- відсутній,
+   * афорданс редагування Опису не рендериться.
+   */
+  onUpdateDescription?: (input: { description: string; markFilled: boolean }) => Promise<void>;
 }
 
 type LoadState = 'loading' | 'ready' | 'error';
 
 const FALLBACK_ERROR_TEXT = 'Не вдалося завантажити картку';
 const RENAME_FAILED_MESSAGE = 'Не вдалося зберегти назву. Перевірте зв’язок і спробуйте ще раз.';
+const DESCRIPTION_FAILED_MESSAGE = 'Не вдалося зберегти опис. Перевірте зв’язок і спробуйте ще раз.';
 
-export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived }: CardFaceProps): JSX.Element {
+export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived, onUpdateDescription }: CardFaceProps): JSX.Element {
   const [state, setState] = useState<LoadState>('loading');
   const [data, setData] = useState<CardFaceData | null>(null);
   const [error, setError] = useState<string>(FALLBACK_ERROR_TEXT);
@@ -66,6 +74,12 @@ export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived }: 
   // (T29, фіксований контракт cardName/onArchive/onCancel). isArchiving --
   // незалежний від isRenaming (обидва скидаються разом при новому loadCard).
   const [isArchiving, setIsArchiving] = useState(false);
+  // Review 2026-09-07 C10 (AC-03): той самий inline-патерн, що rename вище.
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [draftDescription, setDraftDescription] = useState('');
+  const [draftMarkFilled, setDraftMarkFilled] = useState(false);
+  const [isSavingDescription, setIsSavingDescription] = useState(false);
+  const [descriptionError, setDescriptionError] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -80,6 +94,11 @@ export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived }: 
     setIsSavingName(false);
     setRenameError(undefined);
     setIsArchiving(false);
+    setIsEditingDescription(false);
+    setDraftDescription('');
+    setDraftMarkFilled(false);
+    setIsSavingDescription(false);
+    setDescriptionError(undefined);
 
     loadCard()
       .then((result) => {
@@ -153,6 +172,40 @@ export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived }: 
       });
   }
 
+  function startEditDescription(): void {
+    if (!data || !onUpdateDescription) return;
+    setDraftDescription(data.description ?? '');
+    setDraftMarkFilled(false);
+    setDescriptionError(undefined);
+    setIsMenuOpen(false);
+    setIsEditingDescription(true);
+  }
+
+  function cancelEditDescription(): void {
+    // AC-19-подібно: "Скасувати" відкидає чернетку -- onUpdateDescription НІКОЛИ не викликається тут.
+    setIsEditingDescription(false);
+    setDescriptionError(undefined);
+  }
+
+  function saveDescription(): void {
+    if (!onUpdateDescription) return;
+    setDescriptionError(undefined);
+    setIsSavingDescription(true);
+
+    onUpdateDescription({ description: draftDescription, markFilled: draftMarkFilled })
+      .then(() => {
+        setData((prev) => (prev ? { ...prev, description: draftDescription } : prev));
+        setIsSavingDescription(false);
+        setIsEditingDescription(false);
+      })
+      .catch((err: unknown) => {
+        // AC-03: сервер (update-card.ts) кидає пояснення "потрібен короткий
+        // опис 'навіщо'" саме тут -- показуємо його як є, не вигадуємо своє.
+        setDescriptionError(err instanceof Error ? err.message : DESCRIPTION_FAILED_MESSAGE);
+        setIsSavingDescription(false);
+      });
+  }
+
   if (state === 'loading') {
     return <Spinner />;
   }
@@ -201,9 +254,28 @@ export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived }: 
           разом, тон без вердикту (design-system.md, D-42/D-60). */}
       {data.dataWarning && <Banner variant="info" text={data.dataWarning} />}
 
-      {hasDescription ? <p>{data.description}</p> : <p>Опис ще не заповнено</p>}
+      {isEditingDescription ? (
+        <>
+          <TextField label="Опис (навіщо)" value={draftDescription} onChange={setDraftDescription} />
+          <label>
+            <input
+              type="checkbox"
+              checked={draftMarkFilled}
+              onChange={(event) => setDraftMarkFilled(event.target.checked)}
+            />
+            Позначити заповненою
+          </label>
+          <Button label="Скасувати" onClick={cancelEditDescription} disabled={isSavingDescription} />
+          <Button label="Зберегти" onClick={saveDescription} disabled={isSavingDescription} />
+          {descriptionError && <Banner variant="error" text={descriptionError} />}
+        </>
+      ) : hasDescription ? (
+        <p onClick={startEditDescription}>{data.description}</p>
+      ) : (
+        <p onClick={startEditDescription}>Опис ще не заповнено</p>
+      )}
 
-      {!isRenaming && (
+      {!isRenaming && !isEditingDescription && (
         <button type="button" onClick={onFlip}>
           перегорнути →
         </button>

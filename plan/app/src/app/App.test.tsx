@@ -69,6 +69,9 @@ function baseProps() {
     // App замикає над cardId, лишає metricBlockId параметром (CardBack сам
     // замикає над block.id для кожної плитки).
     addEntry: vi.fn().mockResolvedValue(undefined),
+    // Review C10 (AC-03): реальний PATCH /cards/{cardId} (description/markFilled,
+    // main.tsx) -- App замикає над cardId, той самий стиль, що onRename.
+    onUpdateDescription: vi.fn().mockResolvedValue(undefined),
   };
 }
 

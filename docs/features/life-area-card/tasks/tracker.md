@@ -50,7 +50,7 @@
 | T43 | App: reject non-positive targetCount before insert | app | TBD | S | T16 | done |
 | T44 | Domain: fix conflict detection when sourceDeviceId absent | domain | TBD | S | T8 | done |
 | T45 | Infra+wiring: per-block offline cache actually read/written | infra | TBD | M | T11 | done |
-| T46 | UI: SCR-02 Опис edit + mark-filled action | ui | TBD | M | T24, T21 | todo |
+| T46 | UI: SCR-02 Опис edit + mark-filled action | ui | TBD | M | T24, T21 | done |
 | T47 | UI: wire entry correction + always-visible add-metric-block button | ui | TBD | M | T24, T23 | todo |
 | T48 | UI: 401 recovery on deck load + full-history progress | ui | TBD | M | T25 | todo |
 | T49 | UI: surface add-entry failure, guard double-submit | ui | TBD | S | T26 | done |

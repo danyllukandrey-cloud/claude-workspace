@@ -453,6 +453,25 @@ async function onRename(cardId: string, name: string): Promise<void> {
   }
 }
 
+/**
+ * Review 2026-09-07 C10 (AC-03): реальний PATCH /cards/{cardId} (description/
+ * markFilled) -- CardFace.onUpdateDescription. Сервер (update-card.ts) сам
+ * кидає 422 card.description_required, коли markFilled:true без Опису --
+ * тут лише прокидаємо його message, як і onRename вище.
+ */
+async function onUpdateDescription(cardId: string, input: { description: string; markFilled: boolean }): Promise<void> {
+  const response = await fetch(`/api/v1/cards/${cardId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ description: input.description, markFilled: input.markFilled }),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? 'Не вдалося зберегти опис картки');
+  }
+}
+
 /** ISS-56 (docs/ISSUES.md): реальний DELETE /cards/{cardId} -- CardFace.onArchive. */
 async function archiveCard(cardId: string): Promise<void> {
   const response = await fetch(`/api/v1/cards/${cardId}`, {
@@ -531,6 +550,7 @@ createRoot(root).render(
       archiveCard={archiveCard}
       createMetricBlock={createMetricBlock}
       addEntry={addEntry}
+      onUpdateDescription={onUpdateDescription}
     />
   </StrictMode>,
 );

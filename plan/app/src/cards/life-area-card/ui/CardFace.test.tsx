@@ -217,3 +217,113 @@ test('SCR-02: відкрите меню/чернетка rename скидають
   expect(await screen.findByRole('heading', { name: 'Навчання' })).toBeTruthy();
   expect(screen.queryByLabelText('Назва')).toBeNull();
 });
+
+// Review 2026-09-07 C10 (AC-03): до цього фіксу CardFace взагалі не мав
+// способу відкрити Опис на редагування чи позначити картку заповненою --
+// AC-03 (блокування markFilled без Опису) технічно існував на бекенді
+// (update-card.ts), але користувач не міг його досягти жодним кліком.
+// onUpdateDescription -- опційний (як onAddEntry в MetricBlockCard, T49):
+// відсутній -- афорданс не рендериться.
+
+test('C10: без onUpdateDescription клік по Опису нічого не відкриває', async () => {
+  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null };
+  render(<CardFace loadCard={() => Promise.resolve(data)} onFlip={vi.fn()} onRename={vi.fn()} onArchive={vi.fn()} onArchived={vi.fn()} />);
+
+  fireEvent.click(await screen.findByText('опис'));
+
+  expect(screen.queryByLabelText('Опис (навіщо)')).toBeNull();
+});
+
+test('C10: з onUpdateDescription клік по Опису відкриває TextField і чекбокс "позначити заповненою"', async () => {
+  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null };
+  render(
+    <CardFace
+      loadCard={() => Promise.resolve(data)}
+      onFlip={vi.fn()}
+      onRename={vi.fn()}
+      onArchive={vi.fn()}
+      onArchived={vi.fn()}
+      onUpdateDescription={vi.fn()}
+    />,
+  );
+
+  fireEvent.click(await screen.findByText('опис'));
+
+  const field = screen.getByLabelText('Опис (навіщо)') as HTMLInputElement;
+  expect(field.value).toBe('опис');
+  expect(screen.getByLabelText('Позначити заповненою')).toBeTruthy();
+});
+
+test('C10: "Зберегти" викликає onUpdateDescription({description, markFilled}) і оновлює Опис', async () => {
+  const data: CardFaceData = { name: 'Спорт', description: 'старий опис', dataWarning: null };
+  const onUpdateDescription = vi.fn().mockResolvedValue(undefined);
+  render(
+    <CardFace
+      loadCard={() => Promise.resolve(data)}
+      onFlip={vi.fn()}
+      onRename={vi.fn()}
+      onArchive={vi.fn()}
+      onArchived={vi.fn()}
+      onUpdateDescription={onUpdateDescription}
+    />,
+  );
+
+  fireEvent.click(await screen.findByText('старий опис'));
+  fireEvent.change(screen.getByLabelText('Опис (навіщо)'), { target: { value: 'новий опис' } });
+  fireEvent.click(screen.getByLabelText('Позначити заповненою'));
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+
+  expect(onUpdateDescription).toHaveBeenCalledWith({ description: 'новий опис', markFilled: true });
+  expect(await screen.findByText('новий опис')).toBeTruthy();
+  expect(screen.queryByLabelText('Опис (навіщо)')).toBeNull();
+});
+
+test('C10: "Скасувати" відкидає зміну без виклику onUpdateDescription', async () => {
+  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null };
+  const onUpdateDescription = vi.fn();
+  render(
+    <CardFace
+      loadCard={() => Promise.resolve(data)}
+      onFlip={vi.fn()}
+      onRename={vi.fn()}
+      onArchive={vi.fn()}
+      onArchived={vi.fn()}
+      onUpdateDescription={onUpdateDescription}
+    />,
+  );
+
+  fireEvent.click(await screen.findByText('опис'));
+  fireEvent.change(screen.getByLabelText('Опис (навіщо)'), { target: { value: 'чернетка, яку відкинуть' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Скасувати' }));
+
+  expect(onUpdateDescription).not.toHaveBeenCalled();
+  expect(await screen.findByText('опис')).toBeTruthy();
+});
+
+// AC-03 буквально: "user tries to mark the card as filled while leaving Опис
+// empty" -> "system blocks marking it filled and explains that a short
+// 'навіщо' is required first". Бекенд (update-card.ts) уже кидає цю помилку --
+// тест доводить, що гілка ДОСЯЖНА через UI (до фіксу не існувало способу
+// взагалі викликати onUpdateDescription).
+test('C10/AC-03: відхилений onUpdateDescription (порожній Опис + markFilled) показує пояснення, поле лишається відкритим', async () => {
+  const data: CardFaceData = { name: 'Спорт', description: null, dataWarning: null };
+  const onUpdateDescription = vi.fn().mockRejectedValue(new Error('Потрібен короткий опис "навіщо", перш ніж позначити картку заповненою'));
+  render(
+    <CardFace
+      loadCard={() => Promise.resolve(data)}
+      onFlip={vi.fn()}
+      onRename={vi.fn()}
+      onArchive={vi.fn()}
+      onArchived={vi.fn()}
+      onUpdateDescription={onUpdateDescription}
+    />,
+  );
+
+  fireEvent.click(await screen.findByText('Опис ще не заповнено'));
+  fireEvent.click(screen.getByLabelText('Позначити заповненою'));
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+
+  const banner = await screen.findByText('Потрібен короткий опис "навіщо", перш ніж позначити картку заповненою');
+  expect(banner.getAttribute('data-variant')).toBe('error');
+  expect(screen.getByLabelText('Опис (навіщо)')).toBeTruthy();
+});
