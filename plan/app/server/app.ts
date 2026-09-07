@@ -183,7 +183,11 @@ export function createApp(deps: AppDeps): express.Express {
   app.post(
     '/api/v1/cards',
     asyncHandler(async (req, res) => {
-      const card = await cardHandlers.createCard(deps.db, ownerUserId(req), req.body);
+      // Review 2026-09-07, post-ship follow-up review (B5 remainder): insertCard
+      // + insertLifecycleEvent('created') -- та сама атомарність, що DELETE/
+      // transfer/POST-entries нижче вже мають (T40/T41); без транзакції збій
+      // другого запису лишив би рядок card сиротою, без жодної події в Літописі.
+      const card = await deps.withTransaction((txDb) => cardHandlers.createCard(txDb, ownerUserId(req), req.body));
       res.status(201).json(card);
     })
   );
@@ -199,7 +203,13 @@ export function createApp(deps: AppDeps): express.Express {
   app.patch(
     '/api/v1/cards/:cardId',
     asyncHandler(async (req, res) => {
-      const card = await cardHandlers.updateCard(deps.db, ownerUserId(req), param(req, 'cardId'), req.body);
+      // Review 2026-09-07, post-ship follow-up review (B5 remainder): коли
+      // markFilled:true, updateCard пише і сам патч, і insertLifecycleEvent
+      // ('filled') -- без транзакції збій другого запису лишав би Опис уже
+      // збереженим, попри те, що подія "заповнена" ніколи не записалась.
+      const card = await deps.withTransaction((txDb) =>
+        cardHandlers.updateCard(txDb, ownerUserId(req), param(req, 'cardId'), req.body)
+      );
       res.status(200).json(card);
     })
   );
@@ -221,7 +231,10 @@ export function createApp(deps: AppDeps): express.Express {
   app.post(
     '/api/v1/cards/:cardId/restore',
     asyncHandler(async (req, res) => {
-      const card = await cardHandlers.restoreCard(deps.db, ownerUserId(req), param(req, 'cardId'));
+      // Review 2026-09-07, post-ship follow-up review (B5 remainder): дзеркало
+      // archiveCard -- updateCard(status:'active') + insertLifecycleEvent
+      // ('restored') в одній транзакції, той самий ризик "напівзробленого стану".
+      const card = await deps.withTransaction((txDb) => cardHandlers.restoreCard(txDb, ownerUserId(req), param(req, 'cardId')));
       res.status(200).json(card);
     })
   );
