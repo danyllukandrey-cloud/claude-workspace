@@ -63,6 +63,10 @@ async function verifyTestJwt(token: string): Promise<JwtPayload> {
 async function startServer(db: Db): Promise<{ server: http.Server; baseUrl: string }> {
   const deps: AppDeps = {
     db,
+    // Прохідний no-op (жоден тест цього файлу не архівує картку) -- реальна
+    // транзакційність через BEGIN/COMMIT/ROLLBACK перевіряється окремо
+    // (server/db.test.ts, server/archive-transaction.integration.test.ts, T40).
+    withTransaction: (fn) => fn(db),
     verifyGoogleIdToken: async () => {
       throw new Error('verifyGoogleIdToken не мав викликатись у T31 -- обидва користувачі заведені напряму в БД');
     },

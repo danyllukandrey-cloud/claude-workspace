@@ -53,7 +53,7 @@ async function verifyJwt(token: string): Promise<JwtPayload> {
 }
 
 const db = createDb();
-const app = createApp({ db, verifyGoogleIdToken, signJwt, verifyJwt });
+const app = createApp({ db, withTransaction: db.withTransaction, verifyGoogleIdToken, signJwt, verifyJwt });
 
 app.listen(PORT, () => {
   // eslint-disable-next-line no-console -- немає власного логера (one-person MVP, ADR-0006).

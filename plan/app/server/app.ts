@@ -22,6 +22,14 @@ import { ProgressValidationError } from '../src/cards/life-area-card/domain/prog
 import * as cardHandlers from '../src/cards/life-area-card/ports/card-handlers';
 import * as metricBlockHandlers from '../src/cards/life-area-card/ports/metric-block-handlers';
 import * as entryHandlers from '../src/cards/life-area-card/ports/entry-handlers';
+// Review 2026-09-07 A2/B5: composition root -- ЄДИНЕ місце, де life-area-card
+// і structure зустрічаються (ADR-0004, life-area-card НЕ імпортує structure/
+// напряму). archiveCard приймає closeStructurePosition як опційний
+// колаборатор саме заради цього -- до цього фіксу тут його ніхто не передавав,
+// тож D-69/D-103 у production не спрацьовував НІКОЛИ, попри те, що нижчий
+// рівень (archiveCard() викликаний напряму, migrations.integration.test.ts)
+// це підтверджував.
+import { closeActiveLayoutPositionForCard } from '../src/structure/infra/postgres-repo';
 
 /** Мінімум, потрібний verifyGoogleIdToken -- google-auth-library повертає значно більше полів. */
 export interface GoogleIdTokenPayload {
@@ -45,6 +53,14 @@ export interface SignJwtResult {
  */
 export interface AppDeps {
   db: Db;
+  /**
+   * Review 2026-09-07 B5: реальна атомарність (BEGIN/COMMIT/ROLLBACK,
+   * server/db.ts) -- обов'язковий, не опційний, параметр: без нього
+   * DELETE /cards/{id} (card status + structure layout close, T40/T41)
+   * писав би два незалежних write, знову без транзакції, той самий клас
+   * бага, що це поле й закриває.
+   */
+  withTransaction: <T>(fn: (db: Db) => Promise<T>) => Promise<T>;
   /** Перевіряє Google ID-токен (google-auth-library verifyIdToken у реальній реалізації). */
   verifyGoogleIdToken: (googleIdToken: string) => Promise<GoogleIdTokenPayload>;
   /** Підписує наш HS256 JWT (jose у реальній реалізації) -- sub = app_user.id, exp = now + 24h. */
@@ -169,7 +185,13 @@ export function createApp(deps: AppDeps): express.Express {
   app.delete(
     '/api/v1/cards/:cardId',
     asyncHandler(async (req, res) => {
-      const card = await cardHandlers.archiveCard(deps.db, ownerUserId(req), param(req, 'cardId'));
+      // Review 2026-09-07 A2/B5: обидва write (card.status='archived' +
+      // structure_layout_position.status='closed', якщо позиція є) -- в
+      // ОДНІЙ транзакції через txDb, і closeStructurePosition реально
+      // переданий (раніше -- ніколи, тому D-69/D-103 не діяв у production).
+      const card = await deps.withTransaction((txDb) =>
+        cardHandlers.archiveCard(txDb, ownerUserId(req), param(req, 'cardId'), closeActiveLayoutPositionForCard)
+      );
       res.status(200).json(card);
     })
   );

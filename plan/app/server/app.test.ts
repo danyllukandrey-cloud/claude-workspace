@@ -49,7 +49,11 @@ async function startServer(deps: AppDeps): Promise<{ server: http.Server; baseUr
 }
 
 function noopDeps(db: Db, verifyJwt: AppDeps['verifyJwt']): AppDeps {
-  return { db, verifyGoogleIdToken: vi.fn(), signJwt: vi.fn(), verifyJwt };
+  // withTransaction тут -- прохідний no-op (просто викликає fn з тим самим db), не
+  // реальна транзакція: контроль потоку BEGIN/COMMIT/ROLLBACK перевіряється окремо,
+  // server/db.test.ts (T40). Тести цього файлу перевіряють транспортний шар/error-
+  // middleware, не транзакційність.
+  return { db, withTransaction: (fn) => fn(db), verifyGoogleIdToken: vi.fn(), signJwt: vi.fn(), verifyJwt };
 }
 
 describe('composition root -- auth middleware on mounted routes (T30, D-107)', () => {

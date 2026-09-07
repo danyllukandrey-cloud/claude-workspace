@@ -44,6 +44,7 @@ describe('POST /api/v1/session -- Google ID token -> власний JWT (D-109)'
 
     const { server, baseUrl } = await startServer({
       db,
+      withTransaction: (fn) => fn(db),
       verifyGoogleIdToken,
       signJwt,
       verifyJwt: vi.fn(),
@@ -80,6 +81,7 @@ describe('POST /api/v1/session -- Google ID token -> власний JWT (D-109)'
 
     const { server, baseUrl } = await startServer({
       db,
+      withTransaction: (fn) => fn(db),
       verifyGoogleIdToken,
       signJwt,
       verifyJwt: vi.fn(),
@@ -110,7 +112,7 @@ describe('POST /api/v1/session -- Google ID token -> власний JWT (D-109)'
     const signJwt = vi.fn().mockResolvedValue({ token: 'signed.jwt.token', expiresAt: '2026-09-07T00:00:00.000Z' });
     const verifyJwt = vi.fn();
 
-    const { server, baseUrl } = await startServer({ db, verifyGoogleIdToken, signJwt, verifyJwt });
+    const { server, baseUrl } = await startServer({ db, withTransaction: (fn) => fn(db), verifyGoogleIdToken, signJwt, verifyJwt });
 
     try {
       // Немає Authorization header взагалі -- на відміну від /api/v1/cards, це не 401.
