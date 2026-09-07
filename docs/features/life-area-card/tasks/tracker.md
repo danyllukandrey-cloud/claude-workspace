@@ -43,5 +43,21 @@
 | T36 | UI: SCR-07 Архів карток | ui | TBD | M | T24, T35 | done |
 | T37 | UI: SCR-02 rename state | ui | TBD | S | T24, T21 | done |
 | T38 | Migration: add owner_user_id FK | migration | TBD | S | T1 | done |
+| T39 | Ports: map domain validation errors to contract codes | ports | TBD | S | T21, T23 | todo |
+| T40 | Infra+wiring: transactional archive + real Structure layout close | infra | TBD | M | T10, T15 | todo |
+| T41 | App: wrap conflict-entry and transfer writes in a transaction | app | TBD | M | T40, T18, T17 | todo |
+| T42 | Wiring: connect Claude client, fail-open suspicious-data check | wiring | TBD | S | T12, T21 | todo |
+| T43 | App: reject non-positive targetCount before insert | app | TBD | S | T16 | todo |
+| T44 | Domain: fix conflict detection when sourceDeviceId absent | domain | TBD | S | T8 | todo |
+| T45 | Infra+wiring: per-block offline cache actually read/written | infra | TBD | M | T11 | todo |
+| T46 | UI: SCR-02 Опис edit + mark-filled action | ui | TBD | M | T24, T21 | todo |
+| T47 | UI: wire entry correction + always-visible add-metric-block button | ui | TBD | M | T24, T23 | todo |
+| T48 | UI: 401 recovery on deck load + full-history progress | ui | TBD | M | T25 | todo |
+| T49 | UI: surface add-entry failure, guard double-submit | ui | TBD | S | T26 | todo |
+| T50 | Backend hardening: secret strength, malformed input, terminal-state guards | ports | TBD | M | T30 | todo |
+| T51 | Migrations+tooling: down-migration data loss, drift detection, contract-test types | migration | TBD | M | T5, T32 | todo |
+| T52 | Frontend resilience+accessibility hardening batch | ui | TBD | L | T24 | todo |
 
 **Total:** 38 tasks — 17 S + 18 M + 3 L. Доповнено 2026-08-29 (T32-T38, D-89) — 6 задач на розархівацію/архів/перейменування + 1 крос-фічева FK-міграція. Порівнянно з `agent` (30 задач до доповнення) — реалістично довше за одну сесію навіть у термінах size-matrix (M); у реальному часі — значно довше через темп проєкту (~8-12 год/тиждень, уточнено 2026-08-29 — стара оцінка 1-2 год/тиждень застаріла, [D-87](../../../DECISIONS.md#d-87)).
+
+**Доповнено 2026-09-07** (T39-T52, `/sdd:review` знахідки — `_review/review-2026-09-07.md`) — 14 задач: правки acceptance criteria груп A-C (14 fix-now знахідок) + якісні should-fix групи D-E, об'єднані по спорідненості файлів/шару, а не 1:1 зі знахідками. Разом 52 задачі.
