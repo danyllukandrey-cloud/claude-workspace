@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { CardBack } from './CardBack';
 import type { CardBackData, EntryViewModel } from './types';
 import type { MetricBlockFormValues } from './MetricBlockForm';
@@ -293,6 +293,82 @@ test('A4: "+ Додати блок-метрику" видима і коли в �
   await screen.findByText(/Тренування: 50%/);
 
   expect(screen.getByRole('button', { name: '+ Додати блок-метрику' })).toBeTruthy();
+});
+
+// Review 2026-09-07 E (RED, T52): "невдалий фоновий рефреш після успішного
+// запису знищує весь екран картки, без скасування/порядку відповідей" --
+// refresh() (виклик loadBack ПІСЛЯ успішної мутації) раніше на невдачі
+// робив ТЕ САМЕ, що невдалий ПОЧАТКОВИЙ load (setState('error')), стираючи
+// вже показані дані заради банера помилки. І не мав жодного захисту від
+// out-of-order: друга (пізніше issued) відповідь, що прийшла РАНІШЕ за
+// першу (застарілу), могла бути переписана, щойно перша нарешті приходила.
+
+test('T52: невдалий фоновий refresh (після успішного запису) НЕ стирає вже завантажені дані', async () => {
+  const initial: CardBackData = {
+    metricBlocks: [
+      { id: 'mb1', label: 'Тренування', unit: 'раз', progress: { kind: 'bounded', share: 0.5, overGoal: 0 }, hasPendingEntry: false },
+    ],
+    aggregateProgress: 0.5,
+    entries: [],
+  };
+  const loadBack = vi.fn().mockResolvedValueOnce(initial).mockRejectedValueOnce(new Error('Мережа впала'));
+  const onAddEntry = vi.fn().mockResolvedValue(undefined);
+
+  render(<CardBack loadBack={loadBack} onFlip={vi.fn()} onAddEntry={onAddEntry} />);
+
+  await screen.findByText(/Тренування: 50%/);
+
+  fireEvent.click(screen.getByRole('button', { name: '+' }));
+  fireEvent.change(screen.getByLabelText('Кількість'), { target: { value: '1' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Додати' }));
+
+  await vi.waitFor(() => expect(loadBack).toHaveBeenCalledTimes(2));
+
+  // Дані й досі на екрані -- НЕ замінені банером помилки на весь екран.
+  expect(screen.getByText(/Тренування: 50%/)).toBeTruthy();
+});
+
+test('T52: фоновий refresh ігнорує застарілу (out-of-order) відповідь -- перемагає та, що issued пізніше', async () => {
+  const block = (share: number) => ({
+    id: 'mb1',
+    label: 'Тренування',
+    unit: 'раз',
+    progress: { kind: 'bounded' as const, share, overGoal: 0 },
+    hasPendingEntry: false,
+  });
+  const initial: CardBackData = { metricBlocks: [block(0)], aggregateProgress: 0, entries: [] };
+  const freshData: CardBackData = { metricBlocks: [block(0.6)], aggregateProgress: 0.6, entries: [] };
+  const staleData: CardBackData = { metricBlocks: [block(0.3)], aggregateProgress: 0.3, entries: [] };
+
+  let resolveStaleRefresh: (data: CardBackData) => void = () => {};
+  const loadBack = vi
+    .fn()
+    .mockResolvedValueOnce(initial) // початкове завантаження
+    .mockReturnValueOnce(new Promise<CardBackData>((resolve) => (resolveStaleRefresh = resolve))) // refresh #1 -- зависає
+    .mockResolvedValueOnce(freshData); // refresh #2 -- issued пізніше, резолвиться одразу
+  const onAddEntry = vi.fn().mockResolvedValue(undefined);
+
+  render(<CardBack loadBack={loadBack} onFlip={vi.fn()} onAddEntry={onAddEntry} />);
+  await screen.findByText(/Тренування: 0%/);
+
+  // Триггер #1 -- refresh стає "у польоті", не резолвиться.
+  fireEvent.click(screen.getByRole('button', { name: '+' }));
+  fireEvent.change(screen.getByLabelText('Кількість'), { target: { value: '1' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Додати' }));
+  await vi.waitFor(() => expect(loadBack).toHaveBeenCalledTimes(2));
+
+  // Триггер #2 -- issued ПІЗНІШЕ, резолвиться РАНІШЕ.
+  fireEvent.click(screen.getByRole('button', { name: '+' }));
+  fireEvent.change(screen.getByLabelText('Кількість'), { target: { value: '1' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Додати' }));
+  await screen.findByText(/Тренування: 60%/);
+
+  // Застаріла відповідь #1 нарешті приходить -- має бути ПРОІГНОРОВАНА.
+  await act(async () => {
+    resolveStaleRefresh(staleData);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(screen.getByText(/Тренування: 60%/)).toBeTruthy();
 });
 
 test('D-110: onAddEntry, якщо переданий, прокидається в MetricBlockCard замкнутим над id блоку', async () => {

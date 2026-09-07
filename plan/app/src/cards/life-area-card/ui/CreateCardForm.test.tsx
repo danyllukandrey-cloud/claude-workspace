@@ -62,8 +62,26 @@ test('cancel: без onCancel кнопка "Скасувати" не ренде�
   expect(screen.queryByRole('button', { name: 'Скасувати' })).toBeNull();
 });
 
-test('error: відхилений onCreate (мережа/401) показує Banner з поясненням', async () => {
-  const onCreate = vi.fn().mockRejectedValue(new Error('network down'));
+// Review 2026-09-07 E (T52): "CreateCardForm підміняє реальне повідомлення
+// сервера на загальне" -- раніше КОЖНЕ відхилення onCreate (незалежно від
+// того, чи мало воно змістовний .message) показувало той самий узагальнений
+// текст. Тепер -- як і решта форм цього застосунку (ArchiveCardDialog,
+// MetricBlockCard, T49) -- реальний error.message, якщо він є.
+test('error: відхилений onCreate з Error показує РЕАЛЬНЕ повідомлення сервера, не узагальнений текст', async () => {
+  const onCreate = vi.fn().mockRejectedValue(new Error('Картка з такою назвою вже існує'));
+  render(<CreateCardForm onCreate={onCreate} />);
+
+  fireEvent.change(screen.getByLabelText('Назва'), { target: { value: 'Спорт' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Створити' }));
+
+  const banner = await screen.findByText('Картка з такою назвою вже існує');
+
+  expect(banner.getAttribute('data-variant')).toBe('error');
+  expect(screen.getByRole('button', { name: 'Створити' })).toBeTruthy();
+});
+
+test('error: відхилення БЕЗ Error-інстанса (напр. рядок) падає на дефолтний текст', async () => {
+  const onCreate = vi.fn().mockRejectedValue('network down');
   render(<CreateCardForm onCreate={onCreate} />);
 
   fireEvent.change(screen.getByLabelText('Назва'), { target: { value: 'Спорт' } });
@@ -72,5 +90,4 @@ test('error: відхилений onCreate (мережа/401) показує Ban
   const banner = await screen.findByText('Не вдалося зберегти картку. Перевірте зв’язок і спробуйте ще раз.');
 
   expect(banner.getAttribute('data-variant')).toBe('error');
-  expect(screen.getByRole('button', { name: 'Створити' })).toBeTruthy();
 });

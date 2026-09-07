@@ -77,9 +77,13 @@ export function CreateCardForm({ onCreate, onCancel }: CreateCardFormProps): JSX
       await onCreate({ name: trimmedName });
       setSaving(false);
       setName('');
-    } catch {
+    } catch (error) {
       setSaving(false);
-      setSubmitError(SAVE_FAILED_MESSAGE);
+      // Review 2026-09-07 E (T52): раніше КОЖНЕ відхилення показувало той
+      // самий узагальнений текст, незалежно від того, що насправді сказав
+      // сервер -- той самий фікс, що вже застосований у ArchiveCardDialog/
+      // MetricBlockCard (T49): реальний error.message, якщо він є.
+      setSubmitError(error instanceof Error ? error.message : SAVE_FAILED_MESSAGE);
     }
   }
 

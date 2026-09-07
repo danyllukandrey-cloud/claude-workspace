@@ -96,6 +96,9 @@ function inMemoryStorage(): StoragePort {
     remove: (key: string) => {
       store.delete(key);
     },
+    clear: () => {
+      store.clear();
+    },
   };
 }
 
@@ -245,10 +248,10 @@ describe('T31 -- офлайн-кеш (T11) -> синхронізація -> пр
       // --- Офлайн: запис іде в local-cache.ts (T11), мережі немає -----------
       const storage = inMemoryStorage();
       const offlineEntry = createDomainEntry({ id: crypto.randomUUID(), metricBlockId: block.id, amount: 4 });
-      cacheEntry(storage, card.id, offlineEntry);
+      cacheEntry(storage, ownerId, card.id, offlineEntry);
 
       const goal = { targetCount: block.targetCount as number, isOngoing: block.isOngoing as boolean };
-      const clientProgressBeforeSync = computeProgressFromCache(storage, card.id, block.id, goal);
+      const clientProgressBeforeSync = computeProgressFromCache(storage, ownerId, card.id, block.id, goal);
       // Клієнт локально вважає цей запис confirmed (createEntry без needsReview,
       // domain/entry.ts) -- те саме допущення для "звичайного" офлайн-запису.
       expect(clientProgressBeforeSync).toMatchObject({ kind: 'bounded', share: 0.4 });

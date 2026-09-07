@@ -9,7 +9,7 @@
 //   composition root, компонент лишається presentation-рівнем (ADR-0004).
 
 import { useEffect, useRef, useState } from 'react';
-import { Banner } from '../shared/ui';
+import { Banner, Button } from '../shared/ui';
 
 export interface SessionUser {
   id: string;
@@ -35,8 +35,10 @@ export interface LoginScreenProps {
    * onError -- опційний: реальна реалізація (main.tsx) вантажить GIS-скрипт
    * асинхронно (script blocked, third-party cookies вимкнено тощо) і викликає
    * onError, якщо кнопку не вдалося змонтувати -- LoginScreen показує
-   * повідомлення, сама GIS-кнопка (контейнер) лишається на місці як retry-
-   * афорданс (окремої кнопки "спробувати ще раз" немає).
+   * повідомлення і кнопку "Спробувати ще раз" (Review 2026-09-07 E, T52),
+   * що повторно викликає ЦЕЙ проп -- main.tsx відповідає за те, щоб повторний
+   * виклик дійсно спробував завантажити скрипт заново (не повернув
+   * назавжди-відхилений Promise з попередньої спроби).
    */
   renderGoogleButton: (
     container: HTMLElement,
@@ -50,6 +52,10 @@ const GOOGLE_ERROR_MESSAGE = 'Не вдалося завантажити вхі�
 export function LoginScreen({ requestSession, onLoginSuccess, renderGoogleButton }: LoginScreenProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Review 2026-09-07 E (T52): "Спробувати ще раз" повторно монтує GIS-кнопку
+  // БЕЗ перезавантаження сторінки -- інкремент у deps ефекту тригерить той
+  // самий цикл заново (той самий підхід, що retryToken у DeckScreen.tsx, C14).
+  const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -74,13 +80,24 @@ export function LoginScreen({ requestSession, onLoginSuccess, renderGoogleButton
       setErrorMessage(GOOGLE_ERROR_MESSAGE);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [retryToken]);
 
   return (
     <main style={{ fontFamily: 'system-ui, sans-serif', padding: '2rem' }}>
       <h1>ПЛАН</h1>
       <div ref={containerRef} />
-      {errorMessage && <Banner variant="error" text={errorMessage} />}
+      {errorMessage && (
+        <>
+          <Banner variant="error" text={errorMessage} />
+          <Button
+            label="Спробувати ще раз"
+            onClick={() => {
+              setErrorMessage(null);
+              setRetryToken((token) => token + 1);
+            }}
+          />
+        </>
+      )}
     </main>
   );
 }

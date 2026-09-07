@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { TextField } from './TextField';
 
 test('TextField викликає onChange з новим значенням при вводі', () => {
@@ -73,5 +74,33 @@ test('D-112: клік "✕" закриває хмаринку без запов�
 
   fireEvent.click(screen.getByRole('button', { name: /Закрити підказку/ }));
 
+  expect(screen.queryByRole('tooltip')).toBeNull();
+});
+
+// Review 2026-09-07 E (RED, docs/features/life-area-card/_review/review-2026-09-07.md,
+// T52): "тултip «✕» не закривається через гонку blur/click (і тести це не
+// ловлять — fireEvent.click не імітує blur)". userEvent.click (не fireEvent.click)
+// відтворює РЕАЛЬНУ послідовність pointerdown -> mousedown -> (можлива зміна
+// фокусу) -> mouseup -> click, з тими самими правилами focus-management, що
+// jsdom реалізує для реальних браузерів -- САМЕ тому попередній тест вище
+// (fireEvent.click) не ловив баг: onBlur інпута спрацьовував ПЕРШИМ (миша
+// відводить фокус при mousedown), ховаючи/розмонтовуючи кнопку "✕" ДО того,
+// як click міг спрацювати.
+
+test('D-112 (review 2026-09-07 E): реальний клік "✕" (mousedown -> blur -> click) закриває хмаринку назавжди, не губиться в гонці', async () => {
+  const user = userEvent.setup();
+  render(<TextField label="Назва" value="" onChange={vi.fn()} hint="Наприклад: Спорт" />);
+
+  await user.click(screen.getByLabelText('Назва'));
+  expect(screen.getByRole('tooltip')).toBeTruthy();
+
+  await user.click(screen.getByRole('button', { name: /Закрити підказку/ }));
+
+  expect(screen.queryByRole('tooltip')).toBeNull();
+
+  // D-112: закрита хмаринка НЕ зʼявляється знову для цього монтування,
+  // навіть якщо користувач вийде й зайде в порожнє поле повторно.
+  await user.click(document.body);
+  await user.click(screen.getByLabelText('Назва'));
   expect(screen.queryByRole('tooltip')).toBeNull();
 });

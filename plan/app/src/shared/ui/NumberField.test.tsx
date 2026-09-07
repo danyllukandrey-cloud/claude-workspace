@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { NumberField } from './NumberField';
 
 test('NumberField викликає onChange з числом при вводі', () => {
@@ -51,5 +52,25 @@ test('D-112: клік "✕" закриває хмаринку без запов�
 
   fireEvent.click(screen.getByRole('button', { name: /Закрити підказку/ }));
 
+  expect(screen.queryByRole('tooltip')).toBeNull();
+});
+
+// Review 2026-09-07 E (RED, T52) -- той самий baг/фікс, що TextField.test.tsx:
+// userEvent.click відтворює реальну послідовність mousedown->blur->click,
+// яку fireEvent.click вище не ловить.
+
+test('D-112 (review 2026-09-07 E): реальний клік "✕" (mousedown -> blur -> click) закриває хмаринку назавжди, не губиться в гонці', async () => {
+  const user = userEvent.setup();
+  render(<NumberField label="Ціль" value={null} onChange={vi.fn()} hint="Наприклад: 12" />);
+
+  await user.click(screen.getByLabelText('Ціль'));
+  expect(screen.getByRole('tooltip')).toBeTruthy();
+
+  await user.click(screen.getByRole('button', { name: /Закрити підказку/ }));
+
+  expect(screen.queryByRole('tooltip')).toBeNull();
+
+  await user.click(document.body);
+  await user.click(screen.getByLabelText('Ціль'));
   expect(screen.queryByRole('tooltip')).toBeNull();
 });

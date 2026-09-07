@@ -10,23 +10,32 @@
 // (dependency injection, параметр кожної функції) -- сам ніколи не створює
 // localStorage й не імпортує shared/storage/local.ts. Підстановку реальної
 // реалізації робить викликач (app/main.tsx).
+//
+// Review 2026-09-07 E (T52, "local-cache без прив'язки до власника й без
+// evict при logout"): усі ключі нижче тепер несуть ownerUserId (той самий
+// параметр, що postgres-repo.ts вимагає для non-disclosure, AC-04) --
+// localStorage спільний для ВСІХ Google-акаунтів, що входили в цей браузер
+// на цьому пристрої (ADR-0006 не має server-side сесій, лише JWT), тож без
+// цього кеш ОДНОГО акаунта міг лишитись читомим після виходу й входу ІНШИМ.
+// clearAllCachedData -- викликається на logout (main.tsx), щоб дані
+// попереднього акаунта фізично не лишались у сховищі спільного пристрою.
 
 import type { StoragePort } from '../../../shared/storage/port';
 import type { Entry } from '../domain/entry';
 import { computeProgress } from '../domain/progress';
 import type { MetricBlockGoal, Progress } from '../domain/progress';
 
-function entriesCacheKey(cardId: string): string {
-  return `life-area-card/${cardId}/entries`;
+function entriesCacheKey(ownerUserId: string, cardId: string): string {
+  return `life-area-card/${ownerUserId}/${cardId}/entries`;
 }
 
-export function readCachedEntries(storage: StoragePort, cardId: string): Entry[] {
-  return storage.read<Entry[]>(entriesCacheKey(cardId)) ?? [];
+export function readCachedEntries(storage: StoragePort, ownerUserId: string, cardId: string): Entry[] {
+  return storage.read<Entry[]>(entriesCacheKey(ownerUserId, cardId)) ?? [];
 }
 
-export function cacheEntry(storage: StoragePort, cardId: string, entry: Entry): void {
-  const existing = readCachedEntries(storage, cardId);
-  storage.write(entriesCacheKey(cardId), [...existing, entry]);
+export function cacheEntry(storage: StoragePort, ownerUserId: string, cardId: string, entry: Entry): void {
+  const existing = readCachedEntries(storage, ownerUserId, cardId);
+  storage.write(entriesCacheKey(ownerUserId, cardId), [...existing, entry]);
 }
 
 /**
@@ -36,8 +45,8 @@ export function cacheEntry(storage: StoragePort, cardId: string, entry: Entry): 
  * викликається з main.tsx після кожного успішного завантаження, щоб наступне
  * відкриття офлайн бачило ті самі дані, що бекенд показав востаннє.
  */
-export function cacheEntries(storage: StoragePort, cardId: string, entries: Entry[]): void {
-  storage.write(entriesCacheKey(cardId), entries);
+export function cacheEntries(storage: StoragePort, ownerUserId: string, cardId: string, entries: Entry[]): void {
+  storage.write(entriesCacheKey(ownerUserId, cardId), entries);
 }
 
 // --- Метадані блоків-метрик (D-106, закриває ISS-39; доповнює T11) ---------
@@ -64,17 +73,17 @@ export interface CachedMetricBlock {
   targetDate: string | null;
 }
 
-function metricBlocksCacheKey(cardId: string): string {
-  return `life-area-card/${cardId}/metric-blocks`;
+function metricBlocksCacheKey(ownerUserId: string, cardId: string): string {
+  return `life-area-card/${ownerUserId}/${cardId}/metric-blocks`;
 }
 
-export function readCachedMetricBlocks(storage: StoragePort, cardId: string): CachedMetricBlock[] {
-  return storage.read<CachedMetricBlock[]>(metricBlocksCacheKey(cardId)) ?? [];
+export function readCachedMetricBlocks(storage: StoragePort, ownerUserId: string, cardId: string): CachedMetricBlock[] {
+  return storage.read<CachedMetricBlock[]>(metricBlocksCacheKey(ownerUserId, cardId)) ?? [];
 }
 
 /** Повне заміщення -- GET .../metric-blocks завжди повертає актуальний повний список (не приріст). */
-export function cacheMetricBlocks(storage: StoragePort, cardId: string, blocks: CachedMetricBlock[]): void {
-  storage.write(metricBlocksCacheKey(cardId), blocks);
+export function cacheMetricBlocks(storage: StoragePort, ownerUserId: string, cardId: string, blocks: CachedMetricBlock[]): void {
+  storage.write(metricBlocksCacheKey(ownerUserId, cardId), blocks);
 }
 
 /**
@@ -86,10 +95,23 @@ export function cacheMetricBlocks(storage: StoragePort, cardId: string, blocks: 
  */
 export function computeProgressFromCache(
   storage: StoragePort,
+  ownerUserId: string,
   cardId: string,
   metricBlockId: string,
   goal: MetricBlockGoal,
 ): Progress {
-  const blockEntries = readCachedEntries(storage, cardId).filter((entry) => entry.metricBlockId === metricBlockId);
+  const blockEntries = readCachedEntries(storage, ownerUserId, cardId).filter((entry) => entry.metricBlockId === metricBlockId);
   return computeProgress(goal, blockEntries);
+}
+
+/**
+ * Review 2026-09-07 E (T52): викликається на logout (main.tsx) -- StoragePort
+ * навмисно не дає enumerate/scope-remove за ownerUserId (порт лишається
+ * мінімальним key-value контрактом, ADR-0004), тож найпростіший спосіб
+ * гарантувати "дані попереднього акаунта не лишаються на спільному пристрої"
+ * -- повне очищення. Це ЄДИНЕ сховище цього застосунку в цьому origin (лише
+ * JWT-сесія й цей кеш) -- повне очищення тут не зачіпає нічого стороннього.
+ */
+export function clearAllCachedData(storage: StoragePort): void {
+  storage.clear();
 }

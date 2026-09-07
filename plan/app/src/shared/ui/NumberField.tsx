@@ -58,7 +58,15 @@ export function NumberField({
         <div role="tooltip">
           <span>{required ? 'Обовʼязково' : 'Необовʼязково'}</span>
           <p>{hint}</p>
-          <button type="button" aria-label={`Закрити підказку: ${label}`} onClick={() => setIsHintDismissed(true)}>
+          <button
+            type="button"
+            aria-label={`Закрити підказку: ${label}`}
+            // Review 2026-09-07 E (T52): той самий фікс, що TextField.tsx --
+            // без preventDefault mousedown відводить фокус з інпута ДО click,
+            // хмаринка розмонтовується разом із цією кнопкою, клік губиться.
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => setIsHintDismissed(true)}
+          >
             ✕
           </button>
         </div>

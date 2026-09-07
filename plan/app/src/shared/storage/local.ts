@@ -41,5 +41,12 @@ export function createLocalStorageAdapter(): StoragePort {
         // те саме, що write вище.
       }
     },
+    clear(): void {
+      try {
+        localStorage.clear();
+      } catch {
+        // те саме, що write вище.
+      }
+    },
   };
 }

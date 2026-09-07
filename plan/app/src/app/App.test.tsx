@@ -229,6 +229,34 @@ test('ISS-55 stage 2: клік на тайл картки в Колоді від
   expect(props.loadCard).toHaveBeenCalledTimes(1);
 });
 
+// Review 2026-09-07 E (RED, T52): "loadCard/loadBack порушують задокументований
+// контракт референційної стабільності" -- App.tsx передавав CardDetailScreen
+// НОВУ лямбду `() => loadCard(screen.cardId)` щорендера (той самий баг, що
+// DeckScreen.loadCards уже документує НЕ мати -- див. коментар у
+// DeckScreen.tsx "Контракт: має бути референційно стабільною"). CardFace/
+// CardBack перезапускають свій useEffect(..., [loadCard]) на КОЖНУ зміну
+// посилання -- нестабільна функція означає повторний непотрібний запит
+// щоразу, як App перерендериться з будь-якої іншої причини.
+
+test('T52: loadCard передається в CardDetailScreen референційно стабільним -- повторний рендер App без навігації НЕ викликає його знову', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
+
+  const { rerender } = render(<App {...props} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Спорт' }));
+  await screen.findByRole('heading', { name: 'Спорт' });
+  expect(props.loadCard).toHaveBeenCalledTimes(1);
+
+  // Той самий App, ті самі пропи -- НЕ навігація, просто повторний рендер
+  // (той самий стимул, що спричинив би React перерендерити App з будь-якої
+  // ІНШОЇ причини -- наприклад, оновлення в іншій частині дерева пропів).
+  rerender(<App {...props} />);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  expect(props.loadCard).toHaveBeenCalledTimes(1);
+});
+
 test('ISS-55 stage 2: кнопка "← Назад" у деталях картки повертає на Колоду з повторним завантаженням', async () => {
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);

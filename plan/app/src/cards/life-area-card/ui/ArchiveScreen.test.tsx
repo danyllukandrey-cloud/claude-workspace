@@ -130,6 +130,37 @@ test('card-view: клік на тайл архіву відкриває карт
   expect(await screen.findByText('Історія записів')).toBeTruthy();
 });
 
+// Review 2026-09-07 E (RED, T52): "з картки в архіві немає повернення до
+// списку архіву" -- card-view раніше не мав жодного способу повернутись,
+// окрім кнопки "Розархівувати" (яка змінює саму картку, а не просто
+// закриває перегляд). Той самий текст кнопки, що App.tsx уже використовує
+// для інших "назад" (CardDetailScreen, ArchiveScreen-обгортка в App.tsx).
+
+test('card-view: кнопка "← Назад" повертає до списку архіву (без повторного GET), картки лишаються тими самими', async () => {
+  const items = [
+    { id: 'card-1', name: 'Читання' },
+    { id: 'card-2', name: 'Біг' },
+  ];
+  const loadArchivedCards = vi.fn().mockResolvedValue(items);
+
+  render(
+    <ArchiveScreen
+      loadArchivedCards={loadArchivedCards}
+      onRestoreCard={vi.fn()}
+      loadArchivedCardHistory={vi.fn().mockResolvedValue([])}
+    />,
+  );
+
+  fireEvent.click(await screen.findByText('Читання'));
+  await screen.findByRole('heading', { name: 'Читання' });
+
+  fireEvent.click(screen.getByRole('button', { name: '← Назад' }));
+
+  expect(await screen.findByText('Біг')).toBeTruthy();
+  expect(screen.queryByRole('heading', { name: 'Читання' })).toBeNull();
+  expect(loadArchivedCards).toHaveBeenCalledTimes(1); // не перезавантажило список
+});
+
 test('card-view: показує історію записів (AC-18) після резолву loadArchivedCardHistory', async () => {
   const items = [{ id: 'card-1', name: 'Читання' }];
   const loadArchivedCards = vi.fn().mockResolvedValue(items);

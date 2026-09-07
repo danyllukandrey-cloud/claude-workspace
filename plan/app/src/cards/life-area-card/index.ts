@@ -34,5 +34,6 @@ export {
   readCachedMetricBlocks,
   cacheMetricBlocks,
   computeProgressFromCache,
+  clearAllCachedData,
 } from './infra/local-cache';
 export type { CachedMetricBlock } from './infra/local-cache';

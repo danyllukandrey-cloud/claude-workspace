@@ -37,13 +37,22 @@ export function ArchiveCardDialog({
   // error === null -> default стан (SCR-06). Непорожній рядок -> error стан
   // (404 card.not_found / мережева помилка), рендериться Banner.
   const [error, setError] = useState<string | null>(null);
+  // Review 2026-09-07 E (T52): захист від подвійного сабміту -- швидкий
+  // повторний клік по "Архівувати", поки перший DELETE ще в польоті, раніше
+  // викликав onArchive вдруге. Скидається і на успіх (теоретично), і на
+  // невдачу -- інакше провалена спроба назавжди заблокувала б retry.
+  const [isArchiving, setIsArchiving] = useState(false);
 
   const handleConfirm = (): void => {
+    if (isArchiving) return;
     setError(null);
-    onArchive().catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : 'Не вдалося архівувати картку';
-      setError(message);
-    });
+    setIsArchiving(true);
+    onArchive()
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : 'Не вдалося архівувати картку';
+        setError(message);
+      })
+      .finally(() => setIsArchiving(false));
   };
 
   return (
@@ -54,6 +63,7 @@ export function ArchiveCardDialog({
         cancelLabel="Скасувати"
         onConfirm={handleConfirm}
         onCancel={onCancel}
+        confirmDisabled={isArchiving}
       />
       {error !== null && <Banner variant="error" text={error} />}
     </div>

@@ -15,6 +15,8 @@ export interface StoragePort {
   read<T>(key: string): T | null;
   write<T>(key: string, value: T): void;
   remove(key: string): void;
+  /** Review 2026-09-07 E (T52): очищає ВСЕ сховище -- викликається на logout (local-cache.ts:clearAllCachedData). */
+  clear(): void;
 }
 
 /** Версія формату збережених даних. Потрібна для майбутньої міграції старих даних. */

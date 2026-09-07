@@ -13,7 +13,7 @@
 // картки. Дані й дії приходять як ін'єктовані пропси-функції, що повертають
 // Promise; компонент сам керує локальним станом (loading/error/
 // historyExpanded/колізія перейменування) навколо їхнього виклику.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Banner, Button, EmptyState, Spinner, TextField } from '../../../shared/ui';
 import { EntryHistoryList } from './EntryHistoryList';
 import { MetricBlockCard } from './MetricBlockCard';
@@ -65,6 +65,15 @@ export function CardBack({
   const [renameValue, setRenameValue] = useState('');
   const [collisionError, setCollisionError] = useState<string | undefined>(undefined);
   const [isCreatingBlock, setIsCreatingBlock] = useState(false);
+  // Review 2026-09-07 E (T52): фоновий refresh (після успішної мутації) --
+  // окремий, неблокуючий стан помилки, ніколи не `setState('error')` (той
+  // самий шлях, що ПОЧАТКОВЕ завантаження) -- інакше невдалий фоновий
+  // перезапит стирав уже показані дані заради банера на весь екран.
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  // Лічильник issued-запитів refresh(): відповідь застосовується, лише якщо
+  // вона від НАЙОСТАННІШОГО виклику -- застаріла (out-of-order) відповідь,
+  // що прийшла пізніше свіжішої, ігнорується, а не переписує стан.
+  const refreshRequestIdRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,16 +97,27 @@ export function CardBack({
     };
   }, [loadBack]);
 
-  /** Перевантажує зворот після мутації (створення блоку, новий запис) -- той самий loadBack, без окремого стану "loading" (дані вже видимі). */
+  /**
+   * Перевантажує зворот після мутації (створення блоку, новий запис) -- той
+   * самий loadBack, без окремого стану "loading" (дані вже видимі).
+   * Review 2026-09-07 E (T52): помилка тут НЕ рве екран (refreshError,
+   * неблокуючий Banner НАД уже показаними даними), і кожен виклик несе свій
+   * id -- відповідь застосовується, лише якщо жоден ПІЗНІШИЙ refresh() ще не
+   * встиг стартувати (запобігає застарілій out-of-order відповіді
+   * переписати свіжішу).
+   */
   const refresh = (): void => {
+    const requestId = ++refreshRequestIdRef.current;
     loadBack()
       .then((result) => {
+        if (refreshRequestIdRef.current !== requestId) return; // застаріла -- ігноруємо
         setData(result);
         setRenameValue(result.pendingTransferCollision?.label ?? '');
+        setRefreshError(null);
       })
       .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : FALLBACK_ERROR_TEXT);
-        setState('error');
+        if (refreshRequestIdRef.current !== requestId) return;
+        setRefreshError(err instanceof Error ? err.message : FALLBACK_ERROR_TEXT);
       });
   };
 
@@ -149,6 +169,10 @@ export function CardBack({
 
   return (
     <div>
+      {/* Review 2026-09-07 E (T52): фоновий refresh невдалий -- НЕблокуючий
+          банер над уже показаними даними, не заміна всього екрана. */}
+      {refreshError !== null && <Banner variant="error" text={refreshError} />}
+
       {/* AC-14/AC-15: перенос уже стався зовні -- тут лише пропозиція
           перейменувати, коли він зіткнувся з наявним блоком тієї ж картки. */}
       {data.pendingTransferCollision && (

@@ -43,4 +43,21 @@ describe('createLocalStorageAdapter (T45)', () => {
     expect(storage.read('to-remove')).toBeNull();
     expect(localStorage.getItem('to-remove')).toBeNull();
   });
+
+  // Review 2026-09-07 E (T52): clear() -- викликається на logout
+  // (local-cache.ts:clearAllCachedData), щоб дані попереднього акаунта не
+  // лишались читомими на спільному пристрої після виходу.
+  it('clear справді очищає ВСІ ключі, не лише один', () => {
+    const storage = createLocalStorageAdapter();
+    storage.write('life-area-card/user-1/card-1/entries', [{ id: 'entry-1' }]);
+    storage.write('life-area-card/user-1/card-2/metric-blocks', [{ id: 'block-1' }]);
+    storage.write('plan.jwt', { token: 'abc' });
+
+    storage.clear();
+
+    expect(storage.read('life-area-card/user-1/card-1/entries')).toBeNull();
+    expect(storage.read('life-area-card/user-1/card-2/metric-blocks')).toBeNull();
+    expect(storage.read('plan.jwt')).toBeNull();
+    expect(localStorage.length).toBe(0);
+  });
 });

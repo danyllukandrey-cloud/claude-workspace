@@ -50,6 +50,7 @@ import {
   cacheEntries,
   cacheEntry,
   cacheMetricBlocks,
+  clearAllCachedData,
   computeProgressFromCache,
   readCachedEntries,
   readCachedMetricBlocks,
@@ -154,9 +155,37 @@ function writeStoredSession(session: StoredSession): void {
   localStorage.setItem(JWT_STORAGE_KEY, JSON.stringify(session));
 }
 
-/** Стирає сесію зі сховища (кнопка "Вийти", ISS-58). */
+/** Стирає сесію зі сховища (кнопка "Вийти", ISS-58). Review 2026-09-07 E (T52): також очищає весь офлайн-кеш (clearAllCachedData) -- інакше дані щойно вийшлого акаунта лишаються читомими на спільному пристрої для наступного, хто увійде. */
 function clearStoredSession(): void {
   localStorage.removeItem(JWT_STORAGE_KEY);
+  clearAllCachedData(storage);
+}
+
+/**
+ * Review 2026-09-07 E (T52, local-cache namespacing): наш власний JWT несе
+ * `sub` = app_user.id (ADR-0006 §Додаток, той самий sub, що server/app.ts
+ * кладе в req.ownerUserId) -- ДЕКОДУЄМО (не верифікуємо -- підпис перевіряє
+ * лише сервер, тут довіряємо власному щойно виданому токену) середній сегмент
+ * (payload), щоб мати ownerUserId для ключів кешу без окремого мережевого
+ * виклику. `null`, якщо сесії нема чи токен не JWT-форми -- викликачі
+ * (loadBack/addEntry) підставляють порожній рядок як безпечний fallback
+ * (кеш просто не намespaced для цього єдиного виклику, не крах).
+ */
+function currentOwnerUserId(): string | null {
+  const token = readStoredSession()?.token;
+  if (!token) return null;
+
+  const payloadSegment = token.split('.')[1];
+  if (!payloadSegment) return null;
+
+  try {
+    const base64 = payloadSegment.replace(/-/g, '+').replace(/_/g, '/');
+    const json = atob(base64);
+    const payload = JSON.parse(json) as { sub?: string };
+    return payload.sub ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function now(): Date {
@@ -189,25 +218,37 @@ async function requestSession(googleIdToken: string): Promise<SessionResult> {
 // кількості одночасних монтувань.
 let gisScriptPromise: Promise<void> | null = null;
 
-/** Вантажить GIS-скрипт один раз (idempotent -- усі виклики діляться тим самим Promise). */
+/**
+ * Вантажить GIS-скрипт один раз (idempotent -- усі виклики діляться тим самим
+ * Promise, поки він не відхилений).
+ *
+ * Review 2026-09-07 E (T52, "помилка завантаження GIS-скрипта кешується
+ * назавжди, попри задокументований retry-афорданс"): раніше відхилений
+ * Promise лишався в gisScriptPromise НАЗАВЖДИ -- будь-який наступний виклик
+ * (LoginScreen.onError -> користувач тисне "Спробувати ще раз") просто
+ * повертав ТОЙ САМИЙ уже відхилений Promise, без жодної реальної повторної
+ * спроби, аж до фізичного перезавантаження сторінки (яке одне лише й скидало
+ * б цю module-level змінну). Тепер на відхилення: (1) прибираємо старий
+ * <script>-тег -- браузер не повторить мережевий запит для тега, що вже
+ * зафейлився, лише для НОВОГО; (2) скидаємо кеш-змінну, щоб наступний виклик
+ * дійсно почав спробу заново.
+ */
 function loadGoogleIdentityScript(): Promise<void> {
   if (gisScriptPromise) return gisScriptPromise;
 
-  gisScriptPromise = new Promise((resolve, reject) => {
+  const attempt = new Promise<void>((resolve, reject) => {
     const existing = document.querySelector<HTMLScriptElement>(`script[src="${GIS_SCRIPT_SRC}"]`);
-    if (existing) {
-      // Тег уже доданий (напр. HMR перезапустив цей модуль, але DOM лишився) --
-      // якщо він і справді вже довантажився раніше, window.google вже є, і
-      // подія `load` вдруге не спрацює -- перевіряємо це явно, а не лише
-      // чекаємо подію.
-      if (window.google) {
-        resolve();
-        return;
-      }
-      existing.addEventListener('load', () => resolve());
-      existing.addEventListener('error', () => reject(new Error('Не вдалося завантажити скрипт Google Identity Services')));
+    if (existing && window.google) {
+      // Тег уже доданий і справді довантажився раніше (напр. HMR перезапустив
+      // цей модуль, але DOM лишився) -- подія `load` вдруге не спрацює,
+      // перевіряємо це явно, а не лише чекаємо подію.
+      resolve();
       return;
     }
+    // Будь-який попередній тег (успішний без window.google -- недосяжно вище,
+    // чи зафейлений) прибираємо: новий тег нижче гарантовано зробить свіжий
+    // мережевий запит, не покладаючись на стан старого.
+    existing?.remove();
 
     const script = document.createElement('script');
     script.src = GIS_SCRIPT_SRC;
@@ -218,7 +259,12 @@ function loadGoogleIdentityScript(): Promise<void> {
     document.head.appendChild(script);
   });
 
-  return gisScriptPromise;
+  gisScriptPromise = attempt;
+  attempt.catch(() => {
+    gisScriptPromise = null;
+  });
+
+  return attempt;
 }
 
 function renderGoogleButton(
@@ -297,17 +343,18 @@ async function loadCard(cardId: string): Promise<CardFaceData> {
  * оригінальну мережеву помилку, а не мовчки повертаємо порожню картку.
  */
 function loadBackFromCache(cardId: string): CardBackData | null {
-  const cachedBlocks = readCachedMetricBlocks(storage, cardId);
+  const ownerUserId = currentOwnerUserId() ?? '';
+  const cachedBlocks = readCachedMetricBlocks(storage, ownerUserId, cardId);
   if (cachedBlocks.length === 0) return null;
 
-  const cachedEntries = readCachedEntries(storage, cardId);
+  const cachedEntries = readCachedEntries(storage, ownerUserId, cardId);
   const metricBlocks: MetricBlockViewModel[] = cachedBlocks.map((block) => {
     const goal: MetricBlockGoal = { targetCount: block.targetCount, isOngoing: block.isOngoing };
     return {
       id: block.id,
       label: block.label,
       unit: block.unit,
-      progress: computeProgressFromCache(storage, cardId, block.id, goal),
+      progress: computeProgressFromCache(storage, ownerUserId, cardId, block.id, goal),
       hasPendingEntry: cachedEntries.some((entry) => entry.metricBlockId === block.id && entry.status === 'pending'),
     };
   });
@@ -392,8 +439,9 @@ async function loadBack(cardId: string): Promise<CardBackData> {
   // review C13): наступне відкриття офлайн бачить рівно те, що бекенд щойно
   // показав, не застарілий чи частковий стан. Кеш теж отримує ПОВНИЙ набір
   // записів (усі сторінки), не лише першу -- той самий фікс, що C15 нижче.
-  cacheMetricBlocks(storage, cardId, blocks.map(toCachedMetricBlock));
-  cacheEntries(storage, cardId, allEntries.map(toDomainEntry));
+  const ownerUserId = currentOwnerUserId() ?? '';
+  cacheMetricBlocks(storage, ownerUserId, cardId, blocks.map(toCachedMetricBlock));
+  cacheEntries(storage, ownerUserId, cardId, allEntries.map(toDomainEntry));
 
   // D-106: `blocks` -- лише метадані (label/unit/targetCount/isOngoing), БЕЗ
   // прогресу. Прогрес кожного блоку рахуємо тут з сирих подій (RawEntry) --
@@ -584,7 +632,7 @@ async function addEntry(cardId: string, metricBlockId: string, amount: number): 
   // страхує вікно МІЖ "запис прийнято" і "перезавантаження завершилось",
   // щоб застосунок не показав застарілий кеш, якщо мережа зникне саме тоді.
   const entry = (await response.json()) as EntryDto;
-  cacheEntry(storage, cardId, toDomainEntry(entry));
+  cacheEntry(storage, currentOwnerUserId() ?? '', cardId, toDomainEntry(entry));
 }
 
 const root = document.getElementById('root');

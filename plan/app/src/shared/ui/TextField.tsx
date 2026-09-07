@@ -66,7 +66,20 @@ export function TextField({
         <div role="tooltip">
           <span>{required ? 'Обовʼязково' : 'Необовʼязково'}</span>
           <p>{hint}</p>
-          <button type="button" aria-label={`Закрити підказку: ${label}`} onClick={() => setIsHintDismissed(true)}>
+          <button
+            type="button"
+            aria-label={`Закрити підказку: ${label}`}
+            // Review 2026-09-07 E (T52): без preventDefault тут mousedown на цій
+            // кнопці спершу відводить фокус з інпута (реальний браузер) -> onBlur
+            // ставить isFocused=false -> хмаринка (разом із цією кнопкою)
+            // розмонтовується ДО того, як встигає спрацювати click -- клік
+            // губиться, хмаринка "не закривається" (з'являється знову при
+            // наступному фокусі). preventDefault на mousedown стримує стандартну
+            // дію браузера "перенести фокус", інпут лишається сфокусованим, click
+            // встигає спрацювати штатно.
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => setIsHintDismissed(true)}
+          >
             ✕
           </button>
         </div>

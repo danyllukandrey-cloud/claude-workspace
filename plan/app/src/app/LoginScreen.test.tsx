@@ -17,7 +17,7 @@
 // root (майбутній main.tsx/App.tsx), компонент лишається presentation-рівнем
 // без знання про транспорт (ADR-0004).
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { LoginScreen } from './LoginScreen';
 import type { SessionResult } from './LoginScreen';
 
@@ -80,4 +80,42 @@ test('при відхиленні requestSession (401 auth.invalid_google_token)
 
   expect(await screen.findByText(INVALID_TOKEN_MESSAGE)).toBeTruthy();
   expect(onLoginSuccess).not.toHaveBeenCalled();
+});
+
+// Review 2026-09-07 E (RED, T52): "помилка завантаження GIS-скрипта
+// кешується назавжди, попри задокументований retry-афорданс" -- досі
+// ЄДИНИМ способом повторити спробу було перезавантажити всю сторінку
+// (main.tsx кешує Promise на рівні модуля назавжди). Тепер кнопка
+// "Спробувати ще раз" повторно викликає injected renderGoogleButton --
+// реальна реалізація (main.tsx) відповідає за те, щоб ЦЕЙ повторний
+// виклик дійсно спробував завантажити скрипт заново, не повернув той
+// самий відхилений Promise.
+
+test('онError від renderGoogleButton показує Banner І кнопку "Спробувати ще раз"', () => {
+  const renderGoogleButton = vi.fn((_container: HTMLElement, _onCredential: unknown, onError?: (message: string) => void) => {
+    onError?.('Не вдалося завантажити вхід через Google -- спробуйте ще раз');
+  });
+
+  render(
+    <LoginScreen requestSession={vi.fn()} onLoginSuccess={vi.fn()} renderGoogleButton={renderGoogleButton} />,
+  );
+
+  expect(screen.getByText('Не вдалося завантажити вхід через Google -- спробуйте ще раз')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Спробувати ще раз' })).toBeTruthy();
+});
+
+test('клік "Спробувати ще раз" повторно викликає renderGoogleButton, без перезавантаження сторінки', () => {
+  const renderGoogleButton = vi.fn((_container: HTMLElement, _onCredential: unknown, onError?: (message: string) => void) => {
+    onError?.('Не вдалося завантажити вхід через Google -- спробуйте ще раз');
+  });
+
+  render(
+    <LoginScreen requestSession={vi.fn()} onLoginSuccess={vi.fn()} renderGoogleButton={renderGoogleButton} />,
+  );
+
+  expect(renderGoogleButton).toHaveBeenCalledTimes(1);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Спробувати ще раз' }));
+
+  expect(renderGoogleButton).toHaveBeenCalledTimes(2);
 });

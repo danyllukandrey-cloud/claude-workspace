@@ -5,7 +5,7 @@
 // writeStoredSession/now -- ін'єктовані, компонент не знає, що це
 // localStorage['plan.jwt'] і Date.now() (composition root -- main.tsx).
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ArchiveScreen, CardDetailScreen, CreateCardForm, DeckScreen } from '../cards/life-area-card';
 import type { CardBackData, CardFaceData, DeckGridItem, EntryViewModel, MetricBlockFormValues } from '../cards/life-area-card';
 import { Button } from '../shared/ui';
@@ -93,6 +93,18 @@ export function App({
   const [session, setSession] = useState<StoredSession | null>(() => readStoredSession());
   const [screen, setScreen] = useState<Screen>({ screen: 'deck' });
 
+  // Review 2026-09-07 E (T52): "loadCard/loadBack порушують задокументований
+  // контракт референційної стабільності" (той самий контракт, що
+  // DeckScreen.loadCards уже документує -- DeckScreen.tsx, "Контракт: має
+  // бути референційно стабільною"). Інлайн-лямбди `() => loadCard(screen.cardId)`
+  // прямо в JSX перестворювались щорендера App -- CardFace/CardBack
+  // перезапускали свій useEffect(..., [loadCard]) на КОЖНУ таку зміну
+  // посилання, не лише при реальній навігації на іншу картку. useCallback,
+  // ключ -- сам cardId (з'явиться поза 'detail' -- undefined, стабільно).
+  const detailCardId = screen.screen === 'detail' ? screen.cardId : undefined;
+  const loadCardForDetail = useCallback(() => loadCard(detailCardId as string), [detailCardId, loadCard]);
+  const loadBackForDetail = useCallback(() => loadBack(detailCardId as string), [detailCardId, loadBack]);
+
   if (isSessionValid(session, now)) {
     return (
       <main style={{ fontFamily: 'system-ui, sans-serif', padding: '2rem' }}>
@@ -108,8 +120,8 @@ export function App({
         )}
         {screen.screen === 'detail' && (
           <CardDetailScreen
-            loadCard={() => loadCard(screen.cardId)}
-            loadBack={() => loadBack(screen.cardId)}
+            loadCard={loadCardForDetail}
+            loadBack={loadBackForDetail}
             onRename={(name) => onRename(screen.cardId, name)}
             onBack={() => setScreen({ screen: 'deck' })}
             onArchive={() => archiveCard(screen.cardId)}

@@ -124,6 +124,11 @@ export function ArchiveScreen({
         });
     };
 
+    // Review 2026-09-07 E (T52): "з картки в архіві немає повернення до
+    // списку архіву" -- лише закриває card-view (той самий список `items`,
+    // ЖОДНОГО повторного loadArchivedCards), не чіпає саму картку.
+    const handleBack = (): void => setState({ status: 'list', items });
+
     return (
       <div>
         <h1>Архів карток</h1>
@@ -150,6 +155,7 @@ export function ArchiveScreen({
                 </ul>
               </div>
             )}
+            <Button label="← Назад" onClick={handleBack} />
           </div>
           }
           back={null}

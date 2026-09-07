@@ -56,7 +56,7 @@
 | T49 | UI: surface add-entry failure, guard double-submit | ui | TBD | S | T26 | done |
 | T50 | Backend hardening: secret strength, malformed input, terminal-state guards | ports | TBD | M | T30 | done |
 | T51 | Migrations+tooling: down-migration data loss, drift detection, contract-test types | migration | TBD | M | T5, T32 | done |
-| T52 | Frontend resilience+accessibility hardening batch | ui | TBD | L | T24 | todo |
+| T52 | Frontend resilience+accessibility hardening batch | ui | TBD | L | T24 | done |
 
 **Total:** 38 tasks — 17 S + 18 M + 3 L. Доповнено 2026-08-29 (T32-T38, D-89) — 6 задач на розархівацію/архів/перейменування + 1 крос-фічева FK-міграція. Порівнянно з `agent` (30 задач до доповнення) — реалістично довше за одну сесію навіть у термінах size-matrix (M); у реальному часі — значно довше через темп проєкту (~8-12 год/тиждень, уточнено 2026-08-29 — стара оцінка 1-2 год/тиждень застаріла, [D-87](../../../DECISIONS.md#d-87)).
 
