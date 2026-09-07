@@ -149,10 +149,6 @@ export function CardBack({
 
   return (
     <div>
-      <button type="button" onClick={onFlip}>
-        ← лицьова
-      </button>
-
       {/* AC-14/AC-15: перенос уже стався зовні -- тут лише пропозиція
           перейменувати, коли він зіткнувся з наявним блоком тієї ж картки. */}
       {data.pendingTransferCollision && (
@@ -193,6 +189,16 @@ export function CardBack({
         Історія записів {historyExpanded ? '▴' : '▾'}
       </button>
       {historyExpanded && <EntryHistoryList entries={data.entries} onFlagEntry={handleFlagEntry} />}
+
+      {/* D-111 (docs/DECISIONS.md, виправлено): "← лицьова" -- ОСТАННІЙ
+          елемент, унизу -- те саме місце, де на лицьовій стороні стоїть
+          "перегорнути →" (CardFace.tsx). Живе тестування (скріншоти):
+          користувач бачив кнопки вгорі на звороті й унизу на лиці -- це не
+          "згруповано по стороні", а буквально ОДНЕ Й ТЕ САМЕ місце на обох
+          сторонах, інакше доводиться щоразу шукати кнопки заново. */}
+      <button type="button" onClick={onFlip}>
+        ← лицьова
+      </button>
     </div>
   );
 }

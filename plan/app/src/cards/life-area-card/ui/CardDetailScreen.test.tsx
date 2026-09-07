@@ -160,11 +160,13 @@ test('ISS-60/D-110: onCreateMetricBlock/onAddEntry, якщо передані, �
   expect(onAddEntry).not.toHaveBeenCalled();
 });
 
-// D-111 (docs/DECISIONS.md): навігаційні кнопки одного класу (перегортання +
-// повернення до Колоди) стоять РАЗОМ на кожній стороні -- живе тестування
-// показало, що на лиці вони були розкидані (одна вгорі, одна внизу).
+// D-111 (docs/DECISIONS.md, виправлено живим тестуванням/скріншотами):
+// навігаційні кнопки одного класу (перегортання + повернення до Колоди)
+// стоять В ОДНОМУ Й ТОМУ Ж МІСЦІ на обох сторонах -- унизу, а не просто
+// "згруповані по стороні" (перша спроба показала кнопки вгорі на звороті й
+// унизу на лиці -- користувачу доводилось щоразу шукати їх заново).
 
-test('D-111: на лицьовій стороні "← Назад" стоїть ПІСЛЯ "перегорнути →" (внизу, поруч)', async () => {
+test('D-111: на лицьовій стороні "← Назад" стоїть ПІСЛЯ "перегорнути →" (внизу)', async () => {
   const props = baseProps();
   const { container } = render(<CardDetailScreen {...props} />);
   await screen.findByText('Спорт');
@@ -177,7 +179,7 @@ test('D-111: на лицьовій стороні "← Назад" стоїть 
   expect(backIndex).toBeGreaterThan(flipIndex);
 });
 
-test('D-111: на звороті "← Назад" стоїть ПЕРЕД "← лицьова" (вгорі, поруч, без змін)', async () => {
+test('D-111: на звороті "← Назад" стоїть ПІСЛЯ "← лицьова" (унизу -- те саме місце, що на лиці)', async () => {
   const props = baseProps();
   const { container } = render(<CardDetailScreen {...props} />);
 
@@ -185,9 +187,9 @@ test('D-111: на звороті "← Назад" стоїть ПЕРЕД "← �
   await screen.findByText('Ще немає жодної активної метрики');
 
   const buttons = Array.from(container.querySelectorAll('button')).map((button) => button.textContent);
-  const backIndex = buttons.findIndex((text) => text === '← Назад');
   const flipIndex = buttons.findIndex((text) => text?.includes('лицьова'));
+  const backIndex = buttons.findIndex((text) => text === '← Назад');
 
-  expect(backIndex).toBeGreaterThan(-1);
-  expect(backIndex).toBeLessThan(flipIndex);
+  expect(flipIndex).toBeGreaterThan(-1);
+  expect(backIndex).toBeGreaterThan(flipIndex);
 });
