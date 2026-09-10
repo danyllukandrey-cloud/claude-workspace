@@ -2,7 +2,7 @@
 status: Draft
 owner: "Андрій"
 reviewers: ["<implementing engineer>", "Tech Lead"]
-updated_at: "2026-08-29"
+updated_at: "2026-09-07"
 feature_size: "M"
 ---
 
@@ -36,6 +36,7 @@ feature_size: "M"
 | AC-07 happy | an unmeasurable goal is accepted once turned into a measurable one | integration | metric-block created with the agreed measurable target |
 | AC-08 happy | a card with no metric-block stays usable but never reaches "actively tracked" | unit | card remains declarative-only |
 | AC-09 happy | opening a card shows computed share of completion per metric-block and aggregate | unit | correct shares returned for confirmed entries |
+| AC-09 formula (D-105, closes ISS-33) | aggregate is the mean of bounded metric-blocks only, and null when the card has none | unit | ongoing (no-deadline) blocks excluded from the average; a card with zero bounded blocks returns `null`, not `0` |
 | AC-09b domain invariant | a metric-block over its goal is capped, not shown above full | unit | share capped at 100%, overage noted separately |
 | AC-10 happy | inconsistent data is flagged without blocking the rest of the card | integration | warning explanation present, other fields still readable |
 | AC-11 domain invariant | a record that arrived while unreviewable stays out of progress until reviewed | integration | pending until explicit review, then resolved |
@@ -44,9 +45,10 @@ feature_size: "M"
 | AC-14 happy | a metric-block moved from a closing card arrives with its full history | integration | destination card's progress and history include the moved entries |
 | AC-15 error | a name+unit collision on transfer is rejected, not silently merged | integration | transfer blocked until a new label is supplied |
 | AC-16 happy | deleting a card soft-archives it | integration | card gone from the active deck, technically recoverable |
-| AC-17 happy | restoring an archived card | integration | status returns to active, card back in the default deck, layout position untouched |
+| AC-17 happy (виправлено, D-104) | restoring an archived card places it back without a cell | integration | status returns to active, card is back in the default deck WITHOUT an assigned layout cell — the user places it manually (D-104), same pattern as `structure/spec.md` AC-11b |
 | AC-17 error | restoring a card that isn't archived | integration | rejected with `card.not_archived`, nothing changed |
 | AC-18 happy | listing archived cards | integration | only archived cards returned, newest first; default listing unaffected |
+| AC-18 card-view (ISS-48) | opening an archived card shows read-only history, no new-entry action | component | entry history renders for the archived card; no control to add a new record is present |
 | AC-19 happy | renaming a card via inline edit | component | new name saved, deck and Structure history reflect it |
 
 ## Edge cases / error paths

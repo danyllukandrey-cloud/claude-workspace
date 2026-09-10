@@ -7,7 +7,7 @@ acs: ["AC-04"]
 files_hint: ["plan/app/src/cards/life-area-card/ui/DeckScreen.tsx"]
 owner: "TBD"
 estimate: "M"
-status: "todo"
+status: "done"
 ---
 
 # T25 — UI: SCR-01 Колода карток
@@ -22,5 +22,5 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Component test: усі 4 стани зі `screens.md` SCR-01 рендеряться за відповідним триггером
-- [ ] lint + vet clean
+- [x] Component test: усі 4 стани зі `screens.md` SCR-01 рендеряться за відповідним триггером
+- [x] lint + vet clean

@@ -4,7 +4,7 @@ title: "Tests: cross-cutting integration (cross-user isolation + Claude-unavaila
 layer: "tests"
 deps: ["T29"]
 acs: ["AC-06"]
-files_hint: ["plan/backend/src/agent/"]
+files_hint: ["plan/app/src/agent/"]
 owner: "TBD"
 estimate: "M"
 status: "todo"

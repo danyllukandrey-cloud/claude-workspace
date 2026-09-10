@@ -7,7 +7,7 @@ acs: ["AC-06", "AC-11", "AC-12"]
 files_hint: ["plan/app/src/cards/life-area-card/app/resolve-entry.ts"]
 owner: "TBD"
 estimate: "M"
-status: "todo"
+status: "done"
 ---
 
 # T19 — App: resolveEntry use-case
@@ -22,7 +22,11 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Integration test: вирішення конфлікту → один `confirmed`, інший `rejected`, прогрес перераховується
-- [ ] Integration test: підтвердження pending-запису після повернення агента → `confirmed`
-- [ ] Integration test: виправлення з історії → `rejected`, запис лишається читомим
-- [ ] lint + vet clean
+- [x] Integration test: вирішення конфлікту → один `confirmed`, інший `rejected`, прогрес перераховується
+- [x] Integration test: підтвердження pending-запису після повернення агента → `confirmed`
+- [x] Integration test: виправлення з історії → `rejected`, запис лишається читомим
+- [x] lint + vet clean
+
+## Notes
+
+Критик: PASS. Should-fix (`ResolveEntryInput.cardId` не мав відповідника в locked `PATCH /entries/{entryId}`) записано [ISS-32](../../../ISSUES.md), закрито того ж дня тим самим підходом, що ISS-30 (T17): `findEntryById` у `postgres-repo.ts`, `cardId` виводиться з `entry.cardId`, не приймається від викликача. Заразом [ISS-36](../../../ISSUES.md) — поле входу перейменовано з `resolution: 'confirm'/'reject'` на `status: 'confirmed'/'rejected'`, точно за `EntryResolve` контракту.

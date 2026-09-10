@@ -1,0 +1,55 @@
+export type CardStatus = 'active' | 'archived';
+export type LifecycleState = 'created' | 'filled' | 'in_use' | 'archived';
+
+export interface Card {
+  id: string;
+  name: string;
+  description: string | null;
+  status: CardStatus;
+}
+
+export class CardValidationError extends Error {
+  code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = 'CardValidationError';
+    this.code = code;
+  }
+}
+
+// Експортовано (T27 should-fix): ui/CreateCardForm.tsx перевикористовує цю
+// саму перевірку для інлайн-помилки ДО виклику onCreate, замість дублювання
+// власного тексту -- один рядок правди про "що таке порожня назва".
+export function assertNonEmpty(value: string, code: string, message: string): void {
+  if (value == null || !value.trim()) {
+    throw new CardValidationError(code, message);
+  }
+}
+
+export function createCard(input: { id: string; name: string }): Card {
+  assertNonEmpty(input.name, 'card.name_required', 'Назва картки обовʼязкова');
+  return { id: input.id, name: input.name.trim(), description: null, status: 'active' };
+}
+
+export function markFilled(card: Card, description: string): Card {
+  assertNonEmpty(description, 'card.description_required', 'Опис обовʼязковий перед позначенням "заповнена"');
+  return { ...card, description };
+}
+
+export function getLifecycleState(card: Card, metricBlockCount: number): LifecycleState {
+  if (card.status === 'archived') {
+    return 'archived';
+  }
+  if (card.description && metricBlockCount > 0) {
+    return 'in_use';
+  }
+  if (card.description) {
+    return 'filled';
+  }
+  return 'created';
+}
+
+export function archiveCard(card: Card): Card {
+  return { ...card, status: 'archived' };
+}

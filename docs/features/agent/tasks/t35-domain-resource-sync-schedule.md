@@ -4,7 +4,7 @@ title: "Domain: resource-sync scheduling model"
 layer: "domain"
 deps: []
 acs: ["AC-18"]
-files_hint: ["plan/backend/src/agent-worker/domain/sync-resource.ts"]
+files_hint: ["plan/app/src/agent-worker/domain/sync-resource.ts"]
 owner: "TBD"
 estimate: "S"
 status: "todo"

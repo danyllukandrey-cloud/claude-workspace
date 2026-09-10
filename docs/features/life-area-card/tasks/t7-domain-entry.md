@@ -7,7 +7,7 @@ acs: ["AC-01", "AC-06", "AC-11", "AC-12"]
 files_hint: ["plan/app/src/cards/life-area-card/domain/entry.ts"]
 owner: "TBD"
 estimate: "M"
-status: "todo"
+status: "done"
 ---
 
 # T7 — Domain: entry status model
@@ -22,10 +22,10 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Unit test: щасливий шлях створює `confirmed`
-- [ ] Unit test: конфліктний/неперевірений запис створюється `pending`, не входить у прогрес (T6 його виключає)
-- [ ] Unit test: `rejected` лишає рядок доступним для історії (AC-12)
-- [ ] lint + vet clean
+- [x] Unit test: щасливий шлях створює `confirmed`
+- [x] Unit test: конфліктний/неперевірений запис створюється `pending`, не входить у прогрес (T6 його виключає)
+- [x] Unit test: `rejected` лишає рядок доступним для історії (AC-12)
+- [x] lint + vet clean
 
 ## Notes
 

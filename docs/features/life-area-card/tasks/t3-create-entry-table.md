@@ -7,7 +7,7 @@ acs: ["AC-01", "AC-06", "AC-11", "AC-12"]
 files_hint: ["docs/features/life-area-card/migrations/03_create_entry.up.sql", "docs/features/life-area-card/migrations/03_create_entry.down.sql"]
 owner: "TBD"
 estimate: "S"
-status: "todo"
+status: "done"
 ---
 
 # T3 — Create entry table
@@ -22,9 +22,9 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Міграція застосовується й відкатується без помилок
-- [ ] Частковий індекс на `pending`-записи перевірено (AC-11 — пошук неперевірених при поверненні агента)
-- [ ] lint + vet clean
+- [x] Міграція застосовується й відкатується без помилок
+- [x] Частковий індекс на `pending`-записи перевірено (AC-11 — пошук неперевірених при поверненні агента)
+- [x] lint + vet clean
 
 ## Notes
 

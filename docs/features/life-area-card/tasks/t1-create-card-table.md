@@ -7,7 +7,7 @@ acs: ["AC-02", "AC-04", "AC-16"]
 files_hint: ["docs/features/life-area-card/migrations/01_create_card.up.sql", "docs/features/life-area-card/migrations/01_create_card.down.sql"]
 owner: "TBD"
 estimate: "S"
-status: "todo"
+status: "done"
 ---
 
 # T1 — Create card table
@@ -22,9 +22,9 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Міграція застосовується й відкатується без помилок
-- [ ] `NOT NULL` на `name` перевірено тестом
-- [ ] lint + vet clean
+- [x] Міграція застосовується й відкатується без помилок
+- [x] `NOT NULL` на `name` перевірено тестом
+- [x] lint + vet clean
 
 ## Notes
 

@@ -7,7 +7,7 @@ acs: []
 files_hint: ["docs/features/structure/migrations/backend/03_add_owner_fk.up.sql", "docs/features/structure/migrations/backend/03_add_owner_fk.down.sql"]
 owner: "TBD"
 estimate: "S"
-status: "todo"
+status: "done"
 ---
 
 # T26 — Migration: add owner_user_id FK to app_user
@@ -22,9 +22,11 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Staged migration `backend/03` promoted to live `migrations/`, applies and reverts cleanly
-- [ ] lint + vet clean
+- [x] Staged migration `backend/03` promoted to live `migrations/`, applies and reverts cleanly
+- [x] lint + vet clean
 
 ## Notes
 
 **Порядок промоції:** `agent` migration 01 (`app_user`) → цей migration. Черговість між фічами — відповідальність `implement`, не цього DAG.
+
+**Промоучено позачергово 2026-09-05 ([D-103](../../../DECISIONS.md#d-103))** — разом із T1/T2, та сама причина ([ISS-26](../../../ISSUES.md)). Тест на каскадне видалення `structure` при видаленні `app_user` — проти реальної Neon.

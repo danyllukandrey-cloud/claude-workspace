@@ -4,7 +4,7 @@ title: "Wiring: register agent module in app-shell + backend composition root"
 layer: "wiring"
 deps: ["T14", "T26", "T27", "T28"]
 acs: []
-files_hint: ["plan/backend/src/agent/index.ts", "plan/app/src/agent/index.ts", "plan/app/src/app/main.tsx"]
+files_hint: ["plan/app/src/agent/index.ts", "plan/app/src/agent/index.ts", "plan/app/src/app/main.tsx"]
 owner: "TBD"
 estimate: "S"
 status: "todo"
@@ -18,12 +18,12 @@ status: "todo"
 
 ## What
 
-Клієнт: Чат — типовий екран при відкритті застосунку; Налаштування правил і Звіти активності — пункти нижньої навігації. Сервер: підключає auth-мідлвар (T14) перед кожним маршрутом агента; реєструє `agent` і `agent-worker` як окремі контейнери (ADR-0001).
+Клієнт: Чат — типовий екран при відкритті застосунку; Налаштування правил і Звіти активності — пункти нижньої навігації. Сервер: **додає** маршрути агента до вже наявного `plan/app/server/app.ts` — composition root і спільний auth-мідлвар уже підключені задачею T30 фічі `life-area-card` ([D-109](../../../DECISIONS.md#d-109), [ISS-51](../../../ISSUES.md)), ця задача НЕ створює їх заново; реєструє `agent` і `agent-worker` як окремі контейнери (ADR-0001).
 
 ## Definition of Done
 
 - [ ] Застосунок запускається з Чатом як типовим екраном і 2 додатковими вкладками навігації
-- [ ] Запит без токена до будь-якого маршруту агента відхиляється мідлваром до виклику use-case
+- [ ] Маршрути агента змонтовані в наявному `plan/app/server/app.ts`; запит без токена до будь-якого з них відхиляється тим самим спільним auth-мідлваром (T30) до виклику use-case — без другого мідлвара чи другого composition root
 - [ ] lint + vet clean
 
 ## Notes

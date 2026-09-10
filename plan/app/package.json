@@ -6,22 +6,38 @@
   "description": "ПЛАН — застосунок карток для планування аспектів життя",
   "scripts": {
     "dev": "vite",
+    "dev:server": "node --env-file=../../.env node_modules/tsx/dist/cli.mjs watch server/index.ts",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
-    "lint": "tsc --noEmit"
+    "test:integration": "node --env-file=../../.env node_modules/vitest/vitest.mjs run --config vitest.integration.config.ts",
+    "lint": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json",
+    "db:promote": "node scripts/promote-migrations.mjs",
+    "migrate": "node --env-file=../../.env node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up",
+    "migrate:down": "node --env-file=../../.env node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations down"
   },
   "dependencies": {
+    "express": "^5.2.1",
+    "google-auth-library": "^11.0.2",
+    "jose": "^6.2.12",
+    "pg": "^8.13.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/express": "^5.0.6",
+    "@types/js-yaml": "^4.0.9",
+    "@types/pg": "^8.11.10",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "js-yaml": "^5.4.1",
     "jsdom": "^25.0.1",
+    "node-pg-migrate": "^7.9.1",
+    "tsx": "^4.23.13",
     "typescript": "^5.7.2",
     "vite": "^6.0.7",
     "vitest": "^2.1.8"

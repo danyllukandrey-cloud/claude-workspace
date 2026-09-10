@@ -7,7 +7,7 @@ acs: ["AC-01", "AC-02", "AC-03", "AC-05", "AC-06", "AC-09", "AC-09b", "AC-10", "
 files_hint: ["plan/app/src/cards/life-area-card/ui/CardFace.tsx", "plan/app/src/cards/life-area-card/ui/CardBack.tsx"]
 owner: "TBD"
 estimate: "L"
-status: "todo"
+status: "done"
 ---
 
 # T26 — UI: SCR-02/SCR-03 Картка (face+back)
@@ -22,9 +22,9 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Component test: усі стани SCR-02 зі `screens.md` рендеряться за відповідним триггером
-- [ ] Component test: усі стани SCR-03 зі `screens.md` рендеряться за відповідним триггером
-- [ ] lint + vet clean
+- [x] Component test: усі стани SCR-02 зі `screens.md` рендеряться за відповідним триггером
+- [x] Component test: усі стани SCR-03 зі `screens.md` рендеряться за відповідним триггером
+- [x] lint + vet clean
 
 ## Notes
 

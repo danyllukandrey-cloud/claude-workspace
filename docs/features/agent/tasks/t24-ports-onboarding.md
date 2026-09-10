@@ -4,7 +4,7 @@ title: "Ports: GET /onboarding handler"
 layer: "ports"
 deps: ["T13"]
 acs: ["AC-13"]
-files_hint: ["plan/backend/src/agent/ports/onboarding-handler.ts"]
+files_hint: ["plan/app/src/agent/ports/onboarding-handler.ts"]
 owner: "TBD"
 estimate: "S"
 status: "todo"

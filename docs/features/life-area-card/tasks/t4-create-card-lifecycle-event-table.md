@@ -7,7 +7,7 @@ acs: []
 files_hint: ["docs/features/life-area-card/migrations/04_create_card_lifecycle_event.up.sql", "docs/features/life-area-card/migrations/04_create_card_lifecycle_event.down.sql"]
 owner: "TBD"
 estimate: "S"
-status: "todo"
+status: "done"
 ---
 
 # T4 — Create card_lifecycle_event table
@@ -22,9 +22,9 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Міграція застосовується й відкатується без помилок
-- [ ] Індекс `(card_id, occurred_at)` перевірено
-- [ ] lint + vet clean
+- [x] Міграція застосовується й відкатується без помилок
+- [x] Індекс `(card_id, occurred_at)` перевірено
+- [x] lint + vet clean
 
 ## Notes
 

@@ -4,7 +4,7 @@ title: "App: ask-agent orchestration (Claude call + guard check)"
 layer: "app"
 deps: ["T9", "T12"]
 acs: ["AC-07"]
-files_hint: ["plan/backend/src/agent/app/ask-agent.ts"]
+files_hint: ["plan/app/src/agent/app/ask-agent.ts"]
 owner: "TBD"
 estimate: "M"
 status: "todo"

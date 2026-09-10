@@ -4,7 +4,7 @@ title: "Domain: account deletion orchestration"
 layer: "domain"
 deps: []
 acs: ["AC-17", "AC-17b"]
-files_hint: ["plan/backend/src/agent/domain/account.ts"]
+files_hint: ["plan/app/src/agent/domain/account.ts"]
 owner: "TBD"
 estimate: "S"
 status: "todo"

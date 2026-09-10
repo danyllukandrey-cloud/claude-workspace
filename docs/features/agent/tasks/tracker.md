@@ -5,7 +5,7 @@
 
 | # | Task | Layer | Owner | Estimate | Blocked by | Status |
 |---|---|---|---|---|---|---|
-| T1 | Create app_user table | migration | TBD | S | — | todo |
+| T1 | Create app_user table | migration | TBD | S | — | done |
 | T2 | Create agent_proposal table | migration | TBD | S | T1 | todo |
 | T3 | Create imperative_rule table | migration | TBD | S | T1 | todo |
 | T4 | Create long_term_memory_fact table | migration | TBD | S | T1 | todo |
@@ -18,7 +18,7 @@
 | T11 | Domain (agent-worker): activity-report model | domain | TBD | S | — | todo |
 | T12 | Infra: Claude API client | infra | TBD | M | — | todo |
 | T13 | Infra: Postgres repo | infra | TBD | L | T2, T3, T4, T5, T6 | todo |
-| T14 | Infra: Google OAuth + app_user provisioning | infra | TBD | M | T1 | todo |
+| T14 | Infra: Google OAuth + app_user provisioning | infra | TBD | M | T1 | done (early, via life-area-card's T30 -- D-109/ISS-51) |
 | T15 | Infra (agent-worker): schedule + report persistence | infra | TBD | M | T7, T13 | todo |
 | T16 | App: handle-message use-case | app | TBD | L | T8, T10, T13, T18 | todo |
 | T17 | App: confirm use-case | app | TBD | S | T8, T13 | todo |

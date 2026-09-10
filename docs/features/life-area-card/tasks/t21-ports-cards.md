@@ -7,7 +7,7 @@ acs: ["AC-02", "AC-03", "AC-04", "AC-09", "AC-09b", "AC-10", "AC-16"]
 files_hint: ["plan/app/src/cards/life-area-card/ports/card-handlers.ts"]
 owner: "TBD"
 estimate: "M"
-status: "todo"
+status: "done"
 ---
 
 # T21 — Ports: cards handlers
@@ -22,6 +22,6 @@ HTTP-хендлери картки — [`contracts/openapi.yaml` `/api/v1/cards*
 
 ## Definition of Done
 
-- [ ] Handler-test: кожен код відповіді відтворює приклад із `contracts/openapi.yaml`
-- [ ] Handler-test: `404` однаковий для «не існує» й «чуже»
-- [ ] lint + vet clean
+- [x] Handler-test: кожен код відповіді відтворює приклад із `contracts/openapi.yaml`
+- [x] Handler-test: `404` однаковий для «не існує» й «чуже»
+- [x] lint + vet clean

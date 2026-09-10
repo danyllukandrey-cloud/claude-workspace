@@ -4,7 +4,7 @@ title: "App (agent-worker): daily-sync use-case"
 layer: "app"
 deps: ["T35", "T38"]
 acs: ["AC-18", "AC-18b"]
-files_hint: ["plan/backend/src/agent-worker/app/daily-sync.ts"]
+files_hint: ["plan/app/src/agent-worker/app/daily-sync.ts"]
 owner: "TBD"
 estimate: "M"
 status: "todo"

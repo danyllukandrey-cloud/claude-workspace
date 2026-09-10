@@ -7,7 +7,7 @@ acs: ["AC-05", "AC-07", "AC-08"]
 files_hint: ["docs/features/life-area-card/migrations/02_create_metric_block.up.sql", "docs/features/life-area-card/migrations/02_create_metric_block.down.sql"]
 owner: "TBD"
 estimate: "S"
-status: "todo"
+status: "done"
 ---
 
 # T2 — Create metric_block table
@@ -22,9 +22,9 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Міграція застосовується й відкатується без помилок
-- [ ] FK на `card(id) ON DELETE CASCADE` перевірено
-- [ ] lint + vet clean
+- [x] Міграція застосовується й відкатується без помилок
+- [x] FK на `card(id) ON DELETE CASCADE` перевірено
+- [x] lint + vet clean
 
 ## Notes
 

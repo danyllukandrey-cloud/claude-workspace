@@ -7,7 +7,7 @@ acs: ["AC-16"]
 files_hint: ["docs/features/life-area-card/migrations/05_add_card_status.up.sql", "docs/features/life-area-card/migrations/05_add_card_status.down.sql"]
 owner: "TBD"
 estimate: "S"
-status: "todo"
+status: "done"
 ---
 
 # T5 — Add card.status column (soft archival)
@@ -22,9 +22,9 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Міграція застосовується й відкатується без помилок
-- [ ] Частковий індекс `WHERE status = 'active'` перевірено — архівовані картки не потрапляють у список активних
-- [ ] lint + vet clean
+- [x] Міграція застосовується й відкатується без помилок
+- [x] Частковий індекс `WHERE status = 'active'` перевірено — архівовані картки не потрапляють у список активних
+- [x] lint + vet clean
 
 ## Notes
 

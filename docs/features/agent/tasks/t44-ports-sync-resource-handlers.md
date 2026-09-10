@@ -4,7 +4,7 @@ title: "Ports: GET/POST/DELETE /sync-resources handlers"
 layer: "ports"
 deps: ["T40"]
 acs: ["AC-18"]
-files_hint: ["plan/backend/src/agent/ports/sync-resource-handler.ts"]
+files_hint: ["plan/app/src/agent/ports/sync-resource-handler.ts"]
 owner: "TBD"
 estimate: "S"
 status: "todo"

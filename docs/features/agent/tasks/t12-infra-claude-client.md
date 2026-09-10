@@ -4,7 +4,7 @@ title: "Infra: Claude API client"
 layer: "infra"
 deps: []
 acs: ["AC-01", "AC-10"]
-files_hint: ["plan/backend/src/agent/infra/claude-client.ts"]
+files_hint: ["plan/app/src/agent/infra/claude-client.ts"]
 owner: "TBD"
 estimate: "M"
 status: "todo"

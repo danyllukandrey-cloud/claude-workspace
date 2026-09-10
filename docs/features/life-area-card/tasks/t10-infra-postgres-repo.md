@@ -7,7 +7,7 @@ acs: ["AC-01", "AC-04", "AC-09", "AC-13"]
 files_hint: ["plan/app/src/cards/life-area-card/infra/postgres-repo.ts"]
 owner: "TBD"
 estimate: "L"
-status: "todo"
+status: "done"
 ---
 
 # T10 — Infra: Postgres repo
@@ -22,10 +22,10 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Integration test: кожна з 4 таблиць — читання й запис через репо
-- [ ] Integration test: запит із `owner_user_id` іншого користувача не повертає жодного рядка
-- [ ] Integration test: усі індекси з `data-model.md §Indexes` справді використовуються (EXPLAIN)
-- [ ] lint + vet clean
+- [x] Integration test: кожна з 4 таблиць — читання й запис через репо
+- [x] Integration test: запит із `owner_user_id` іншого користувача не повертає жодного рядка
+- [x] Integration test: усі індекси з `data-model.md §Indexes` справді використовуються (EXPLAIN)
+- [x] lint + vet clean
 
 ## Notes
 

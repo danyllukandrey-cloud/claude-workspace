@@ -4,7 +4,7 @@ title: "Domain: developer-report classification"
 layer: "domain"
 deps: []
 acs: ["AC-20", "AC-20b"]
-files_hint: ["plan/backend/src/agent/domain/developer-report.ts"]
+files_hint: ["plan/app/src/agent/domain/developer-report.ts"]
 owner: "TBD"
 estimate: "S"
 status: "todo"

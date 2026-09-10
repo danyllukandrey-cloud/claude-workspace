@@ -4,7 +4,7 @@ title: "App (agent-worker): generate-report use-case"
 layer: "app"
 deps: ["T11", "T15"]
 acs: ["AC-11"]
-files_hint: ["plan/backend/src/agent-worker/app/generate-report.ts"]
+files_hint: ["plan/app/src/agent-worker/app/generate-report.ts"]
 owner: "TBD"
 estimate: "M"
 status: "todo"

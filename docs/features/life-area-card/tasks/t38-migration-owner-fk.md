@@ -7,7 +7,7 @@ acs: []
 files_hint: ["docs/features/life-area-card/migrations/07_add_owner_fk.up.sql", "docs/features/life-area-card/migrations/07_add_owner_fk.down.sql"]
 owner: "TBD"
 estimate: "S"
-status: "todo"
+status: "done"
 ---
 
 # T38 — Migration: add owner_user_id FK to app_user
@@ -22,8 +22,8 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Staged migration 07 promoted to live `migrations/`, applies and reverts cleanly
-- [ ] lint + vet clean
+- [x] Staged migration 07 promoted to live `migrations/`, applies and reverts cleanly
+- [x] lint + vet clean
 
 ## Notes
 

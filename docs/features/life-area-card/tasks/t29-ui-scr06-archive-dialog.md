@@ -7,14 +7,14 @@ acs: ["AC-16"]
 files_hint: ["plan/app/src/cards/life-area-card/ui/ArchiveCardDialog.tsx"]
 owner: "TBD"
 estimate: "S"
-status: "todo"
+status: "done"
 ---
 
 # T29 — UI: SCR-06 Підтвердження архівації
 
 ## Why
 
-Видалення завжди з підтвердженням — [`screens.md` SCR-06](../screens.md#scr-06--підтвердження-архівації).
+Архівація завжди з підтвердженням — [`screens.md` SCR-06](../screens.md#scr-06--підтвердження-архівації).
 
 ## What
 
@@ -22,6 +22,6 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Component test: обидва стани зі `screens.md` SCR-06 рендеряться за відповідним триггером
-- [ ] Component test: скасування не викликає `DELETE`
-- [ ] lint + vet clean
+- [x] Component test: обидва стани зі `screens.md` SCR-06 рендеряться за відповідним триггером
+- [x] Component test: скасування не викликає `DELETE`
+- [x] lint + vet clean

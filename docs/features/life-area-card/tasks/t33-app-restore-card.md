@@ -7,7 +7,7 @@ acs: ["AC-17"]
 files_hint: ["plan/app/src/cards/life-area-card/app/restore-card.ts"]
 owner: "TBD"
 estimate: "S"
-status: "todo"
+status: "done"
 ---
 
 # T33 — App: restoreCard use-case
@@ -22,6 +22,6 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Integration test: розархівація активної (не архівованої) картки повертає `card.not_archived`, нічого не пише
-- [ ] Integration test: розархівація архівованої картки повертає `status: active`, картка знову в `listCards` за замовчуванням
-- [ ] lint + vet clean
+- [x] Integration test: розархівація активної (не архівованої) картки повертає `card.not_archived`, нічого не пише
+- [x] Integration test: розархівація архівованої картки повертає `status: active`, картка знову в `listCards` за замовчуванням
+- [x] lint + vet clean

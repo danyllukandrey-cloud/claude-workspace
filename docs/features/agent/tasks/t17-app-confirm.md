@@ -4,7 +4,7 @@ title: "App: confirm use-case"
 layer: "app"
 deps: ["T8", "T13"]
 acs: ["AC-02", "AC-03"]
-files_hint: ["plan/backend/src/agent/app/confirm.ts"]
+files_hint: ["plan/app/src/agent/app/confirm.ts"]
 owner: "TBD"
 estimate: "S"
 status: "todo"

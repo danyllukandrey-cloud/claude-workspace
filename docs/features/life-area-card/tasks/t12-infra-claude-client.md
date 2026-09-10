@@ -7,7 +7,7 @@ acs: ["AC-10"]
 files_hint: ["plan/app/src/cards/life-area-card/infra/claude-client.ts"]
 owner: "TBD"
 estimate: "M"
-status: "todo"
+status: "done"
 ---
 
 # T12 — Infra: Claude client for suspicious-data check
@@ -22,9 +22,9 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Integration test проти заглушки Claude API: суперечливі дані повертають пояснення
-- [ ] Integration test: узгоджені дані повертають `null`
-- [ ] lint + vet clean
+- [x] Integration test проти заглушки Claude API: суперечливі дані повертають пояснення
+- [x] Integration test: узгоджені дані повертають `null`
+- [x] lint + vet clean
 
 ## Notes
 

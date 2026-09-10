@@ -7,7 +7,7 @@ acs: ["AC-18"]
 files_hint: ["plan/app/src/cards/life-area-card/app/list-cards.ts"]
 owner: "TBD"
 estimate: "S"
-status: "todo"
+status: "done"
 ---
 
 # T34 — App: listCards with status filter (archived view)
@@ -22,6 +22,6 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Integration test: `status=archived` повертає лише архівовані картки, найновіші зверху
-- [ ] Integration test: виклик без параметра поводиться так само, як і раніше (тільки активні, AC-04 не зламано)
-- [ ] lint + vet clean
+- [x] Integration test: `status=archived` повертає лише архівовані картки, найновіші зверху
+- [x] Integration test: виклик без параметра поводиться так само, як і раніше (тільки активні, AC-04 не зламано)
+- [x] lint + vet clean

@@ -4,7 +4,7 @@ title: "Ports: GET /reports handler"
 layer: "ports"
 deps: ["T13"]
 acs: ["AC-11"]
-files_hint: ["plan/backend/src/agent/ports/reports-handler.ts"]
+files_hint: ["plan/app/src/agent/ports/reports-handler.ts"]
 owner: "TBD"
 estimate: "S"
 status: "todo"

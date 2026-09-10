@@ -4,7 +4,7 @@ title: "Domain: proposal lifecycle model"
 layer: "domain"
 deps: []
 acs: ["AC-01", "AC-02", "AC-02b", "AC-03", "AC-10", "AC-10b"]
-files_hint: ["plan/backend/src/agent/domain/proposal.ts"]
+files_hint: ["plan/app/src/agent/domain/proposal.ts"]
 owner: "TBD"
 estimate: "M"
 status: "todo"
