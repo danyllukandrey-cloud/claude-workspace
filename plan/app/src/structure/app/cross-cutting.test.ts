@@ -2,26 +2,29 @@
 //
 // RED (unit level, stateful in-memory fake `Db` -- test-plan.md has no dedicated
 // row for T25; Docker/Neon are unavailable in this sandbox, so this file follows
-// the same fallback already used by ./get-analytics.test.ts / ./move-card.test.ts:
-// a fake `Db.query` routed by SQL text, but here MUTABLE state shared across BOTH
-// scenarios below, since neither scenario is provable with fixed canned responses --
-// each needs a second read to see the effect of a write that happened in between.
+// the same fallback already used by ./move-card.test.ts: a fake `Db.query` routed
+// by SQL text, but here MUTABLE state shared across BOTH scenarios below, since
+// neither scenario is provable with fixed canned responses -- each needs a second
+// read to see the effect of a write that happened in between.
 //
-// This file exists because T12 (moveCard) and T14 (getAnalytics) each already have
-// their own unit + integration tests, but nothing yet runs them TOGETHER against
-// one shared store the way a real deployment would -- this is the "do these two
-// already-implemented pieces actually agree with each other" check (AC-05 spans
-// TWO modules -- life-area-card's resolveEntry and structure's getAnalytics -- and
-// the offline-sync scenario spans TWO calls to moveCard simulating two devices).
+// Review 2026-09-11/12 (ISS-100 review-fix wave): the backend `get-analytics.ts`
+// use-case this AC-05 test originally called against was confirmed dead code
+// (0 production callers, ADR-0001 -- Structure's aggregate is recomputed
+// CLIENT-side, never a cached backend number) and deleted. This test now proves
+// the same cross-module AC-05 guarantee through the actual production path:
+// `computeStructureAggregate` (domain/aggregate.ts) fed by `getCardProgress`,
+// the same shape `main.tsx`'s `loadAnalytics()` builds.
 //
-// Production code under test: ALL already exists (T5 domain/layout.ts,
-// T12 app/move-card.ts, T14 app/get-analytics.ts, life-area-card's app/resolve-entry.ts
-// + app/get-card.ts). No production code is added by this task -- if this test is
-// RED, it means the already-implemented pieces don't actually agree end-to-end,
-// which is exactly what a cross-cutting RED is supposed to surface.
+// This file exists because T12 (moveCard) and T14 (Structure's aggregate) each
+// already have their own unit + integration tests, but nothing yet runs them
+// TOGETHER against one shared store the way a real deployment would -- this is
+// the "do these two already-implemented pieces actually agree with each other"
+// check (AC-05 spans TWO modules -- life-area-card's resolveEntry and
+// structure's aggregate -- and the offline-sync scenario spans TWO calls to
+// moveCard simulating two devices).
 
 import { describe, it, expect } from 'vitest';
-import { getAnalytics } from './get-analytics';
+import { computeStructureAggregate } from '../domain/aggregate';
 import { moveCard } from './move-card';
 import { resolveEntry } from '../../cards/life-area-card/app/resolve-entry';
 import { computeProgress, computeAggregateProgress } from '../../cards/life-area-card/domain/progress';
@@ -228,12 +231,21 @@ function makeGetCardProgress(db: Db) {
 }
 
 describe('T25 cross-cutting -- AC-05: correcting a life-area-card entry immediately updates Structure analytics', () => {
-  it('reflects the corrected number on the very next getAnalytics call, no separately cached value', async () => {
-    const { query } = makeSharedFakeDb();
+  it('reflects the corrected number on the very next aggregate computation, no separately cached value', async () => {
+    const { query, positions } = makeSharedFakeDb();
     const db: Db = { query };
     const getCardProgress = makeGetCardProgress(db);
 
-    const before = await getAnalytics(db, { ownerUserId: OWNER }, getCardProgress);
+    // Той самий крок, що main.tsx's loadAnalytics() робить у продакшені: читає
+    // активну позицію картки (для cellIndex) + її прогрес наживо, будує вхід
+    // computeStructureAggregate -- жодного окремо збереженого числа.
+    async function aggregateNow() {
+      const progress = (await getCardProgress(CARD_ID)).progress;
+      const position = positions.find((p) => p.card_id === CARD_ID);
+      return computeStructureAggregate([{ cardId: CARD_ID, cellIndex: position?.cell_index ?? -1, progress }]);
+    }
+
+    const before = await aggregateNow();
     // 9/10 (target_count) capped -- picked so the "before" number is clearly wrong/high.
     expect(before.average).toBeCloseTo(0.9);
 
@@ -241,7 +253,7 @@ describe('T25 cross-cutting -- AC-05: correcting a life-area-card entry immediat
     // AC-12 -- відхилення вже підтвердженого запису (помилковий 9 було відкликано).
     await resolveEntry(db, { ownerUserId: OWNER, entryId: 'entry-1', status: 'rejected' });
 
-    const after = await getAnalytics(db, { ownerUserId: OWNER }, getCardProgress);
+    const after = await aggregateNow();
 
     // rejected-запис не рахується в прогресі -- 0 підтверджених записів лишилось.
     expect(after.average).toBeCloseTo(0);
