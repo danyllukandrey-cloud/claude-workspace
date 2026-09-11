@@ -21,6 +21,7 @@ import { listActiveLayoutPositionsByOwner, findStructureByOwner } from '../infra
 import type { Db, LayoutPositionRecord, LayoutPositionStatusRow } from '../infra/postgres-repo';
 import { findHistoryEventsAsOf, type HistoryEventRecord } from '../infra/history-repo';
 import { moveCard } from '../app/move-card';
+import { closeCard, type CloseCardMetricTransfer } from '../app/close-card';
 import { AppError } from '../../shared/errors';
 
 // --- DTO -- форма відповіді, camelCase, точно як components.schemas.LayoutPosition ---
@@ -208,4 +209,49 @@ export async function moveCardPosition(
     positionUpdatedAt: body.positionUpdatedAt,
   });
   return toLayoutPositionDto(moved);
+}
+
+// --- closeCardPosition -- POST /api/v1/structure/layout/{cardId}/close (T18) --
+
+export interface CloseCardPositionBody {
+  /** Опційно, за замовчуванням []; відсутнє тіло -- жодного переносу. */
+  metricTransfers?: CloseCardMetricTransfer[];
+}
+
+/**
+ * Тонка обгортка над app/close-card.ts's `closeCard` (T13, вже done) --
+ * порт додатково перемаповує чужий 'card.not_found' (404), що
+ * transferMetricBlock кидає на невалідну ціль переносу метрики, на
+ * структурний 'structure.metric_transfer_target_invalid' (422) із контракту
+ * -- closeCard сам цю помилку не мапить, бо не має права знати про чужі
+ * коди (app -> cards, plan/app/CLAUDE.md, DoD цієї задачі). 'structure.
+ * card_not_found' (404) від самого closeCard пропускається як є.
+ */
+export async function closeCardPosition(
+  db: Db,
+  ownerUserId: string,
+  cardId: string,
+  body: CloseCardPositionBody = {}
+): Promise<LayoutPositionDto> {
+  const activePositions = await listActiveLayoutPositionsByOwner(db, ownerUserId);
+  const current = activePositions.find((position) => position.cardId === cardId);
+  if (!current) {
+    throw new AppError('structure.card_not_found', 'Картку не знайдено в розкладці Структури', 404);
+  }
+
+  try {
+    await closeCard(db, { ownerUserId, cardId, metricTransfers: body.metricTransfers ?? [] });
+  } catch (error) {
+    if (error instanceof AppError && error.code === 'card.not_found') {
+      throw new AppError('structure.metric_transfer_target_invalid', error.message, 422);
+    }
+    throw error;
+  }
+
+  return {
+    cardId: current.cardId,
+    cellIndex: current.cellIndex,
+    status: 'closed',
+    positionUpdatedAt: new Date().toISOString(),
+  };
 }

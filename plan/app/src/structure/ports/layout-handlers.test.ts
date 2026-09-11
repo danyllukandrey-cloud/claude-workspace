@@ -20,8 +20,20 @@
 //   майбутньому -- перевірено ДО будь-якого запиту в базу (той самий
 //   validate-first підхід, що structure-handlers.ts's updateStructure).
 
-import { describe, it, expect, vi } from 'vitest';
-import { listLayoutPositions, getLayoutHistoryAsOf, moveCardPosition } from './layout-handlers';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// T18 -- closeCardPosition делегує метрик-трансфери life-area-card's
+// transferMetricBlock (той самий модуль, що ../app/close-card.ts вже
+// викликає) -- мокаємо його тут тим самим підходом, що
+// ../app/close-card.test.ts, щоб контролювати саме 422-мапінг помилки
+// (card.not_found -> structure.metric_transfer_target_invalid), а не
+// реальну доменну логіку перенесення.
+vi.mock('../../cards/life-area-card/app/transfer-metric-block', () => ({
+  transferMetricBlock: vi.fn(),
+}));
+
+import { listLayoutPositions, getLayoutHistoryAsOf, moveCardPosition, closeCardPosition } from './layout-handlers';
+import { transferMetricBlock } from '../../cards/life-area-card/app/transfer-metric-block';
 import { AppError } from '../../shared/errors';
 import type { Db } from '../infra/postgres-repo';
 
@@ -299,5 +311,126 @@ describe('moveCardPosition handler', () => {
 
     expect(error).toBeInstanceOf(AppError);
     expect(error).toMatchObject({ code: 'structure.card_not_found', httpStatus: 404 });
+  });
+});
+
+// --- closeCardPosition -- POST /api/v1/structure/layout/{cardId}/close (T18) --
+//
+// RED (unit level, mocked Db + mocked life-area-card's transferMetricBlock --
+// test-plan.md marks AC-12 as integration; Docker/Neon недоступні в цьому
+// середовищі, тож повноцінний integration-рівень лишається NON-red -- цей
+// файл робить задачу TDD-водимою локально без реальної БД, той самий
+// fake-Db + vi.mock стиль, що ../app/close-card.test.ts і решта цього файлу
+// (moveCardPosition вище).
+//
+// Контракт (contracts/openapi.yaml, closeCard, POST /structure/layout/{cardId}):
+// - 200 LayoutPosition -- закрита позиція (status: 'closed'), той самий DTO
+//   shape, що listLayoutPositions/moveCardPosition вище.
+// - 404 structure.card_not_found -- та сама non-disclosure помилка (AC-03),
+//   що moveCardPosition -- ../app/close-card.ts (T13, вже done) кидає сама,
+//   handler пропускає як є.
+// - 422 structure.metric_transfer_target_invalid -- цільова картка
+//   перенесення метрики не знайдена чи не належить користувачу.
+//   ../app/close-card.ts делегує ЦІЛКОМ life-area-card's transferMetricBlock,
+//   яка на цю саму причину кидає СВІЙ код 'card.not_found' (404, чужий
+//   формат, не про Структуру) -- handler цього файлу МАЄ перемапити його
+//   саме на структурний код/статус із контракту, а не пропустити чужу
+//   помилку як є (DoD: "returns 200/404/422 per contract").
+// - metricTransfers -- опційний, за замовчуванням [] (DoD): відсутнє тіло
+//   (undefined) не викликає transferMetricBlock жодного разу, закриття все
+//   одно відбувається.
+
+function fakeCloseDb(opts: { activePositions: ReturnType<typeof positionRow>[] }): Db {
+  const query = vi.fn(async (text: string) => {
+    const sql = text.trim().toUpperCase();
+    if (text.includes('structure_history_event') && sql.startsWith('INSERT')) {
+      return {
+        rows: [
+          {
+            id: 'history-1',
+            structure_id: STRUCTURE_ID,
+            card_id: 'card-a',
+            event_type: 'closed',
+            detail: null,
+            occurred_at: new Date('2026-01-03T00:00:00Z'),
+          },
+        ],
+      };
+    }
+    if (text.includes('structure_layout_position') && sql.startsWith('SELECT')) {
+      return { rows: opts.activePositions };
+    }
+    if (text.includes('structure_layout_position') && sql.startsWith('UPDATE')) {
+      return { rows: [] };
+    }
+    throw new Error(`Непередбачений запит у тесті: ${text}`);
+  });
+  return { query: query as unknown as Db['query'] };
+}
+
+describe('closeCardPosition handler', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // Happy path (AC-12/AC-15) -- порт повертає LayoutPosition DTO з
+  // status: 'closed', той самий контракт, що moveCardPosition/
+  // listLayoutPositions вище (camelCase, positionUpdatedAt як ISO-рядок).
+  it('closes the position and returns 200 LayoutPosition DTO with status "closed"', async () => {
+    const current = positionRow({ card_id: 'card-a', cell_index: 3 });
+    const db = fakeCloseDb({ activePositions: [current] });
+
+    const dto = await closeCardPosition(db, OWNER, 'card-a');
+
+    expect(dto).toEqual({
+      cardId: 'card-a',
+      cellIndex: 3,
+      status: 'closed',
+      positionUpdatedAt: expect.any(String),
+    });
+  });
+
+  // metricTransfers опційний, за замовчуванням [] (DoD) -- без переданого
+  // тіла transferMetricBlock жодного разу не викликається, закриття все
+  // одно відбувається.
+  it('defaults metricTransfers to empty and never calls transferMetricBlock when the body is omitted', async () => {
+    const current = positionRow({ card_id: 'card-a', cell_index: 3 });
+    const db = fakeCloseDb({ activePositions: [current] });
+
+    const dto = await closeCardPosition(db, OWNER, 'card-a');
+
+    expect(transferMetricBlock).not.toHaveBeenCalled();
+    expect(dto.status).toBe('closed');
+  });
+
+  // AC-03 (non-disclosure) -- картка без активної позиції власника (не
+  // існує чи належить іншому користувачу) -- 404 structure.card_not_found,
+  // той самий код, що moveCardPosition кидає для того самого класу помилки.
+  it('rejects with 404 structure.card_not_found for a missing or not-owned card, never confirming which', async () => {
+    const db = fakeCloseDb({ activePositions: [] });
+
+    const error = await closeCardPosition(db, OWNER, 'someone-elses-card').catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AppError);
+    expect(error).toMatchObject({ code: 'structure.card_not_found', httpStatus: 404 });
+  });
+
+  // 422 structure.metric_transfer_target_invalid -- transferMetricBlock
+  // кидає СВІЙ 'card.not_found' (404) на невалідну цільову картку -- handler
+  // ЦЬОГО файлу перемаповує на структурний код/статус із контракту, не
+  // пропускає чужу помилку як є.
+  it('maps an invalid metric-transfer target to 422 structure.metric_transfer_target_invalid, not the raw card.not_found', async () => {
+    const current = positionRow({ card_id: 'card-a', cell_index: 3 });
+    const db = fakeCloseDb({ activePositions: [current] });
+    (transferMetricBlock as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new AppError('card.not_found', 'Картку чи блок-метрику не знайдено', 404)
+    );
+
+    const error = await closeCardPosition(db, OWNER, 'card-a', {
+      metricTransfers: [{ metricBlockId: 'mb-1', targetCardId: 'not-mine' }],
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AppError);
+    expect(error).toMatchObject({ code: 'structure.metric_transfer_target_invalid', httpStatus: 422 });
   });
 });
