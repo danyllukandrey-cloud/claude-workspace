@@ -57,6 +57,8 @@ import {
   readCachedEntries,
   readCachedMetricBlocks,
 } from '../cards/life-area-card';
+import type { AnalyticsScreenState, DeclarationScreenState, LayoutBoardState, LayoutMode, LogicVariant } from '../structure';
+import { computeStructureAggregate } from '../structure';
 import { AppError } from '../shared/errors';
 import { collectAllPages } from '../shared/pagination';
 import { createLocalStorageAdapter } from '../shared/storage/local';
@@ -697,6 +699,200 @@ async function addEntry(cardId: string, metricBlockId: string, amount: number): 
   cacheEntry(storage, currentOwnerUserId() ?? '', cardId, toDomainEntry(entry));
 }
 
+// T24 (sad.md §5, contracts/openapi.yaml Structure/Layout tags): реальні
+// fetch-реалізації DI-пропів DeclarationScreen/LayoutBoard/AnalyticsScreen
+// (structure/index.ts). Той самий стиль authHeaders/AppError, що решта
+// цього файлу (loadCards тощо).
+
+interface StructureDto {
+  id: string;
+  declaration: string | null;
+  layoutMode: LayoutMode;
+  logicVariant: LogicVariant;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface LayoutPositionDto {
+  cardId: string;
+  cellIndex: number;
+  status: 'active' | 'closed';
+  positionUpdatedAt: string;
+}
+
+interface LayoutPositionPageDto {
+  items: LayoutPositionDto[];
+  has_next: boolean;
+  has_prev: boolean;
+  next_cursor: string | null;
+}
+
+/** GET /api/v1/structure/layout -- лише активні позиції (contracts/openapi.yaml listLayoutPositions). Одна сторінка (MVP-обсяг десятків карток, sad.md §11 -- не оптимізуємо передчасно). */
+async function fetchActiveLayoutPositions(): Promise<LayoutPositionDto[]> {
+  const response = await fetch('/api/v1/structure/layout', { headers: authHeaders() });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    throw new AppError(body?.code ?? 'structure.request_failed', body?.message ?? 'Не вдалося завантажити розкладку', response.status);
+  }
+
+  const page = (await response.json()) as LayoutPositionPageDto;
+  return page.items;
+}
+
+/** GET /api/v1/structure -- декларація + спосіб розкладки (DeclarationScreen.loadStructure). `hasArrangedCards` (AC-11b/AC-16b confirm-reset) -- поза Structure DTO, похідне з активних позицій розкладки. */
+async function loadStructure(): Promise<DeclarationScreenState> {
+  const response = await fetch('/api/v1/structure', { headers: authHeaders() });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    throw new AppError(body?.code ?? 'structure.request_failed', body?.message ?? 'Не вдалося завантажити Структуру', response.status);
+  }
+
+  const structure = (await response.json()) as StructureDto;
+  const activePositions = await fetchActiveLayoutPositions();
+
+  return {
+    declaration: structure.declaration,
+    layoutMode: structure.layoutMode,
+    logicVariant: structure.logicVariant,
+    hasArrangedCards: activePositions.length > 0,
+  };
+}
+
+/** PATCH /api/v1/structure -- зберігає декларацію/режим розкладки (DeclarationScreen.onSave). */
+async function onSaveDeclaration(input: { declaration: string; layoutMode: LayoutMode; logicVariant: LogicVariant }): Promise<void> {
+  const response = await fetch('/api/v1/structure', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    throw new AppError(body?.code ?? 'structure.request_failed', body?.message ?? 'Не вдалося зберегти Структуру', response.status);
+  }
+}
+
+/**
+ * GET /api/v1/structure/layout -- схема розкладки (LayoutBoard.loadLayout).
+ *
+ * `cardTitle` -- join із GET /api/v1/cards (openapi.yaml Structure API не
+ * несе назв карток, sad.md §5 "картки показані лише назвами" -- назва
+ * лишається за life-area-card). Картки без активної позиції (не в
+ * `/structure/layout`) потрапляють у нерозкладений трей (`cellIndex: null`),
+ * `baseOrder` -- порядок їх повернення GET /cards.
+ *
+ * `cellCount`/`justReset` НЕ несе жодний ендпоінт контракту (openapi.yaml)
+ * -- відома прогалина (sad.md §11 "щільність поля розкладки" закрито лише
+ * на рівні §5.2 тексту, без окремого API-поля). cellCount тут -- найбільший
+ * зайнятий індекс + запас вільних клітинок (той самий текстовий принцип,
+ * що sad.md §5.2); justReset -- завжди false, поки сервер не почне
+ * позначати щойно скинуту розкладку окремим прапорцем.
+ */
+async function loadLayout(): Promise<LayoutBoardState> {
+  const [positions, cards] = await Promise.all([fetchActiveLayoutPositions(), loadCards()]);
+  const positionByCardId = new Map(positions.map((position) => [position.cardId, position]));
+  const maxCellIndex = positions.reduce((max, position) => Math.max(max, position.cellIndex), -1);
+  const FREE_CELL_BUFFER = 6;
+
+  return {
+    cellCount: maxCellIndex + 1 + FREE_CELL_BUFFER,
+    justReset: false,
+    cards: cards.map((card, index) => {
+      const position = positionByCardId.get(card.id);
+      return {
+        cardId: card.id,
+        cardTitle: card.name,
+        cellIndex: position?.cellIndex ?? null,
+        baseOrder: index,
+      };
+    }),
+  };
+}
+
+/** PUT /api/v1/structure/layout/{cardId} -- переміщення картки (LayoutBoard.onMoveCard, AC-08). */
+async function onMoveCard(input: { cardId: string; cellIndex: number }): Promise<void> {
+  const response = await fetch(`/api/v1/structure/layout/${input.cardId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ cellIndex: input.cellIndex, positionUpdatedAt: now().toISOString() }),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    throw new AppError(body?.code ?? 'structure.move_failed', body?.message ?? 'Не вдалося зберегти позицію', response.status);
+  }
+}
+
+/**
+ * Зведена аналітика (AnalyticsScreen.loadAnalytics, AC-01/AC-04/AC-13).
+ *
+ * ADR-0001 ("ніколи не кешувати агрегат -- рахувати з сирих даних щоразу"):
+ * тут переобчислюємо з GET /structure + GET /structure/layout + прогрес
+ * кожної картки (GET /cards/{id}, той самий `aggregateProgress`, що вже
+ * довіряємо в loadCard/loadBack вище) -- жодного окремого числа не
+ * зберігаємо. computeStructureAggregate -- та сама формула, що бекендний
+ * use-case `structure/app/get-analytics.ts` (domain/aggregate.ts, D-19
+ * "одне рішення -- одне місце").
+ *
+ * ВІДОМА ПРОГАЛИНА (openapi.yaml не несе жодного ендпоінту під ранг-розрив/
+ * тренд/"не підтримується" — лише GET /structure/layout/history, який сам
+ * реконструює МИНУЛУ розкладку, а не готовий gap): gap/trend/unmaintained
+ * тут НЕ рахуються (`gap: null`, `trend: null`, `unmaintained: false`,
+ * `trendAvailable: false`) -- рахувати їх повністю клієнтською композицією
+ * без дублювання формули бекенда виходить за межі цього wiring-завдання
+ * (T24 DoD -- лише 3 нав-вкладки досяжні, не повна коректність аналітики).
+ */
+async function loadAnalytics(): Promise<AnalyticsScreenState> {
+  const [structureResponse, positions, cards] = await Promise.all([
+    fetch('/api/v1/structure', { headers: authHeaders() }),
+    fetchActiveLayoutPositions(),
+    loadCards(),
+  ]);
+
+  if (!structureResponse.ok) {
+    const body = (await structureResponse.json().catch(() => null)) as { code?: string; message?: string } | null;
+    throw new AppError(body?.code ?? 'structure.request_failed', body?.message ?? 'Не вдалося завантажити Структуру', structureResponse.status);
+  }
+
+  const structure = (await structureResponse.json()) as StructureDto;
+  const positionByCardId = new Map(positions.map((position) => [position.cardId, position]));
+
+  const cardDetails = await Promise.all(
+    cards.map(async (card) => {
+      const response = await fetch(`/api/v1/cards/${card.id}`, { headers: authHeaders() });
+      if (!response.ok) return { id: card.id, aggregateProgress: null as number | null };
+      const detail = (await response.json()) as CardDetailDto;
+      return { id: card.id, aggregateProgress: detail.aggregateProgress };
+    }),
+  );
+  const progressByCardId = new Map(cardDetails.map((detail) => [detail.id, detail.aggregateProgress]));
+
+  const { average, excludedCount } = computeStructureAggregate(
+    cards.map((card) => ({
+      cardId: card.id,
+      cellIndex: positionByCardId.get(card.id)?.cellIndex ?? -1,
+      progress: progressByCardId.get(card.id) ?? null,
+    })),
+  );
+
+  return {
+    layoutMode: structure.layoutMode,
+    average,
+    excludedCount,
+    trendAvailable: false,
+    cards: cards.map((card) => ({
+      cardId: card.id,
+      cardTitle: card.name,
+      progress: progressByCardId.get(card.id) ?? null,
+      gap: null,
+      trend: null,
+      unmaintained: false,
+    })),
+  };
+}
+
 const root = document.getElementById('root');
 if (!root) throw new Error('Не знайдено елемент #root у index.html');
 
@@ -722,6 +918,11 @@ createRoot(root).render(
       addEntry={addEntry}
       onUpdateDescription={onUpdateDescription}
       onFlagEntry={onFlagEntry}
+      loadStructure={loadStructure}
+      onSaveDeclaration={onSaveDeclaration}
+      loadLayout={loadLayout}
+      onMoveCard={onMoveCard}
+      loadAnalytics={loadAnalytics}
     />
   </StrictMode>,
 );
