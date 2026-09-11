@@ -82,8 +82,12 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Card" }
+        "400":
+          $ref: "#/components/responses/InvalidBody"
         "401":
           $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/InvalidBodyTooLarge"
         "422":
           description: назва відсутня чи порожня (AC-02)
           content:
@@ -149,10 +153,14 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Card" }
+        "400":
+          $ref: "#/components/responses/InvalidBody"
         "401":
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/CardNotFound"
+        "413":
+          $ref: "#/components/responses/InvalidBodyTooLarge"
         "422":
           description: спроба позначити картку заповненою без Опису (AC-03)
           content:
@@ -279,10 +287,25 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/MetricBlock" }
+        "400":
+          $ref: "#/components/responses/InvalidBody"
         "401":
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/CardNotFound"
+        "413":
+          $ref: "#/components/responses/InvalidBodyTooLarge"
+        "422":
+          description: |
+            `targetCount<=0` (review-фікс 2026-09-07 B6) — без цієї перевірки таке значення
+            псує розрахунок прогресу на кожному наступному відкритті картки (domain/progress.ts),
+            без шляху виправити через API
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "metric_block.invalid_target_count"
+                message: "Ціль має бути додатним числом"
 
   /api/v1/cards/{cardId}/metric-blocks/transfer:
     post:
@@ -314,6 +337,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/MetricBlock" }
+        "400":
+          $ref: "#/components/responses/InvalidBody"
         "401":
           $ref: "#/components/responses/Error"
         "404":
@@ -332,6 +357,8 @@ paths:
               example:
                 code: "metric_block.name_collision"
                 message: "This card already has a metric-block with that label and unit — provide newLabel to continue"
+        "413":
+          $ref: "#/components/responses/InvalidBodyTooLarge"
 
   /api/v1/cards/{cardId}/entries:
     get:
@@ -396,6 +423,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Entry" }
+        "400":
+          $ref: "#/components/responses/InvalidBody"
         "401":
           $ref: "#/components/responses/Error"
         "404":
@@ -406,6 +435,8 @@ paths:
               example:
                 code: "metric_block.not_found"
                 message: "Metric-block not found"
+        "413":
+          $ref: "#/components/responses/InvalidBodyTooLarge"
 
   /api/v1/entries/{entryId}:
     patch:
@@ -436,6 +467,8 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Entry" }
+        "400":
+          $ref: "#/components/responses/InvalidBody"
         "401":
           $ref: "#/components/responses/Error"
         "404":
@@ -446,6 +479,31 @@ paths:
               example:
                 code: "entry.not_found"
                 message: "Entry not found"
+        "409":
+          description: |
+            запис уже в термінальному стані (review-фікс 2026-09-07, "подвійна резолюція не
+            блокується") — єдиний задокументований легітимний перехід між двома термінальними
+            станами лишається `confirmed` → `rejected` (AC-12, виправлення з історії); будь-що
+            інше (той самий `status` вдруге, чи `rejected` → `confirmed`) тепер явний конфлікт,
+            не тиха мутація
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "entry.already_resolved"
+                message: "Запис уже вирішено"
+        "413":
+          $ref: "#/components/responses/InvalidBodyTooLarge"
+        "422":
+          description: |
+            `status` поза `[confirmed, rejected]` (review-фікс 2026-09-07) — раніше будь-яке
+            значення, що не є літерально `confirmed`, мовчки трактувалось як відхилення
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "entry.invalid_status"
+                message: "status має бути \"confirmed\" або \"rejected\""
 
 components:
   securitySchemes:
@@ -470,6 +528,26 @@ components:
           example:
             code: "card.not_found"
             message: "Card not found"
+    InvalidBody:
+      description: |
+        Тіло запиту зіпсоване (некоректний JSON) — наскрізний body-parser middleware
+        (`express.json()`, `plan/app/server/app.ts`), той самий код на кожному POST/PATCH цього
+        контракту (post-ship review, "Express 5 req.body -> 500"), не прив'язаний до одного
+        ендпоінту
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            code: "request.invalid_body"
+            message: "Некоректне тіло запиту"
+    InvalidBodyTooLarge:
+      description: Тіло запиту завелике — той самий наскрізний body-parser middleware, що InvalidBody
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            code: "request.invalid_body"
+            message: "Некоректне тіло запиту"
 
   schemas:
     Error:

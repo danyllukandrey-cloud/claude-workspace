@@ -99,3 +99,29 @@
 0 core-помилок, 0 flags ≥3 — запуск не призупинявся. Дві крос-фічеві залежності (записи через `agent`, перенесення метрики через `structure`) задокументовано як свідомі межі, одна раніше відкрита `structure`'s Save-as-OQ — **закрита цим проходом**.
 
 **Наступний крок:** `/sdd:ux-flows life-area-card` (декларовано `web-frontend` у `target_surfaces`).
+
+## Reconcile — 2026-09-11
+
+Тригер — 4 нестиковки одного класу, накопичені після здачі фічі (усі 2026-09-07, всі за одним патерном: код код відхиляє більше, ніж контракт документує): [ISS-82](../../../ISSUES.md), [ISS-83](../../../ISSUES.md), [ISS-87](../../../ISSUES.md), [ISS-89](../../../ISSUES.md). Джерело кожного коду — review-фікси `_review/review-2026-09-07.md` (B6, C16) і окремий post-ship фікс "Express 5 req.body -> 500", не новий AC — жоден із чотирьох не описаний у `spec.md §5`, усі три ендпоінт-специфічні коди — захист даних, знайдений під час рев'ю коду вже зданої фічі.
+
+Додано до контракту:
+
+| Код | Статус | Ендпоінт | Джерело |
+|---|---|---|---|
+| `metric_block.invalid_target_count` | 422 | `POST /cards/{cardId}/metric-blocks` | `create-metric-block.ts`, review-фікс B6 (ISS-82) |
+| `entry.invalid_status` | 422 | `PATCH /entries/{entryId}` | `resolve-entry.ts`, review-фікс T50 (ISS-83) |
+| `entry.already_resolved` | 409 | `PATCH /entries/{entryId}` | `resolve-entry.ts`, review-фікс T50 "подвійна резолюція" (ISS-87) |
+| `request.invalid_body` | 400 / 413 | усі 6 body-приймаючих ендпоінтів (`POST/PATCH` з `requestBody`) | `server/app.ts` error-middleware, наскрізний `express.json()` (ISS-89) |
+
+`request.invalid_body` — єдиний наскрізний код, тому винесений у два спільні `components.responses` (`InvalidBody`/`InvalidBodyTooLarge`), а не продубльований у кожній операції — той самий підхід, що вже мали `Error`/`CardNotFound`. Не додано до `GET`/`DELETE`-операцій (жодна не декларує `requestBody`) — `express.json()` технічно висить і на них, але контракт документує лише реалістичний, навмисний шлях (POST/PATCH), як і сам ISS-89 формулює межу.
+
+### Оновлення 4-точкового чеклиста
+
+1. Endpoint ↔ data-model — без змін, ✓.
+2. Error code ↔ repo error definition — без змін: реєстру помилок і досі немає (`plan/app/src/shared/errors/index.ts` — generic `AppError(code, message, httpStatus)`, коди задаються по місцю виклику) — усі 4 нових коди так само лишаються «пропозицією контракту», не звіркою з реєстром.
+3. Validation ↔ constraint — ✓, без змін (нові коди не додають нових полів/обмежень до схем, лише документують уже наявну бекенд-валідацію).
+4. OpenAPI ↔ sequence — не оновлювалось: жоден із чотирьох кодів не походить з гілки `sad.md §6` (усі — post-ship hardening, не запланована послідовність) — залишається задокументованою межею, не помилкою.
+
+0 core-помилок цим проходом. `info.version` не змінено (0.1.0) — залишено на розсуд користувача (CHANGELOG-рядок, за протоколом skill).
+
+**Закриває:** ISS-82, ISS-83, ISS-87, ISS-89 (статус кожного — окремим рядком у `docs/ISSUES.md`, не тут).

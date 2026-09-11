@@ -145,6 +145,8 @@ feature_size: "M"
 **When** the user tells the agent about a relevant event through direct input and confirms the agent's proposed record
 **Then** the system updates the card's tracked count and shows the new share of goal completion
 
+**Тимчасовий обхідний шлях ([D-110](../../DECISIONS.md#d-110)):** поки чат-інтерфейс агента (US-03, реальний спосіб внесення запису) не реалізований, `MetricBlockCard` несе тимчасову кнопку «+» (просте поле числа), що записує той самий `POST .../entries` напряму, без агента — щоб живо перевіряти цикл блок-метрика → запис → прогрес. Свідомо тимчасове, не постійний UX-шлях: прибрати, коли `agent`'s чат реалізований і бере на себе US-03.
+
 ### AC-02 (US-01) — error
 
 **Given** a user is creating a new card

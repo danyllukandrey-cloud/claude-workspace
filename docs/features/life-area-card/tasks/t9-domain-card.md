@@ -7,7 +7,7 @@ acs: ["AC-02", "AC-03", "AC-08", "AC-16"]
 files_hint: ["plan/app/src/cards/life-area-card/domain/card.ts"]
 owner: "TBD"
 estimate: "S"
-status: "todo"
+status: "done"
 ---
 
 # T9 — Domain: card lifecycle states
@@ -22,12 +22,14 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Unit test: створення без назви відхиляється
-- [ ] Unit test: перехід у `filled` без Опису відхиляється
-- [ ] Unit test: картка без блоків-метрик лишається декларативною, не переходить у `in_use`
-- [ ] Unit test: архівація позначає статус, не видаляє
-- [ ] lint + vet clean
+- [x] Unit test: створення без назви відхиляється
+- [x] Unit test: перехід у `filled` без Опису відхиляється
+- [x] Unit test: картка без блоків-метрик лишається декларативною, не переходить у `in_use`
+- [x] Unit test: архівація позначає статус, не видаляє
+- [x] lint + vet clean
 
 ## Notes
 
 «Некоректні дані» (AC-10) — не стан життєвого циклу, тимчасовий прапорець з `getCardWithProgress` (T20), тут не рахується.
+
+2026-09-11 ([ISS-20](../../../ISSUES.md)): frontmatter/DoD оновлено заднім числом — код реалізує весь DoD ще з комітів `58ad01a`/`16220a9`, лишень сам файл задачі про це не знав. Перевірено наживо перед позначенням: `vitest run domain/card.test.ts` (12/12 ✓) і `npm run lint` (чисто) в `plan/app`.
