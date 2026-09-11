@@ -24,7 +24,7 @@
 | T17 | Ports: PUT /structure/layout/{cardId} handler | ports | TBD | S | T12 | done |
 | T18 | Ports: POST /structure/layout/{cardId}/close handler | ports | TBD | S | T13 | done |
 | T19 | UI: shared primitives (Spinner, Banner, ConfirmDialog, EmptyState) | ui | TBD | M | — | done |
-| T20 | UI: SCR-01 Декларація screen | ui | TBD | M | T19, T15 | todo |
+| T20 | UI: SCR-01 Декларація screen | ui | TBD | M | T19, T15 | done |
 | T21 | UI: SCR-02 Схема screen | ui | TBD | L | T19, T16, T17 | done |
 | T22 | UI: SCR-03 Літопис-Аналітика screen | ui | TBD | M | T19, T16 | done |
 | T23 | UI: SCR-04 Закрити напрямок dialog | ui | TBD | M | T19, T18 | done |
