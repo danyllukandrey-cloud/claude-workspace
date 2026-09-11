@@ -1,24 +1,24 @@
 ---
 id: T10
-title: "Infra: history service client (write + asOf read)"
+title: "Infra: history repository (write + asOf read)"
 layer: "infra"
 deps: ["T3"]
 acs: ["AC-07", "AC-15"]
-files_hint: ["plan/app/src/structure/infra/history-client.ts"]
+files_hint: ["plan/app/src/structure/infra/history-repo.ts"]
 owner: "TBD"
 estimate: "M"
 status: "todo"
 ---
 
-# T10 — Infra: history service client (write + asOf read)
+# T10 — Infra: history repository (write + asOf read)
 
 ## Why
 
-Сервіс літопису — окремий деплой-юніт з окремою базою (ADR-0004). Комунікація — прямий HTTP-виклик, не спільна БД ([D-67](../../../DECISIONS.md#d-67)).
+Літопис (`structure_history_event`) — звичайний репозиторій-модуль у тій самій базі мінімального бекенда, що й `structure`/`structure_layout_position`/`card` ([D-113](../../../DECISIONS.md#d-113), скасовує [ADR-0004](../adr/0004-separate-service-for-structure-history-log.md)). Окремого сервісу й окремої бази більше нема — читання/запис ідуть тим самим шляхом, що й решта інфра-шару Структури (T9).
 
 ## What
 
-Клієнт: `recordEvent(structureId, cardId, eventType, detail)` і `getLayoutAsOf(structureId, asOf)` — HTTP-виклики до сервісу літопису з основного бекенда.
+Репозиторій: `recordEvent(structureId, cardId, eventType, detail)` і `getLayoutAsOf(structureId, asOf)` — прямі SQL-запити до `structure_history_event` в тій самій базі, без HTTP-виклику й без клієнта до окремого сервісу.
 
 ## Definition of Done
 
@@ -28,4 +28,4 @@ status: "todo"
 
 ## Notes
 
-Поведінка при недоступності сервісу — відкрите питання ([`sad.md §11`](../sad.md#11-risks-and-technical-debt)), НЕ вирішувати тут самовільно — пропагувати помилку вгору, нехай T12/T13/T14 (app-шар) вирішують, коли рішення буде ухвалено.
+Відкрите питання «поведінка при недоступності сервісу» ([`sad.md §11`](../sad.md#11-risks-and-technical-debt)) тепер неактуальне — окремого сервісу, здатного стати недоступним незалежно від бекенда, більше нема ([D-113](../../../DECISIONS.md#d-113)).

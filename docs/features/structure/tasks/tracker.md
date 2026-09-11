@@ -7,14 +7,14 @@
 |---|---|---|---|---|---|---|
 | T1 | Create structure table (backend DB) | migration | TBD | S | — | done |
 | T2 | Create structure_layout_position table (backend DB) | migration | TBD | S | T1 | done |
-| T3 | Create structure_history_event table (history-service DB) | migration | TBD | S | — | todo |
+| T3 | Create structure_history_event table (backend DB) | migration | TBD | S | T1 | todo |
 | T4 | Domain: declaration + layout core models | domain | TBD | M | — | todo |
 | T5 | Domain: layout position conflict + last-write-wins resolution | domain | TBD | M | — | todo |
 | T6 | Domain: aggregate progress calculation | domain | TBD | M | — | todo |
 | T7 | Domain: gap + trend calculation | domain | TBD | M | — | todo |
 | T8 | Domain: local history cache model | domain | TBD | S | — | todo |
 | T9 | Infra: backend repository for structure + layout positions | infra | TBD | M | T1, T2, T27 | todo |
-| T10 | Infra: history service client (write + asOf read) | infra | TBD | M | T3 | todo |
+| T10 | Infra: history repository (write + asOf read) | infra | TBD | M | T3 | todo |
 | T11 | App: updateStructure use-case | app | TBD | M | T4, T9 | todo |
 | T12 | App: moveCard use-case | app | TBD | M | T4, T5, T9, T10 | todo |
 | T13 | App: closeCard use-case | app | TBD | M | T5, T9, T10 | todo |

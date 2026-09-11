@@ -28,20 +28,18 @@
 
 ## Section B — drift findings (4-point checklist)
 
-1. **Endpoint ↔ data-model** *(core)* — ✓. Кожен ендпоінт читає/пише `structure` чи `structure_layout_position`: `GET/PATCH /structure` → `structure`; `GET/PUT/POST /structure/layout*` → `structure_layout_position`. `GET /structure/layout/history` читає `structure_history_event` (База 2, окрема схема, ADR-0004) — те саме джерело, що Потік 9.
+1. **Endpoint ↔ data-model** *(core)* — ✓. Кожен ендпоінт читає/пише `structure` чи `structure_layout_position`: `GET/PATCH /structure` → `structure`; `GET/PUT/POST /structure/layout*` → `structure_layout_position`. `GET /structure/layout/history` читає `structure_history_event` (та сама база, звичайна таблиця в спільному бекенді, D-113) — те саме джерело, що Потік 9.
 2. **Error code ↔ repo error definition** *(core)* — no error registry found — codes are the contract's proposal; reconcile when the repo defines them (проєкт ще не має живого коду бекенда — `architecture-map.md` §Migrations: «бекенд жодного разу не піднімався»).
 3. **Validation ↔ constraint** *(core)* — ✓. `layoutMode` enum `[single, free, logic, null]` = `data-model.md` CHECK; `logicVariant` enum `[balance, focus, cause_effect, null]` = `data-model.md` CHECK (D-83); `status` enum `[active, closed]` = `data-model.md` CHECK; `cellIndex` — `data-model.md` не задає верхньої межі (лише `INTEGER NOT NULL`) → контракт узяв `minimum: 0`, без `maximum` (щільність поля — «запас вільних клітинок», sad.md §5.2, конкретне число не зафіксовано жодним джерелом; не вигадую). Крос-польовий інваріант `logic_variant IS NULL` при `layout_mode != 'logic'` — `data-model.md` прямо каже, що на рівні БД CHECK на цю пару нема, тримає app-шар (T4/T11); контракт відображає це окремим кодом помилки `structure.logic_variant_requires_logic_mode` (422), не покладається на БД.
 4. **OpenAPI ↔ sequence** *(supporting)* — ✓ з одним зафіксованим винятком нижче. **Примітка (2026-09-05):** `sad.md §6` не має окремої діаграми на US-12/AC-16/AC-16b (вибір і зміна підвиду «за логікою») — сам `spec.md` AC-16b каже «treats the switch the same way as AC-11b», тобто це той самий механізм, що вже намальований у «Critical flow 11» (зміна `layoutMode` скидає розкладку), лише без окремого зображення для `logicVariant`. Не Save-as-OQ: поведінка описана, механізм той самий, дублювати діаграму заради іншого імені поля сенсу нема.
 
 ### Зафіксований виняток (не помилка, свідома межа контракту)
 
-**Потік 6 (`renamed` — перейменування картки)** у `sad.md §6` показує гілку `alt перейменовує картку`, але **жодного ендпоінта під неї в цьому контракті немає.** Це не пропуск: перейменування — операція над `card.name`, яка належить `life-area-card`, не `structure` (spec.md §1: «Структура не описує поля картки»). Той самий бекенд-сервер (D-24 — один мінімальний бекенд) обробляє це через `life-area-card`'s `PATCH /cards/{id}`, який після перейменування сам пише подію в сервіс літопису Структури — внутрішній міжфічевий виклик, не публічна операція цього контракту.
+**Потік 6 (`renamed` — перейменування картки)** у `sad.md §6` показує гілку `alt перейменовує картку`, але **жодного ендпоінта під неї в цьому контракті немає.** Це не пропуск: перейменування — операція над `card.name`, яка належить `life-area-card`, не `structure` (spec.md §1: «Структура не описує поля картки»). Той самий бекенд-сервер (D-24 — один мінімальний бекенд) обробляє це через `life-area-card`'s `PATCH /cards/{id}`, який після перейменування сам пише подію в таблицю `structure_history_event` — звичайний виклик функції й SQL-запис у тій самій транзакції, не окрема публічна операція цього контракту.
 
 ~~Save-as-OQ: власник — /sdd:api life-area-card, due — коли той контракт пишеться~~ — **закрито 2026-08-27**: `/sdd:api life-area-card` запущено, [`life-area-card/contracts/api-sync-report.md`](../../life-area-card/contracts/api-sync-report.md) підтверджує той самий внутрішній побічний ефект (не окрема операція, той самий бекенд-процес).
 
 **Потік 8 (нова картка отримує дефолтну позицію, AC-09)** — так само внутрішній побічний ефект: `life-area-card`'s `POST /cards` автоматично створює рядок у `structure_layout_position`. Не публічна операція цього контракту.
-
-**Потік 2 / Потік 6 — недоступність сервісу літопису** — `sad.md §11` явно лишає це відкритим питанням (блокувати запис чи чергувати). Контракт **не визначає** поведінку `PUT/POST /structure/layout/{cardId}` у цьому випадку — задокументовано як TBD у `description` обох операцій, не вигадано.
 
 ## Підсумок
 
