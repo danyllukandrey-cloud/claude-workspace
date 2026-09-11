@@ -20,6 +20,7 @@
 import { listActiveLayoutPositionsByOwner, findStructureByOwner } from '../infra/postgres-repo';
 import type { Db, LayoutPositionRecord, LayoutPositionStatusRow } from '../infra/postgres-repo';
 import { findHistoryEventsAsOf, type HistoryEventRecord } from '../infra/history-repo';
+import { moveCard } from '../app/move-card';
 import { AppError } from '../../shared/errors';
 
 // --- DTO -- форма відповіді, camelCase, точно як components.schemas.LayoutPosition ---
@@ -178,4 +179,33 @@ export async function getLayoutHistoryAsOf(
   }
 
   return { items, has_next: false, has_prev: false, next_cursor: null };
+}
+
+// --- moveCardPosition -- PUT /api/v1/structure/layout/{cardId} (T17) -------
+
+export interface MoveCardPositionBody {
+  cellIndex: number;
+  positionUpdatedAt: string;
+}
+
+/**
+ * Тонка обгортка над app/move-card.ts's `moveCard` (T12, вже done) --
+ * порт лише мапить `LayoutPositionRecord` у той самий `LayoutPositionDto`,
+ * що вже виробляє `listLayoutPositions`, і пропускає `AppError`
+ * (structure.card_not_found 404, structure.cell_occupied 409) як є --
+ * жодного іншого статусу порт не додає (DoD).
+ */
+export async function moveCardPosition(
+  db: Db,
+  ownerUserId: string,
+  cardId: string,
+  body: MoveCardPositionBody
+): Promise<LayoutPositionDto> {
+  const moved = await moveCard(db, {
+    ownerUserId,
+    cardId,
+    cellIndex: body.cellIndex,
+    positionUpdatedAt: body.positionUpdatedAt,
+  });
+  return toLayoutPositionDto(moved);
 }

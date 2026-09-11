@@ -21,7 +21,7 @@
 //   validate-first підхід, що structure-handlers.ts's updateStructure).
 
 import { describe, it, expect, vi } from 'vitest';
-import { listLayoutPositions, getLayoutHistoryAsOf } from './layout-handlers';
+import { listLayoutPositions, getLayoutHistoryAsOf, moveCardPosition } from './layout-handlers';
 import { AppError } from '../../shared/errors';
 import type { Db } from '../infra/postgres-repo';
 
@@ -188,5 +188,116 @@ describe('getLayoutHistoryAsOf handler', () => {
     expect(page.items).toEqual(
       expect.arrayContaining([expect.objectContaining({ cardId: 'card-1', cellIndex: 5 })])
     );
+  });
+});
+
+// --- moveCardPosition -- PUT /api/v1/structure/layout/{cardId} (T17) -------
+//
+// RED (unit level, mocked Db -- test-plan.md маркує AC-02/AC-08 як integration,
+// AC-03 non-disclosure перевіряється тут проти того самого 404, що use-case
+// (app/move-card.ts, T12, вже done) кидає сам; Docker/Neon недоступні в цьому
+// середовищі, тож повноцінний integration-рівень лишається NON-red -- цей файл
+// робить задачу TDD-водимою локально без реальної БД, той самий fake-Db стиль,
+// що ./move-card.test.ts і решта цього файлу (listLayoutPositions/
+// getLayoutHistoryAsOf).
+//
+// Контракт (contracts/openapi.yaml, moveCard):
+// - 200 LayoutPosition -- happy path, порт лише мапить record use-case у DTO
+//   (той самий toLayoutPositionDto, що вже використовує listLayoutPositions).
+// - 404 structure.card_not_found -- та сама помилка й для неіснуючої, й для
+//   чужої картки (AC-03 non-disclosure) -- use-case кидає сам, порт пропускає
+//   як є, нічого не приховує й не додає.
+// - 409 structure.cell_occupied -- клітинка вже зайнята іншою активною
+//   карткою (AC-02/D-62) -- те саме, use-case кидає сам.
+// DoD: "Handler returns 200/404/409 exactly per contract" -- жодного іншого
+// статусу порт не додає зверху.
+
+function fakeMoveDb(opts: {
+  activePositions: Array<{
+    id: string;
+    structure_id: string;
+    card_id: string;
+    cell_index: number;
+    status: 'active' | 'closed';
+    position_updated_at: Date;
+    created_at: Date;
+  }>;
+  moved?: (typeof opts.activePositions)[number] | null;
+}): Db {
+  const query = vi.fn(async (text: string) => {
+    const sql = text.trim().toUpperCase();
+
+    if (text.includes('structure_history_event') && sql.startsWith('INSERT')) {
+      return {
+        rows: [
+          {
+            id: 'history-1',
+            structure_id: STRUCTURE_ID,
+            card_id: 'card-a',
+            event_type: 'moved',
+            detail: null,
+            occurred_at: new Date('2026-01-03T00:00:00Z'),
+          },
+        ],
+      };
+    }
+    if (text.includes('structure_layout_position') && sql.startsWith('SELECT')) {
+      return { rows: opts.activePositions };
+    }
+    if (text.includes('structure_layout_position') && sql.startsWith('UPDATE')) {
+      return { rows: opts.moved ? [opts.moved] : [] };
+    }
+    throw new Error(`Непередбачений запит у тесті: ${text}`);
+  });
+  return { query: query as unknown as Db['query'] };
+}
+
+describe('moveCardPosition handler', () => {
+  // Happy path (AC-08) -- порт повертає LayoutPosition DTO точно у формі
+  // контракту (camelCase, positionUpdatedAt як ISO-рядок), не сирий record
+  // use-case-шару.
+  it('returns 200 LayoutPosition DTO matching the contract shape', async () => {
+    const current = positionRow({ card_id: 'card-a', cell_index: 3, position_updated_at: new Date('2026-01-02T00:00:00Z') });
+    const moved = positionRow({ card_id: 'card-a', cell_index: 7, position_updated_at: new Date('2026-01-05T00:00:00Z') });
+    const db = fakeMoveDb({ activePositions: [current], moved });
+
+    const dto = await moveCardPosition(db, OWNER, 'card-a', {
+      cellIndex: 7,
+      positionUpdatedAt: '2026-01-05T00:00:00Z',
+    });
+
+    expect(dto).toEqual({
+      cardId: 'card-a',
+      cellIndex: 7,
+      status: 'active',
+      positionUpdatedAt: expect.any(String),
+    });
+  });
+
+  // AC-02/D-62 -- клітинка вже зайнята ІНШОЮ активною карткою -- 409
+  // structure.cell_occupied, той самий код і статус, що use-case кидає.
+  it('rejects with 409 structure.cell_occupied when the target cell is already taken', async () => {
+    const mover = positionRow({ card_id: 'card-a', cell_index: 3, position_updated_at: new Date('2026-01-02T00:00:00Z') });
+    const occupant = positionRow({ card_id: 'card-b', cell_index: 7, position_updated_at: new Date('2026-01-02T00:00:00Z') });
+    const db = fakeMoveDb({ activePositions: [mover, occupant] });
+
+    await expect(
+      moveCardPosition(db, OWNER, 'card-a', { cellIndex: 7, positionUpdatedAt: '2026-01-05T00:00:00Z' })
+    ).rejects.toMatchObject({ code: 'structure.cell_occupied', httpStatus: 409 });
+  });
+
+  // AC-03 (non-disclosure) -- картка без активної позиції власника (не
+  // існує чи належить іншому користувачу) -- 404 structure.card_not_found,
+  // той самий код для обох випадків, ніколи не підтверджуємо/спростовуємо.
+  it('rejects with 404 structure.card_not_found for a missing or not-owned card, never confirming which', async () => {
+    const db = fakeMoveDb({ activePositions: [] });
+
+    const error = await moveCardPosition(db, OWNER, 'someone-elses-card', {
+      cellIndex: 1,
+      positionUpdatedAt: '2026-01-05T00:00:00Z',
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AppError);
+    expect(error).toMatchObject({ code: 'structure.card_not_found', httpStatus: 404 });
   });
 });
