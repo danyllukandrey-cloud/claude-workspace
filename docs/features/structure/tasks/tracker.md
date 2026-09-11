@@ -14,8 +14,8 @@
 | T7 | Domain: gap + trend calculation | domain | TBD | M | — | done |
 | T8 | Domain: local history cache model | domain | TBD | S | — | done |
 | T9 | Infra: backend repository for structure + layout positions | infra | TBD | M | T1, T2, T27 | done |
-| T10 | Infra: history repository (write + asOf read) | infra | TBD | M | T3 | todo |
-| T11 | App: updateStructure use-case | app | TBD | M | T4, T9 | todo |
+| T10 | Infra: history repository (write + asOf read) | infra | TBD | M | T3 | done |
+| T11 | App: updateStructure use-case | app | TBD | M | T4, T9 | done |
 | T12 | App: moveCard use-case | app | TBD | M | T4, T5, T9, T10 | todo |
 | T13 | App: closeCard use-case | app | TBD | M | T5, T9, T10 | todo |
 | T14 | App: getAnalytics use-case | app | TBD | L | T6, T7, T9, T10 | todo |
