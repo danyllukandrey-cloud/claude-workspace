@@ -941,6 +941,118 @@ describe('migration 04_add_logic_variant (T27, AC-16, D-83/ISS-7) — проти
   });
 });
 
+describe('migration 05_create_structure_history_event (T3, AC-15) — проти реальної Neon', () => {
+  it('structure_id/card_id — реальні FK ON DELETE CASCADE на structure(id)/card(id)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      const ownerId = crypto.randomUUID();
+      const structureId = crypto.randomUUID();
+      const cardId = crypto.randomUUID();
+      const eventId = crypto.randomUUID();
+      await client.query('INSERT INTO app_user (id, google_sub, email) VALUES ($1, $2, $3)', [
+        ownerId,
+        `test-structure-t3-${ownerId}`,
+        'structure-t3@example.test',
+      ]);
+      try {
+        await client.query('INSERT INTO structure (id, owner_user_id) VALUES ($1, $2)', [structureId, ownerId]);
+        await client.query('INSERT INTO card (id, owner_user_id, name) VALUES ($1, $2, $3)', [cardId, ownerId, 'T3 test card']);
+        await client.query(
+          "INSERT INTO structure_history_event (id, structure_id, card_id, event_type) VALUES ($1, $2, $3, 'renamed')",
+          [eventId, structureId, cardId]
+        );
+
+        // видалення card каскадно видаляє її structure_history_event
+        await client.query('DELETE FROM card WHERE id = $1', [cardId]);
+        const { rows: afterCardDelete } = await client.query('SELECT id FROM structure_history_event WHERE id = $1', [eventId]);
+        expect(afterCardDelete).toHaveLength(0);
+      } finally {
+        await client.query('DELETE FROM app_user WHERE id = $1', [ownerId]); // каскадно прибирає structure
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('видалення structure каскадно видаляє її structure_history_event', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      const ownerId = crypto.randomUUID();
+      const structureId = crypto.randomUUID();
+      const cardId = crypto.randomUUID();
+      const eventId = crypto.randomUUID();
+      await client.query('INSERT INTO app_user (id, google_sub, email) VALUES ($1, $2, $3)', [
+        ownerId,
+        `test-structure-t3-cascade-${ownerId}`,
+        'structure-t3-cascade@example.test',
+      ]);
+      try {
+        await client.query('INSERT INTO structure (id, owner_user_id) VALUES ($1, $2)', [structureId, ownerId]);
+        await client.query('INSERT INTO card (id, owner_user_id, name) VALUES ($1, $2, $3)', [cardId, ownerId, 'T3 test card 2']);
+        await client.query(
+          "INSERT INTO structure_history_event (id, structure_id, card_id, event_type) VALUES ($1, $2, $3, 'moved')",
+          [eventId, structureId, cardId]
+        );
+
+        await client.query('DELETE FROM structure WHERE id = $1', [structureId]);
+        const { rows } = await client.query('SELECT id FROM structure_history_event WHERE id = $1', [eventId]);
+        expect(rows).toHaveLength(0);
+      } finally {
+        await client.query('DELETE FROM app_user WHERE id = $1', [ownerId]);
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('event_type CHECK приймає лише renamed/moved/closed — інше значення відхиляється на рівні БД', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      const ownerId = crypto.randomUUID();
+      const structureId = crypto.randomUUID();
+      const cardId = crypto.randomUUID();
+      await client.query('INSERT INTO app_user (id, google_sub, email) VALUES ($1, $2, $3)', [
+        ownerId,
+        `test-structure-t3-check-${ownerId}`,
+        'structure-t3-check@example.test',
+      ]);
+      try {
+        await client.query('INSERT INTO structure (id, owner_user_id) VALUES ($1, $2)', [structureId, ownerId]);
+        await client.query('INSERT INTO card (id, owner_user_id, name) VALUES ($1, $2, $3)', [cardId, ownerId, 'T3 CHECK card']);
+
+        await expect(
+          client.query(
+            "INSERT INTO structure_history_event (id, structure_id, card_id, event_type) VALUES ($1, $2, $3, 'not_a_real_event')",
+            [crypto.randomUUID(), structureId, cardId]
+          )
+        ).rejects.toThrow(/violates check constraint/);
+      } finally {
+        await client.query('DELETE FROM app_user WHERE id = $1', [ownerId]);
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('індекси idx_history_card_time і idx_history_structure_time реально існують', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      const { rows } = await client.query(
+        `SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'structure_history_event' ORDER BY indexname`,
+      );
+      const byName = Object.fromEntries(rows.map((r) => [r.indexname, r.indexdef]));
+      expect(byName['idx_history_card_time']).toMatch(/\(card_id, occurred_at\)/);
+      expect(byName['idx_history_structure_time']).toMatch(/\(structure_id, occurred_at\)/);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
 describe('D-69/D-103 (закриває ISS-26) — archiveCard реально закриває позицію в розкладці, проти реальної Neon', () => {
   it('архівація картки, розкладеної в Структурі, закриває її активну позицію в тій самій дії', async () => {
     const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });

@@ -52,6 +52,9 @@ const TO_PROMOTE = [
   { slug: 'structure', staged: 'backend/03_add_owner_fk', name: 'add-structure-owner-fk' },
   // T27 (AC-16, D-83/ISS-7): logic_variant підвид розкладки "за логікою".
   { slug: 'structure', staged: 'backend/04_add_logic_variant', name: 'add-logic-variant' },
+  // T3 (AC-15): Літопис Структури — structure_history_event, реальні cross-feature FK
+  // (structure_id -> structure, card_id -> card), обидва ON DELETE CASCADE.
+  { slug: 'structure', staged: 'backend/05_create_structure_history_event', name: 'create-structure-history-event' },
 ];
 
 function readReadme() {
