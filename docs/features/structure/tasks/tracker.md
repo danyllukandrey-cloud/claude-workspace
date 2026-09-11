@@ -16,10 +16,10 @@
 | T9 | Infra: backend repository for structure + layout positions | infra | TBD | M | T1, T2, T27 | done |
 | T10 | Infra: history repository (write + asOf read) | infra | TBD | M | T3 | done |
 | T11 | App: updateStructure use-case | app | TBD | M | T4, T9 | done |
-| T12 | App: moveCard use-case | app | TBD | M | T4, T5, T9, T10 | todo |
-| T13 | App: closeCard use-case | app | TBD | M | T5, T9, T10 | todo |
-| T14 | App: getAnalytics use-case | app | TBD | L | T6, T7, T9, T10 | todo |
-| T15 | Ports: GET/PATCH /structure handlers | ports | TBD | S | T11 | todo |
+| T12 | App: moveCard use-case | app | TBD | M | T4, T5, T9, T10 | done |
+| T13 | App: closeCard use-case | app | TBD | M | T5, T9, T10 | done |
+| T14 | App: getAnalytics use-case | app | TBD | L | T6, T7, T9, T10 | done |
+| T15 | Ports: GET/PATCH /structure handlers | ports | TBD | S | T11 | done |
 | T16 | Ports: GET /structure/layout + /structure/layout/history handlers | ports | TBD | S | T9, T14 | todo |
 | T17 | Ports: PUT /structure/layout/{cardId} handler | ports | TBD | S | T12 | todo |
 | T18 | Ports: POST /structure/layout/{cardId}/close handler | ports | TBD | S | T13 | todo |
