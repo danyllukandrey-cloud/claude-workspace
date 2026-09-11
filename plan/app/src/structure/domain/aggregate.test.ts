@@ -1,6 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { computeStructureAggregate } from './aggregate';
-import type { CardAggregateInput } from './aggregate';
+import {
+  computeStructureAggregate,
+  computeLogicLayoutGaps,
+  flagUnmaintainedCards,
+  computeGapTrend,
+} from './aggregate';
+import type {
+  CardAggregateInput,
+  LogicLayoutGapInput,
+  CardMaintenanceInput,
+  GapObservation,
+} from './aggregate';
 
 // Структура не рахує прогрес картки сама -- отримує вже обчислений відсоток
 // через доменну логіку `life-area-card` (spec.md §1, ADR-0001 тієї фічі).
@@ -61,5 +71,93 @@ describe('computeStructureAggregate — AC-04 (розкладка не впли�
 
     expect(afterReorder).toEqual(original);
     expect(original.average).toBeCloseTo(0.5); // (0.1 + 0.9) / 2, кожна врахована картка рівною вагою
+  });
+});
+
+// T7 (AC-06) -- у розкладці "за логікою" позиція (cellIndex) явно виражає
+// заявлений пріоритет (spec.md AC-06: "an explicit priority scheme by
+// position"). Розрив = position-derived priority rank (нормалізований
+// 0..1, менший cellIndex = вищий пріоритет) мінус фактичний прогрес.
+// Жодного вердикту -- лише число (spec.md §3 Non-goals, D-60).
+describe('computeLogicLayoutGaps -- AC-06 (розрив ранг-за-позицією vs прогрес, без вердикту)', () => {
+  it('returns, per card, the gap between its position-derived priority rank and its actual progress', () => {
+    const cards: LogicLayoutGapInput[] = [
+      { cardId: 'card-top', cellIndex: 0, progress: 0.9 }, // найважливіша позиція, прогрес майже наздоганяє
+      { cardId: 'card-mid', cellIndex: 1, progress: 0.5 },
+      { cardId: 'card-bottom', cellIndex: 2, progress: 0.1 }, // найменш пріоритетна позиція
+    ];
+
+    const gaps = computeLogicLayoutGaps(cards);
+
+    const byId = Object.fromEntries(gaps.map((g) => [g.cardId, g.gap]));
+    expect(byId['card-top']).toBeCloseTo(0.1); // rank 1 - progress 0.9
+    expect(byId['card-mid']).toBeCloseTo(0); // rank 0.5 - progress 0.5
+    expect(byId['card-bottom']).toBeCloseTo(-0.1); // rank 0 - progress 0.1
+
+    // spec.md AC-06 -- "honestly, with no good/bad verdict attached": лише
+    // числове значення розриву, жодного поля-етикетки якості/оцінки.
+    for (const gap of gaps) {
+      expect(gap).not.toHaveProperty('verdict');
+      expect(gap).not.toHaveProperty('label');
+    }
+  });
+});
+
+// T7 (AC-06b) -- розкладки без явної схеми пріоритету (single / free) не
+// мають рангу за позицією взагалі, тож ранг-розрив (AC-06) для них не
+// показується. Замість цього -- сигнал "картку завели (заявили важливою),
+// але реально не ведуть" для карток, що мали намір трекати (metric-block
+// заявлений), проте не мають жодного запису.
+describe('flagUnmaintainedCards -- AC-06b (розкладка без схеми: "заявлено -- не ведеться")', () => {
+  it('flags a card that declared a metric-block but has zero recorded entries', () => {
+    const cards: CardMaintenanceInput[] = [
+      { cardId: 'card-declared-idle', hasMetricBlock: true, entryCount: 0 },
+      { cardId: 'card-active', hasMetricBlock: true, entryCount: 5 },
+      { cardId: 'card-declarative-only', hasMetricBlock: false, entryCount: 0 },
+    ];
+
+    const flagged = flagUnmaintainedCards(cards);
+
+    expect(flagged).toEqual(['card-declared-idle']);
+  });
+
+  it('flags no card when every declared metric-block has at least one entry', () => {
+    const cards: CardMaintenanceInput[] = [
+      { cardId: 'card-active', hasMetricBlock: true, entryCount: 1 },
+    ];
+
+    expect(flagUnmaintainedCards(cards)).toEqual([]);
+  });
+});
+
+// T7 (AC-07) -- коли розрив спостерігався в більш ніж одній точці часу,
+// показуємо ще й напрямок зміни (росте/меншає), не лише поточне значення
+// (spec.md AC-07). Порівнюємо найранішу і найпізнішу точку за модулем
+// розриву (|gap|) -- зростання модуля = розрив росте, зменшення = меншає.
+describe('computeGapTrend -- AC-07 (напрямок зміни розриву у часі)', () => {
+  it('reports "growing" when the gap magnitude increased between the earliest and latest observation', () => {
+    const observations: GapObservation[] = [
+      { gap: 0.1, occurredAt: '2026-09-01T00:00:00.000Z' },
+      { gap: 0.3, occurredAt: '2026-09-10T00:00:00.000Z' },
+    ];
+
+    expect(computeGapTrend(observations)).toBe('growing');
+  });
+
+  it('reports "shrinking" when the gap magnitude decreased between the earliest and latest observation', () => {
+    const observations: GapObservation[] = [
+      { gap: -0.4, occurredAt: '2026-09-05T00:00:00.000Z' },
+      { gap: -0.1, occurredAt: '2026-09-01T00:00:00.000Z' }, // масив не обов'язково впорядкований
+    ];
+
+    expect(computeGapTrend(observations)).toBe('shrinking');
+  });
+
+  it('returns null -- not enough points in time to derive a direction -- when only one observation exists', () => {
+    const observations: GapObservation[] = [
+      { gap: 0.2, occurredAt: '2026-09-01T00:00:00.000Z' },
+    ];
+
+    expect(computeGapTrend(observations)).toBeNull();
   });
 });
