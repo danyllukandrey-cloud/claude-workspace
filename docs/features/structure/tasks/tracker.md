@@ -13,7 +13,7 @@
 | T6 | Domain: aggregate progress calculation | domain | TBD | M | — | done |
 | T7 | Domain: gap + trend calculation | domain | TBD | M | — | done |
 | T8 | Domain: local history cache model | domain | TBD | S | — | done |
-| T9 | Infra: backend repository for structure + layout positions | infra | TBD | M | T1, T2, T27 | todo |
+| T9 | Infra: backend repository for structure + layout positions | infra | TBD | M | T1, T2, T27 | done |
 | T10 | Infra: history repository (write + asOf read) | infra | TBD | M | T3 | todo |
 | T11 | App: updateStructure use-case | app | TBD | M | T4, T9 | todo |
 | T12 | App: moveCard use-case | app | TBD | M | T4, T5, T9, T10 | todo |

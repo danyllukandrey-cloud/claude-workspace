@@ -1,0 +1,202 @@
+// T9 -- Infra: backend repository for structure + layout positions.
+// RED (unit level, mocked Db): AC-03/AC-08/AC-09/AC-12/AC-16.
+//
+// Real DB round-trip (AC-03/08/09/12/16 as chosen by test-plan.md, "integration")
+// is exercised against the shared Postgres already wired for this module's
+// other integration coverage ("T10 -- Postgres repo (life-area-card)" /
+// "structure T1/T2/T26" sections of migrations.integration.test.ts) -- out of
+// scope for this task's files_hint (postgres-repo.ts only), left for the
+// integration-level extension of that shared suite.
+//
+// Same mocking convention as
+// ../../cards/life-area-card/infra/postgres-repo.test.ts: fake `Db.query`
+// (vi.fn), assert both the SQL text (owner_user_id scoping) and the mapped
+// return shape (camelCase, including logicVariant).
+
+import { describe, it, expect, vi } from 'vitest';
+import type { Db } from './postgres-repo';
+import {
+  findStructureByOwner,
+  insertStructure,
+  updateStructure,
+  insertLayoutPosition,
+  listActiveLayoutPositionsByOwner,
+  updateLayoutPositionCell,
+} from './postgres-repo';
+
+function rawStructureRow(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: 'structure-1',
+    owner_user_id: 'owner-1',
+    declaration: null,
+    layout_mode: 'logic',
+    logic_variant: 'focus',
+    created_at: new Date('2026-01-01T00:00:00Z'),
+    updated_at: new Date('2026-01-02T00:00:00Z'),
+    ...overrides,
+  };
+}
+
+function rawLayoutPositionRow(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: 'position-1',
+    structure_id: 'structure-1',
+    card_id: 'card-1',
+    cell_index: 3,
+    status: 'active',
+    position_updated_at: new Date('2026-01-03T00:00:00Z'),
+    created_at: new Date('2026-01-01T00:00:00Z'),
+    ...overrides,
+  };
+}
+
+describe('findStructureByOwner -- AC-03 (non-disclosure) + AC-16 (logicVariant round-trips)', () => {
+  it('scopes the SELECT by owner_user_id and maps logic_variant onto logicVariant', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [rawStructureRow()] });
+    const db: Db = { query };
+
+    const found = await findStructureByOwner(db, 'owner-1');
+
+    expect(found).toEqual({
+      id: 'structure-1',
+      ownerUserId: 'owner-1',
+      declaration: null,
+      layoutMode: 'logic',
+      logicVariant: 'focus',
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-02T00:00:00Z'),
+    });
+
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/owner_user_id/);
+    expect(params).toEqual(['owner-1']);
+  });
+
+  it('a mismatched owner_user_id is never returned -- same outcome as "does not exist" (AC-03)', async () => {
+    // A real WHERE owner_user_id = $1 for a different owner matches nothing;
+    // the fake DB reproduces that by returning no rows.
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    const db: Db = { query };
+
+    await expect(findStructureByOwner(db, 'someone-elses-owner-id')).resolves.toBeNull();
+  });
+});
+
+describe('insertStructure -- writes logicVariant alongside layoutMode', () => {
+  it('persists logicVariant and returns the camelCase record', async () => {
+    const query = vi.fn().mockResolvedValue({
+      rows: [rawStructureRow({ declaration: 'картина світу' })],
+    });
+    const db: Db = { query };
+
+    const created = await insertStructure(db, {
+      id: 'structure-1',
+      ownerUserId: 'owner-1',
+      declaration: 'картина світу',
+      layoutMode: 'logic',
+      logicVariant: 'focus',
+    });
+
+    expect(created.logicVariant).toBe('focus');
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/logic_variant/);
+    expect(params).toContain('focus');
+  });
+});
+
+describe('updateStructure -- AC-10/AC-11/AC-16 partial write, scoped by owner (AC-03)', () => {
+  it('updates declaration/layoutMode/logicVariant scoped to the given owner_user_id', async () => {
+    const query = vi.fn().mockResolvedValue({
+      rows: [rawStructureRow({ declaration: 'нова декларація', logic_variant: 'balance' })],
+    });
+    const db: Db = { query };
+
+    const updated = await updateStructure(db, 'owner-1', {
+      declaration: 'нова декларація',
+      logicVariant: 'balance',
+    });
+
+    expect(updated?.logicVariant).toBe('balance');
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/owner_user_id/);
+    expect(params).toContain('owner-1');
+  });
+
+  it('a caller passing someone else\'s owner_user_id gets null, not another owner\'s row (AC-03)', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    const db: Db = { query };
+
+    await expect(
+      updateStructure(db, 'attacker-owner-id', { declaration: 'спроба чужого запису' })
+    ).resolves.toBeNull();
+  });
+});
+
+describe('insertLayoutPosition + listActiveLayoutPositionsByOwner -- AC-08/AC-09 read-your-own-writes', () => {
+  it('a newly inserted position is scoped to structure_id and returned on the next owner-scoped read', async () => {
+    const insertQuery = vi.fn().mockResolvedValue({ rows: [rawLayoutPositionRow()] });
+    const dbForInsert: Db = { query: insertQuery };
+
+    const inserted = await insertLayoutPosition(dbForInsert, {
+      id: 'position-1',
+      structureId: 'structure-1',
+      cardId: 'card-1',
+      cellIndex: 3,
+    });
+    expect(inserted).toEqual({
+      id: 'position-1',
+      structureId: 'structure-1',
+      cardId: 'card-1',
+      cellIndex: 3,
+      status: 'active',
+      positionUpdatedAt: new Date('2026-01-03T00:00:00Z'),
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+    });
+
+    const listQuery = vi.fn().mockResolvedValue({ rows: [rawLayoutPositionRow()] });
+    const dbForList: Db = { query: listQuery };
+
+    const positions = await listActiveLayoutPositionsByOwner(dbForList, 'owner-1');
+    expect(positions).toHaveLength(1);
+    expect(positions[0].cellIndex).toBe(3);
+
+    // Owner scoping happens via a join back to structure.owner_user_id --
+    // the query text must mention owner_user_id even though the column lives
+    // on `structure`, not `structure_layout_position` (data-model.md).
+    const [sql, params] = listQuery.mock.calls[0];
+    expect(sql).toMatch(/owner_user_id/);
+    expect(params).toEqual(['owner-1']);
+  });
+
+  it('a card with no active position at all is simply absent from the list -- AC-09 places no forced placeholder row', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    const db: Db = { query };
+
+    await expect(listActiveLayoutPositionsByOwner(db, 'owner-1')).resolves.toEqual([]);
+  });
+});
+
+describe('updateLayoutPositionCell -- AC-08 drag-and-drop save, scoped by owner (AC-03)', () => {
+  it('moves the card to the new cell and returns it when the position belongs to the given owner', async () => {
+    const query = vi.fn().mockResolvedValue({
+      rows: [rawLayoutPositionRow({ cell_index: 9 })],
+    });
+    const db: Db = { query };
+
+    const moved = await updateLayoutPositionCell(db, 'owner-1', 'card-1', 9, '2026-01-04T00:00:00Z');
+
+    expect(moved?.cellIndex).toBe(9);
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/owner_user_id/);
+    expect(params).toContain('owner-1');
+  });
+
+  it('a mismatched owner_user_id never moves nor discloses another owner\'s card position (AC-03)', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    const db: Db = { query };
+
+    await expect(
+      updateLayoutPositionCell(db, 'attacker-owner-id', 'card-1', 9, '2026-01-04T00:00:00Z')
+    ).resolves.toBeNull();
+  });
+});
