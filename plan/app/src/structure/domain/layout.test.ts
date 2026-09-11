@@ -4,9 +4,12 @@ import {
   assertLogicVariantAllowed,
   switchLayoutMode,
   switchLogicVariant,
+  assertCellAvailable,
+  resolvePositionConflict,
+  closeLayoutPosition,
   LayoutValidationError,
 } from './layout';
-import type { LayoutPosition } from './layout';
+import type { LayoutPosition, LayoutPositionRow, TimestampedPosition } from './layout';
 
 // T4 -- лише "ядро": чисті доменні правила без I/O. Реальний запис у БД
 // (транзакційний reset одразу з layoutMode/logicVariant у самому рядку
@@ -101,5 +104,74 @@ describe('switchLogicVariant — AC-16b (зміна підвиду "за лог�
   it('rejects switching logicVariant when the Structure is not currently in logic layout mode', () => {
     const existing: LayoutPosition[] = [{ cardId: 'card-a', cellIndex: 0 }];
     expect(() => switchLogicVariant('free', existing, 'balance')).toThrow(LayoutValidationError);
+  });
+});
+
+// T5 -- AC-02: у "за логікою" (D-62 -- одна клітинка = одна картка) кожна
+// активна клітинка тримає рівно одну картку; перетягування картки на вже
+// зайняту клітинку блокується, а не переписує сусіда.
+describe('assertCellAvailable — AC-02 (колізія активної клітинки блокується)', () => {
+  it('rejects placing a card onto a cell already occupied by a different active card', () => {
+    const activePositions: LayoutPosition[] = [
+      { cardId: 'card-a', cellIndex: 4 },
+      { cardId: 'card-b', cellIndex: 7 },
+    ];
+
+    expect(() => assertCellAvailable(activePositions, 4, 'card-c')).toThrow(LayoutValidationError);
+  });
+
+  it('allows a card to be placed on a free cell', () => {
+    const activePositions: LayoutPosition[] = [{ cardId: 'card-a', cellIndex: 4 }];
+
+    expect(() => assertCellAvailable(activePositions, 9, 'card-c')).not.toThrow();
+  });
+
+  it('does not treat a card moving onto its own already-held cell as a collision', () => {
+    const activePositions: LayoutPosition[] = [{ cardId: 'card-a', cellIndex: 4 }];
+
+    expect(() => assertCellAvailable(activePositions, 4, 'card-a')).not.toThrow();
+  });
+});
+
+// T5 -- AC-08 (edge case, test-plan.md §Edge cases): дві мітки часу, що
+// конфліктують після офлайн-синхронізації, вирішуються last-write-wins за
+// positionUpdatedAt (ADR-0002) -- пізніший запис перемагає, ранішній тихо
+// відкидається, без злиття.
+describe('resolvePositionConflict — AC-08 / ADR-0002 (last-write-wins за positionUpdatedAt)', () => {
+  it('keeps the position with the later positionUpdatedAt timestamp when two devices moved the same card', () => {
+    const earlier: TimestampedPosition = {
+      cardId: 'card-a',
+      cellIndex: 2,
+      positionUpdatedAt: '2026-09-11T09:00:00.000Z',
+    };
+    const later: TimestampedPosition = {
+      cardId: 'card-a',
+      cellIndex: 5,
+      positionUpdatedAt: '2026-09-11T09:05:00.000Z',
+    };
+
+    expect(resolvePositionConflict(earlier, later)).toEqual(later);
+    // Порядок аргументів не має значення -- перемагає пізніша мітка часу,
+    // а не той, хто прийшов першим/другим у виклику.
+    expect(resolvePositionConflict(later, earlier)).toEqual(later);
+  });
+});
+
+// T5 -- AC-12: закриття напрямку позначає рядок статусом 'closed'
+// (D-66 -- ніколи фізичне видалення), рядок і його card_id лишаються
+// доступні для історії/переносу метрик.
+describe('closeLayoutPosition — AC-12 (закриття позначає статус, не видаляє рядок)', () => {
+  it('marks an active position as closed without deleting the row', () => {
+    const active: LayoutPositionRow = {
+      cardId: 'card-a',
+      cellIndex: 3,
+      status: 'active',
+    };
+
+    const closed = closeLayoutPosition(active);
+
+    expect(closed.status).toBe('closed');
+    expect(closed.cardId).toBe('card-a');
+    expect(closed.cellIndex).toBe(3);
   });
 });

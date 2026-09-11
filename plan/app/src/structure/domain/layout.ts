@@ -38,6 +38,20 @@ export interface LayoutResetPlan {
   positions: ResetLayoutPosition[];
 }
 
+export interface TimestampedPosition {
+  cardId: string;
+  cellIndex: number;
+  positionUpdatedAt: string;
+}
+
+export type LayoutPositionStatus = 'active' | 'closed';
+
+export interface LayoutPositionRow {
+  cardId: string;
+  cellIndex: number;
+  status: LayoutPositionStatus;
+}
+
 // AC-09: новій картці дається клітинка за замовчуванням навіть коли режим
 // розкладки ще не обрано (null) -- це ніколи не блокує створення картки.
 export function defaultPositionForNewCard(
@@ -105,4 +119,38 @@ export function switchLogicVariant(
   }
 
   return resetToBaseOrder(positions);
+}
+
+// AC-02 (D-62 -- одна клітинка = одна картка): у режимі "за логікою" кожна
+// активна клітинка тримає рівно одну картку. Перетягування на вже зайняту
+// чужою карткою клітинку блокується, а не тихо переписує сусіда; картка,
+// що вже тримає цю клітинку сама, не вважається колізією (переміщення "на
+// себе" -- no-op, не помилка).
+export function assertCellAvailable(
+  activePositions: LayoutPosition[],
+  cellIndex: number,
+  cardId: string,
+): void {
+  const occupant = activePositions.find((position) => position.cellIndex === cellIndex);
+
+  if (occupant && occupant.cardId !== cardId) {
+    throw new LayoutValidationError(`cell ${cellIndex} is already occupied by a different card`);
+  }
+}
+
+// AC-08 / ADR-0002: дві мітки часу, що конфліктують після офлайн-
+// синхронізації, вирішуються last-write-wins за positionUpdatedAt --
+// пізніший запис перемагає, ранішній тихо відкидається, без злиття.
+export function resolvePositionConflict(
+  a: TimestampedPosition,
+  b: TimestampedPosition,
+): TimestampedPosition {
+  return a.positionUpdatedAt >= b.positionUpdatedAt ? a : b;
+}
+
+// AC-12 (D-66 -- ніколи фізичне видалення): закриття напрямку позначає
+// рядок статусом 'closed', рядок і його card_id лишаються доступні для
+// історії/переносу метрик.
+export function closeLayoutPosition(position: LayoutPositionRow): LayoutPositionRow {
+  return { ...position, status: 'closed' };
 }
