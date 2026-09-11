@@ -20,7 +20,7 @@
 | T13 | App: closeCard use-case | app | TBD | M | T5, T9, T10 | done |
 | T14 | App: getAnalytics use-case | app | TBD | L | T6, T7, T9, T10 | done |
 | T15 | Ports: GET/PATCH /structure handlers | ports | TBD | S | T11 | done |
-| T16 | Ports: GET /structure/layout + /structure/layout/history handlers | ports | TBD | S | T9, T14 | todo |
+| T16 | Ports: GET /structure/layout + /structure/layout/history handlers | ports | TBD | S | T9, T14 | done |
 | T17 | Ports: PUT /structure/layout/{cardId} handler | ports | TBD | S | T12 | todo |
 | T18 | Ports: POST /structure/layout/{cardId}/close handler | ports | TBD | S | T13 | todo |
 | T19 | UI: shared primitives (Spinner, Banner, ConfirmDialog, EmptyState) | ui | TBD | M | — | done |
