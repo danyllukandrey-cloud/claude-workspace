@@ -33,3 +33,4 @@
 | `1788631003265_create-structure.sql` | `structure/migrations/backend/01_create_structure.{up,down}.sql` | `b2dc8ca7a38479d2af142f056893669bd520508799c9d4dab0fa10a19938126a` |
 | `1788631003271_create-structure-layout-position.sql` | `structure/migrations/backend/02_create_structure_layout_position.{up,down}.sql` | `372592312b66dc3c3ab765988d70e90af2c973fec28191ae9bddf8be8b050684` |
 | `1788631003274_add-structure-owner-fk.sql` | `structure/migrations/backend/03_add_owner_fk.{up,down}.sql` | `ff2be111cf49cb80a39e9538856d4c4ec22708c9454580bfc4a9e8ca968163ee` |
+| `1789122610006_add-logic-variant.sql` | `structure/migrations/backend/04_add_logic_variant.{up,down}.sql` | `57360a2e568cd37429a70e7842177d96d2a55cfe96439b391c5ed92b4ff02bb1` |

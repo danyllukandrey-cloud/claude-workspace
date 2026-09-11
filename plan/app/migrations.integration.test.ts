@@ -902,6 +902,45 @@ describe('structure T1/T2/T26 (D-103, промоучено позачергов�
   });
 });
 
+describe('migration 04_add_logic_variant (T27, AC-16, D-83/ISS-7) — проти реальної Neon', () => {
+  it('structure.logic_variant приймає balance/focus/cause_effect і NULL, але не інше значення (CHECK)', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      const ownerId = crypto.randomUUID();
+      await client.query('INSERT INTO app_user (id, google_sub, email) VALUES ($1, $2, $3)', [
+        ownerId,
+        `test-structure-t27-${ownerId}`,
+        'structure-t27@example.test',
+      ]);
+      try {
+        const structureId = crypto.randomUUID();
+        await client.query('INSERT INTO structure (id, owner_user_id) VALUES ($1, $2)', [structureId, ownerId]);
+
+        // NULL -- дозволено (D-83: "ще не обрано", той самий принцип, що і layout_mode).
+        const { rows: nullRow } = await client.query('SELECT logic_variant FROM structure WHERE id = $1', [structureId]);
+        expect(nullRow[0].logic_variant).toBeNull();
+
+        // Кожне з трьох дозволених значень реально приймається на рівні БД.
+        for (const variant of ['balance', 'focus', 'cause_effect']) {
+          await client.query('UPDATE structure SET logic_variant = $1 WHERE id = $2', [variant, structureId]);
+          const { rows } = await client.query('SELECT logic_variant FROM structure WHERE id = $1', [structureId]);
+          expect(rows[0].logic_variant).toBe(variant);
+        }
+
+        // Будь-яке інше значення -- CHECK відхиляє на рівні БД.
+        await expect(
+          client.query("UPDATE structure SET logic_variant = 'not_a_real_variant' WHERE id = $1", [structureId])
+        ).rejects.toThrow(/violates check constraint/);
+      } finally {
+        await client.query('DELETE FROM app_user WHERE id = $1', [ownerId]); // каскадно прибирає structure
+      }
+    } finally {
+      await client.end();
+    }
+  });
+});
+
 describe('D-69/D-103 (закриває ISS-26) — archiveCard реально закриває позицію в розкладці, проти реальної Neon', () => {
   it('архівація картки, розкладеної в Структурі, закриває її активну позицію в тій самій дії', async () => {
     const client = new Client({ connectionString: process.env.DATABASE_URL_POOLED });
