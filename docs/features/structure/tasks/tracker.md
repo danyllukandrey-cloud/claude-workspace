@@ -21,12 +21,12 @@
 | T14 | App: getAnalytics use-case | app | TBD | L | T6, T7, T9, T10 | done |
 | T15 | Ports: GET/PATCH /structure handlers | ports | TBD | S | T11 | done |
 | T16 | Ports: GET /structure/layout + /structure/layout/history handlers | ports | TBD | S | T9, T14 | done |
-| T17 | Ports: PUT /structure/layout/{cardId} handler | ports | TBD | S | T12 | todo |
+| T17 | Ports: PUT /structure/layout/{cardId} handler | ports | TBD | S | T12 | done |
 | T18 | Ports: POST /structure/layout/{cardId}/close handler | ports | TBD | S | T13 | todo |
 | T19 | UI: shared primitives (Spinner, Banner, ConfirmDialog, EmptyState) | ui | TBD | M | — | done |
 | T20 | UI: SCR-01 Декларація screen | ui | TBD | M | T19, T15 | todo |
 | T21 | UI: SCR-02 Схема screen | ui | TBD | L | T19, T16, T17 | todo |
-| T22 | UI: SCR-03 Літопис-Аналітика screen | ui | TBD | M | T19, T16 | todo |
+| T22 | UI: SCR-03 Літопис-Аналітика screen | ui | TBD | M | T19, T16 | done |
 | T23 | UI: SCR-04 Закрити напрямок dialog | ui | TBD | M | T19, T18 | todo |
 | T24 | Wiring: register Структура module in app-shell | wiring | TBD | S | T20, T21, T22, T23 | todo |
 | T25 | Tests: cross-cutting integration (AC-05 + offline sync) | tests | TBD | M | T24 | todo |
