@@ -8,11 +8,11 @@
 | T1 | Create structure table (backend DB) | migration | TBD | S | — | done |
 | T2 | Create structure_layout_position table (backend DB) | migration | TBD | S | T1 | done |
 | T3 | Create structure_history_event table (backend DB) | migration | TBD | S | T1 | todo |
-| T4 | Domain: declaration + layout core models | domain | TBD | M | — | todo |
+| T4 | Domain: declaration + layout core models | domain | TBD | M | — | done |
 | T5 | Domain: layout position conflict + last-write-wins resolution | domain | TBD | M | — | todo |
-| T6 | Domain: aggregate progress calculation | domain | TBD | M | — | todo |
+| T6 | Domain: aggregate progress calculation | domain | TBD | M | — | done |
 | T7 | Domain: gap + trend calculation | domain | TBD | M | — | todo |
-| T8 | Domain: local history cache model | domain | TBD | S | — | todo |
+| T8 | Domain: local history cache model | domain | TBD | S | — | done |
 | T9 | Infra: backend repository for structure + layout positions | infra | TBD | M | T1, T2, T27 | todo |
 | T10 | Infra: history repository (write + asOf read) | infra | TBD | M | T3 | todo |
 | T11 | App: updateStructure use-case | app | TBD | M | T4, T9 | todo |
@@ -23,7 +23,7 @@
 | T16 | Ports: GET /structure/layout + /structure/layout/history handlers | ports | TBD | S | T9, T14 | todo |
 | T17 | Ports: PUT /structure/layout/{cardId} handler | ports | TBD | S | T12 | todo |
 | T18 | Ports: POST /structure/layout/{cardId}/close handler | ports | TBD | S | T13 | todo |
-| T19 | UI: shared primitives (Spinner, Banner, ConfirmDialog, EmptyState) | ui | TBD | M | — | todo |
+| T19 | UI: shared primitives (Spinner, Banner, ConfirmDialog, EmptyState) | ui | TBD | M | — | done |
 | T20 | UI: SCR-01 Декларація screen | ui | TBD | M | T19, T15 | todo |
 | T21 | UI: SCR-02 Схема screen | ui | TBD | L | T19, T16, T17 | todo |
 | T22 | UI: SCR-03 Літопис-Аналітика screen | ui | TBD | M | T19, T16 | todo |
