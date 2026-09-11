@@ -9,9 +9,9 @@
 | T2 | Create structure_layout_position table (backend DB) | migration | TBD | S | T1 | done |
 | T3 | Create structure_history_event table (backend DB) | migration | TBD | S | T1 | todo |
 | T4 | Domain: declaration + layout core models | domain | TBD | M | — | done |
-| T5 | Domain: layout position conflict + last-write-wins resolution | domain | TBD | M | — | todo |
+| T5 | Domain: layout position conflict + last-write-wins resolution | domain | TBD | M | — | done |
 | T6 | Domain: aggregate progress calculation | domain | TBD | M | — | done |
-| T7 | Domain: gap + trend calculation | domain | TBD | M | — | todo |
+| T7 | Domain: gap + trend calculation | domain | TBD | M | — | done |
 | T8 | Domain: local history cache model | domain | TBD | S | — | done |
 | T9 | Infra: backend repository for structure + layout positions | infra | TBD | M | T1, T2, T27 | todo |
 | T10 | Infra: history repository (write + asOf read) | infra | TBD | M | T3 | todo |
