@@ -7,7 +7,7 @@
 |---|---|---|---|---|---|---|
 | T1 | Create structure table (backend DB) | migration | TBD | S | — | done |
 | T2 | Create structure_layout_position table (backend DB) | migration | TBD | S | T1 | done |
-| T3 | Create structure_history_event table (backend DB) | migration | TBD | S | T1 | todo |
+| T3 | Create structure_history_event table (backend DB) | migration | TBD | S | T1 | done |
 | T4 | Domain: declaration + layout core models | domain | TBD | M | — | done |
 | T5 | Domain: layout position conflict + last-write-wins resolution | domain | TBD | M | — | done |
 | T6 | Domain: aggregate progress calculation | domain | TBD | M | — | done |
