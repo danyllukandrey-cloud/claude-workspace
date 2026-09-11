@@ -21,7 +21,12 @@ export class LayoutValidationError extends Error {
 
 export interface LayoutPosition {
   cardId: string;
-  cellIndex: number;
+  // NULL = "картка без клітинки": лежить у треї нерозкладених унизу екрана
+  // (AC-11b/AC-16b після reset, AC-17 для відновленої з архіву картки).
+  // Рев'ю 2026-09-11: міграція 06 зробила `cell_index` nullable, тож домен
+  // мусить ЧИТАТИ цей стан, а не лише віддавати його в плані скидання --
+  // інакше друге підряд перемикання режиму рахує NULL як нуль.
+  cellIndex: number | null;
 }
 
 export interface DefaultPosition {
@@ -58,8 +63,10 @@ export function defaultPositionForNewCard(
   existing: LayoutPosition[],
   _layoutMode: LayoutMode,
 ): DefaultPosition {
+  // Картки без клітинки (трей) не зсувають наступну вільну клітинку: вони не
+  // займають жодної, тому в підрахунку максимуму їх просто немає.
   const nextCellIndex = existing.reduce(
-    (max, position) => Math.max(max, position.cellIndex + 1),
+    (max, position) => (position.cellIndex === null ? max : Math.max(max, position.cellIndex + 1)),
     0,
   );
 
@@ -85,8 +92,22 @@ export function assertLogicVariantAllowed(
   }
 }
 
+/**
+ * Базовий порядок: спершу розкладені картки за зростанням клітинки, потім ті,
+ * що клітинки не мали (трей) -- у порядку, в якому прийшли. Пряме
+ * `a.cellIndex - b.cellIndex` коерціює NULL у 0 і вклинює трей на ПОЧАТОК
+ * (NaN/0-порівняння), через що друге підряд перемикання режиму перемішувало
+ * порядок (рев'ю 2026-09-11).
+ */
+function compareByCellIndexNullsLast(a: LayoutPosition, b: LayoutPosition): number {
+  if (a.cellIndex === null && b.cellIndex === null) return 0;
+  if (a.cellIndex === null) return 1;
+  if (b.cellIndex === null) return -1;
+  return a.cellIndex - b.cellIndex;
+}
+
 function resetToBaseOrder(positions: LayoutPosition[]): LayoutResetPlan {
-  const baseOrdered = [...positions].sort((a, b) => a.cellIndex - b.cellIndex);
+  const baseOrdered = [...positions].sort(compareByCellIndexNullsLast);
 
   return {
     positions: baseOrdered.map((position, index) => ({
@@ -107,6 +128,17 @@ export function switchLayoutMode(
   return resetToBaseOrder(positions);
 }
 
+// AC-16b: підвид перемикають лише ВСЕРЕДИНІ режиму 'logic'. Окрема від
+// switchLogicVariant перевірка, щоб use-case міг відмовити ДО будь-якого запису,
+// а не з середини reset-циклу -- і щоб помилка лишалась доменною
+// (LayoutValidationError -> 422), а не невідомою серверу 500 (рев'ю 2026-09-11:
+// PATCH {logicVariant: null} на вже-'free' Структурі давав саме 500).
+export function assertLogicVariantSwitchable(currentLayoutMode: LayoutMode): void {
+  if (currentLayoutMode !== 'logic') {
+    throw new LayoutValidationError('logicVariant can only be switched while layoutMode is "logic"');
+  }
+}
+
 // AC-16b: зміна підвиду "за логікою" -- той самий reset-план, що й зміна
 // layoutMode (AC-11b), і дозволена лише коли Структура вже в режимі 'logic'.
 export function switchLogicVariant(
@@ -114,9 +146,7 @@ export function switchLogicVariant(
   positions: LayoutPosition[],
   _newVariant: LogicVariant,
 ): LayoutResetPlan {
-  if (currentLayoutMode !== 'logic') {
-    throw new LayoutValidationError('logicVariant can only be switched while layoutMode is "logic"');
-  }
+  assertLogicVariantSwitchable(currentLayoutMode);
 
   return resetToBaseOrder(positions);
 }

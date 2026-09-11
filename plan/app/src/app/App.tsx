@@ -11,7 +11,9 @@ import type { CardBackData, CardFaceData, DeckGridItem, EntryViewModel, MetricBl
 import { AnalyticsScreen, DeclarationScreen, LayoutBoard } from '../structure';
 import type {
   AnalyticsScreenState,
+  CloseCardMetricTransferInput,
   DeclarationScreenState,
+  LayoutBoardCloseCardOptions,
   LayoutBoardState,
   LayoutMode,
   LogicVariant,
@@ -78,6 +80,15 @@ export interface AppProps {
   onMoveCard: (input: { cardId: string; cellIndex: number }) => Promise<void>;
   /** T24 (sad.md §5, зведена аналітика -- AnalyticsScreen.loadAnalytics). */
   loadAnalytics: () => Promise<AnalyticsScreenState>;
+  /**
+   * AC-12 -- GET /api/v1/cards/{cardId}/metric-blocks (LayoutBoard.loadCloseCardOptions).
+   * Опційне, як і в LayoutBoard: без нього кнопка "Закрити напрямок" не рендериться
+   * (review-fix 2026-09-11 -- до цього фіксу пропс узагалі не доходив до App, тож
+   * SCR-04 був написаний і протестований, але недосяжний користувачу).
+   */
+  loadCloseCardOptions?: (cardId: string) => Promise<LayoutBoardCloseCardOptions>;
+  /** AC-12 -- POST /api/v1/structure/layout/{cardId}/close (LayoutBoard.onCloseCard). */
+  onCloseCard?: (input: { cardId: string; metricTransfers: CloseCardMetricTransferInput[] }) => Promise<void>;
 }
 
 type Screen = { screen: 'deck' } | { screen: 'create' } | { screen: 'detail'; cardId: string } | { screen: 'archive' };
@@ -118,6 +129,8 @@ export function App({
   loadLayout,
   onMoveCard,
   loadAnalytics,
+  loadCloseCardOptions,
+  onCloseCard,
 }: AppProps): JSX.Element {
   const [session, setSession] = useState<StoredSession | null>(() => readStoredSession());
   const [screen, setScreen] = useState<Screen>({ screen: 'deck' });
@@ -154,7 +167,14 @@ export function App({
         <h1>ПЛАН</h1>
 
         {direction === 'declaration' && <DeclarationScreen loadStructure={loadStructure} onSave={onSaveDeclaration} />}
-        {direction === 'layout' && <LayoutBoard loadLayout={loadLayout} onMoveCard={onMoveCard} />}
+        {direction === 'layout' && (
+          <LayoutBoard
+            loadLayout={loadLayout}
+            onMoveCard={onMoveCard}
+            loadCloseCardOptions={loadCloseCardOptions}
+            onCloseCard={onCloseCard}
+          />
+        )}
         {direction === 'analytics' && <AnalyticsScreen loadAnalytics={loadAnalytics} />}
 
         {direction === 'cards' && screen.screen === 'create' && (

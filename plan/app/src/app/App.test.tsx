@@ -91,6 +91,13 @@ function baseProps() {
     loadLayout: vi.fn().mockResolvedValue({ cellCount: 0, justReset: false, cards: [] }),
     onMoveCard: vi.fn().mockResolvedValue(undefined),
     loadAnalytics: vi.fn().mockResolvedValue({ layoutMode: null, average: null, excludedCount: 0, trendAvailable: true, cards: [] }),
+    // Review-fix 2026-09-11 (verify): LayoutBoard.loadCloseCardOptions/onCloseCard
+    // уже написані й протестовані (SCR-04), main.tsx їх уже експортує -- але App
+    // їх не приймав і не прокидав, тож LayoutBoard.canCloseCard завжди false і
+    // кнопка "Закрити напрямок" (AC-12) ніде не з'являлась. Той самий DI-стиль,
+    // що loadLayout/onMoveCard вище.
+    loadCloseCardOptions: vi.fn().mockResolvedValue({ metricBlocks: [], targetCards: [] }),
+    onCloseCard: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -560,6 +567,25 @@ test('T24: клік "Декларація" в нав-меню перемикає
   expect(await screen.findByLabelText('Картина світу, навіщо, пріоритет')).toBeTruthy();
   expect(props.loadStructure).toHaveBeenCalledTimes(1);
   expect(screen.queryByText('Тут ще немає жодної картки')).toBeNull();
+});
+
+test('AC-12 (review-fix 2026-09-11): на Схемі з loadCloseCardOptions/onCloseCard кнопка "Закрити напрямок" реально рендериться', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([]);
+  props.loadLayout.mockResolvedValue({
+    cellCount: 4,
+    justReset: false,
+    cards: [{ cardId: 'card-1', cardTitle: 'Спорт', cellIndex: 0, baseOrder: 0 }],
+  });
+
+  render(<App {...props} />);
+  await screen.findByText('Тут ще немає жодної картки');
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Схема' }));
+
+  // LayoutBoard.tsx:124 canCloseCard = loadCloseCardOptions !== undefined && onCloseCard !== undefined --
+  // без прокидання цих двох пропів з App.tsx ця кнопка не існує, попри те, що SCR-04 повністю написаний.
+  expect(await screen.findByRole('button', { name: 'Закрити напрямок «Спорт»' })).toBeTruthy();
 });
 
 test('T24: клік "Схема" в нав-меню перемикає екран на LayoutBoard (loadLayout)', async () => {

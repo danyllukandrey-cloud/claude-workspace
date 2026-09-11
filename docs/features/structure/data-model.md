@@ -2,7 +2,7 @@
 status: Draft
 owner: "Андрій Данилюк"
 reviewers: []
-updated_at: "2026-08-24"
+updated_at: "2026-09-11"
 feature_size: "M"
 ---
 
@@ -68,7 +68,7 @@ erDiagram
 | `id` | UUID | PK, app-generated | |
 | `structure_id` | UUID | NOT NULL, FK → `structure(id)` ON DELETE CASCADE | індексовано нижче |
 | `card_id` | UUID | NOT NULL, FK → `card(id)` ON DELETE CASCADE | справжній cross-feature FK — таблиця `card` уже існує в тій самій базі (`life-area-card`) |
-| `cell_index` | INTEGER | NOT NULL | номер клітинки/позиції в межах фіксованої нумерованої схеми — той самий підхід і для вільного порядку, і для сітки «за логікою» ([sad.md §5.2](sad.md#5-building-block-view), «запас вільних клітинок») |
+| `cell_index` | INTEGER | NULL | номер клітинки/позиції в межах фіксованої нумерованої схеми — той самий підхід і для вільного порядку, і для сітки «за логікою» ([sad.md §5.2](sad.md#5-building-block-view), «запас вільних клітинок»). **NULL = картка без клітинки** — лежить у треї нерозкладених унизу екрана, користувач тягне її на вільну клітинку сам: саме так існують AC-11b/AC-16b (після зміни режиму чи підвиду кожна активна позиція втрачає клітинку) і AC-17 (відновлена з архіву картка клітинки не отримує). Той самий принцип «NULL = ще не обрано», що й у `layout_mode`. Колонка була `NOT NULL` (міграція 02) — рев'ю 2026-09-11 показало, що при цьому стан «без клітинки» фізично неможливий і app-шар писав замість нього реальний номер; виправлено окремою міграцією 06 (`06_make_cell_index_nullable`), бо 02 уже промоучена ([ADR-0006](../../adr/0006-backend-http-and-migration-tool.md)) |
 | `status` | TEXT | NOT NULL DEFAULT 'active', CHECK (`status` IN ('active','closed')) | [D-66](../../DECISIONS.md#d-66) — закриття напрямку (AC-12) позначає рядок, ніколи не видаляє фізично |
 | `position_updated_at` | timestamptz | NOT NULL DEFAULT now() | часова мітка для last-write-wins (ADR-0002) — та сама позиція, синхронізована з іншого пристрою, порівнюється за цим полем |
 | `created_at` | timestamptz | NOT NULL DEFAULT now() | |
@@ -76,6 +76,7 @@ erDiagram
 **Aggregate root:** `structure`.
 **Access patterns:** список активних позицій розкладки (екран Схема) → індекс на `structure_id`; блокування розміщення на зайняту клітинку (AC-02) → частковий унікальний індекс на `(structure_id, cell_index)` де `status = 'active'`; де зараз розташована конкретна картка → індекс на `card_id`.
 **Constraints:** UNIQUE на `(structure_id, card_id)` — одна позиція на картку; частковий UNIQUE на `(structure_id, cell_index)` WHERE `status = 'active'` — рівно одна активна картка в клітинці (AC-02, D-62 на рівні БД, не лише UI-перевірки); FK → `structure(id)`; FK → `card(id)`.
+Жодного CHECK-обмеження рівня БД на `cell_index IS NOT NULL` немає навмисно: «без клітинки» — легальний стан (див. колонку вище). Частковий UNIQUE це не ламає — у Postgres два NULL не вважаються рівними, тож будь-яка кількість активних позицій без клітинки в одній Структурі співіснує, а заборона «дві картки в одній клітинці» працює лише для реальних номерів.
 
 ## Індекси (Структура і розкладка)
 

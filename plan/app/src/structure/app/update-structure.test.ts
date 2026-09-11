@@ -25,6 +25,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { updateStructure } from './update-structure';
 import { AppError } from '../../shared/errors';
+import { LayoutValidationError } from '../domain/layout';
 import type { Db } from '../infra/postgres-repo';
 
 const OWNER = 'owner-1';
@@ -95,6 +96,16 @@ function layoutResetCalls(db: Db) {
   return calls.filter(([text]) => text.includes('structure_layout_position') && text.trim().toUpperCase().startsWith('UPDATE'));
 }
 
+/** Єдиний UPDATE самого рядка `structure` (не позицій розкладки). */
+function structureUpdateCall(db: Db): [string, unknown[]?] {
+  const calls = (db.query as ReturnType<typeof vi.fn>).mock.calls as [string, unknown[]?][];
+  const found = calls.filter(
+    ([text]) => text.trim().toUpperCase().startsWith('UPDATE') && !text.includes('structure_layout_position')
+  );
+  expect(found).toHaveLength(1);
+  return found[0];
+}
+
 describe('updateStructure -- AC-10: декларація окремо від layoutMode/logicVariant', () => {
   it('saves declaration alone -- layoutMode/logicVariant are not touched and no reset fires', async () => {
     const db = fakeDb({
@@ -159,6 +170,195 @@ describe('updateStructure -- AC-11b: зміна layoutMode на НОВЕ зна�
     for (const position of activePositions) {
       expect(touchedCardIds.has(position.card_id)).toBe(true);
     }
+  });
+});
+
+// Рев'ю 2026-09-11, Частина 2 [critical] (AC-11b/AC-16b): домен віддає
+// cellIndex: null ("картка без клітинки"), а use-case писав у БД
+// position.baseOrder -- реальну клітинку 0..N-1. Стан "без клітинки" був
+// неспостережуваний, тож AC-11b/AC-16b/AC-17 не існували фізично (колонка ще й
+// була NOT NULL -- міграція 06 це зняла).
+describe('updateStructure -- AC-11b: reset пише "клітинки немає" (SQL NULL), не черговий номер', () => {
+  it('binds a real SQL NULL for every reset position -- ні baseOrder, ні рядок "null"', async () => {
+    const activePositions = [positionRow('card-1', 5), positionRow('card-2', 0), positionRow('card-3', 2)];
+    const db = fakeDb({
+      current: structureRow({ layout_mode: 'free' }),
+      updated: structureRow({ layout_mode: 'logic' }),
+      activePositions,
+    });
+
+    await updateStructure(db, { ownerUserId: OWNER, layoutMode: 'logic' });
+
+    const resetCalls = layoutResetCalls(db);
+    expect(resetCalls).toHaveLength(activePositions.length);
+
+    for (const [sql, params] of resetCalls) {
+      const bound = (params ?? []) as unknown[];
+      expect(sql).toMatch(/cell_index\s*=\s*\$\d/);
+      // Справжній SQL NULL серед зв'язаних значень...
+      expect(bound).toContain(null);
+      // ...і ЖОДНОГО числа: саме числом (baseOrder) клітинка й протікала.
+      expect(bound.filter((value) => typeof value === 'number')).toEqual([]);
+      // ...і не текстові підробки NULL, які в INTEGER-колонку не лягли б.
+      expect(bound).not.toContain('null');
+      expect(bound).not.toContain('0');
+    }
+  });
+
+  it('scopes each reset write by owner (AC-03) instead of touching a card id alone', async () => {
+    const db = fakeDb({
+      current: structureRow({ layout_mode: 'free' }),
+      updated: structureRow({ layout_mode: 'logic' }),
+      activePositions: [positionRow('card-1', 0)],
+    });
+
+    await updateStructure(db, { ownerUserId: OWNER, layoutMode: 'logic' });
+
+    const [sql, params] = layoutResetCalls(db)[0];
+    expect(sql).toMatch(/owner_user_id/);
+    expect(params).toContain(OWNER);
+  });
+});
+
+// Рев'ю 2026-09-11, Частини 1 і 2 [major] (AC-16): інваріант "logic_variant має
+// сенс лише при layoutMode = 'logic'" не тримав ніхто -- вихід із режиму лишав
+// у БД підвид, якого в новому режимі не існує.
+describe('updateStructure -- AC-16: вихід із режиму "за логікою" обнуляє підвид', () => {
+  it('writes logic_variant = NULL when layoutMode switches away from logic, though the body carries no logicVariant', async () => {
+    const db = fakeDb({
+      current: structureRow({ layout_mode: 'logic', logic_variant: 'balance' }),
+      updated: structureRow({ layout_mode: 'free' }),
+      activePositions: [positionRow('card-1', 0)],
+    });
+
+    await updateStructure(db, { ownerUserId: OWNER, layoutMode: 'free' });
+
+    const [sql, params] = structureUpdateCall(db);
+    expect(sql).toMatch(/logic_variant\s*=\s*\$\d/);
+    expect(params).toContain(null);
+  });
+
+  it('clears a stale logic_variant even when layoutMode repeats the already-stored non-logic value -- and that alone resets nothing', async () => {
+    const db = fakeDb({
+      current: structureRow({ layout_mode: 'free', logic_variant: 'balance' }),
+      updated: structureRow({ layout_mode: 'free' }),
+      activePositions: [positionRow('card-1', 0)],
+    });
+
+    await updateStructure(db, { ownerUserId: OWNER, layoutMode: 'free' });
+
+    const [sql, params] = structureUpdateCall(db);
+    expect(sql).toMatch(/logic_variant\s*=\s*\$\d/);
+    expect(params).toContain(null);
+    // Режим не змінився -- розкладку не торкаємось (AC-11b -- лише про реальну зміну).
+    expect(layoutResetCalls(db)).toHaveLength(0);
+  });
+
+  it('accepts an explicit {layoutMode: "free", logicVariant: null} reconciliation -- clears the variant, resets nothing, throws nothing', async () => {
+    const db = fakeDb({
+      current: structureRow({ layout_mode: 'free', logic_variant: 'balance' }),
+      updated: structureRow({ layout_mode: 'free' }),
+      activePositions: [positionRow('card-1', 0)],
+    });
+
+    await expect(
+      updateStructure(db, { ownerUserId: OWNER, layoutMode: 'free', logicVariant: null })
+    ).resolves.toMatchObject({ layoutMode: 'free', logicVariant: null });
+
+    const [sql, params] = structureUpdateCall(db);
+    expect(sql).toMatch(/logic_variant\s*=\s*\$\d/);
+    expect(params).toContain(null);
+    // Режим не змінився, а підвид у режимі 'free' ні на що не впливає --
+    // розкладку не чіпаємо (AC-11b -- лише про реальну зміну режиму).
+    expect(layoutResetCalls(db)).toHaveLength(0);
+  });
+
+  it('leaves logic_variant out of the patch entirely while the resulting mode stays logic', async () => {
+    const db = fakeDb({
+      current: structureRow({ layout_mode: 'logic', logic_variant: 'balance' }),
+      updated: structureRow({ layout_mode: 'logic', logic_variant: 'balance' }),
+      activePositions: [positionRow('card-1', 0)],
+    });
+
+    await updateStructure(db, { ownerUserId: OWNER, layoutMode: 'logic' });
+
+    // Саме SET-частина: logic_variant згадується ще й у RETURNING, це не запис.
+    const [sql] = structureUpdateCall(db);
+    expect(sql).not.toMatch(/logic_variant\s*=\s*\$\d/);
+  });
+
+  it('does not touch logic_variant on a declaration-only PATCH (AC-10 -- декларація без побічних дій)', async () => {
+    const db = fakeDb({
+      current: structureRow({ layout_mode: 'free', logic_variant: 'balance' }),
+      updated: structureRow({ layout_mode: 'free', declaration: 'текст' }),
+      activePositions: [positionRow('card-1', 0)],
+    });
+
+    await updateStructure(db, { ownerUserId: OWNER, declaration: 'текст' });
+
+    const [sql] = structureUpdateCall(db);
+    expect(sql).not.toMatch(/logic_variant\s*=\s*\$\d/);
+  });
+});
+
+// Рев'ю 2026-09-11, Частина 2 [major], похідний дефект AC-16: PATCH
+// {logicVariant: null} на Структурі, що вже НЕ в режимі 'logic', кидав доменну
+// помилку з середини reset-циклу -- ПІСЛЯ того, як рядок структури вже
+// записаний, і сервер бачив її як невідому (500 замість 422).
+describe('updateStructure -- перемикання підвиду поза режимом "за логікою"', () => {
+  it('rejects {logicVariant: null} on a non-logic Structure with the typed domain error, before any write', async () => {
+    const db = fakeDb({
+      current: structureRow({ layout_mode: 'free', logic_variant: 'balance' }),
+      updated: structureRow({ layout_mode: 'free' }),
+      activePositions: [positionRow('card-1', 0)],
+    });
+
+    await expect(updateStructure(db, { ownerUserId: OWNER, logicVariant: null })).rejects.toBeInstanceOf(
+      LayoutValidationError
+    );
+
+    // Жодного запису: пішло лише перше SELECT (findStructureByOwner).
+    expect((db.query as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+  });
+
+  it('a {logicVariant: null} that changes nothing on a non-logic Structure stays a no-op', async () => {
+    const db = fakeDb({
+      current: structureRow({ layout_mode: 'free', logic_variant: null }),
+      updated: structureRow({ layout_mode: 'free', logic_variant: null }),
+      activePositions: [positionRow('card-1', 0)],
+    });
+
+    await expect(updateStructure(db, { ownerUserId: OWNER, logicVariant: null })).resolves.toMatchObject({
+      layoutMode: 'free',
+      logicVariant: null,
+    });
+    expect(layoutResetCalls(db)).toHaveLength(0);
+  });
+});
+
+// DoD T11 ("в одній транзакції"): сам use-case транзакцію НЕ відкриває -- він
+// мусить виконати ВСІ запити через той самий переданий `db`, щоб обгортка
+// composition root (withTransaction, ADR-0006) справді покрила і UPDATE
+// структури, і всі N UPDATE позицій. Тест пильнує саме це: жодного побічного
+// з'єднання в обхід транзакційного db.
+describe('updateStructure -- усі записи через ОДИН переданий db', () => {
+  it('issues every query through the transaction db handed in, never through the pool behind it', async () => {
+    const txDb = fakeDb({
+      current: structureRow({ layout_mode: 'free' }),
+      updated: structureRow({ layout_mode: 'logic' }),
+      activePositions: [positionRow('card-1', 0), positionRow('card-2', 1)],
+    });
+    const poolQuery = vi.fn();
+    const poolDb = {
+      query: poolQuery as unknown as Db['query'],
+      withTransaction: async <T>(fn: (db: Db) => Promise<T>): Promise<T> => fn(txDb),
+    };
+
+    await poolDb.withTransaction((db) => updateStructure(db, { ownerUserId: OWNER, layoutMode: 'logic' }));
+
+    expect(poolQuery).not.toHaveBeenCalled();
+    expect(layoutResetCalls(txDb)).toHaveLength(2);
+    expect(structureUpdateCall(txDb)[0]).toMatch(/UPDATE structure SET/);
   });
 });
 

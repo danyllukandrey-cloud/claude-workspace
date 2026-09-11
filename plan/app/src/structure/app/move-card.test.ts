@@ -138,6 +138,93 @@ describe('moveCard -- AC-08: перетягування на вільну клі
     expect(params).toContain(CARD_ID);
     expect(params).toContain('moved');
   });
+
+  // Review 2026-09-11, MUST-FIX 2: подія 'moved' писалась БЕЗ detail (завжди
+  // null), а обидва читачі цього поля -- ../app/get-analytics.ts (тренд
+  // розриву, AC-07) і ../ports/layout-handlers.ts (GET /structure/layout/
+  // history) -- шукають у ньому клітинку регуляркою. Без detail тренд
+  // назавжди null, а історія розкладки назавжди порожня: фіча зелена в
+  // тестах (вони підкладали detail рукою) і мертва на реальних даних.
+  // Регулярки нижче СКОПІЙОВАНІ з обох читачів дослівно -- саме вони, а не
+  // наша уява про формат, визначають, чи рядок сумісний.
+  const READER_CELL_INDEX_PATTERN = /cell_index\s*->\s*(-?\d+)/;
+  const FROM_CELL_INDEX_PATTERN = /from_cell_index\s*->\s*(-?\d+)/;
+
+  it('writes a `detail` the real readers can parse -- the cell the card moved TO, plus where it came FROM', async () => {
+    const current = positionRow(CARD_ID, 3, { positionUpdatedAt: '2026-01-02T00:00:00Z' });
+    const moved = positionRow(CARD_ID, 7, { positionUpdatedAt: '2026-01-05T00:00:00Z' });
+    const db = fakeDb({ activePositions: [current], current, moved });
+
+    await moveCard(db, {
+      ownerUserId: OWNER,
+      cardId: CARD_ID,
+      cellIndex: 7,
+      positionUpdatedAt: '2026-01-05T00:00:00Z',
+    });
+
+    const [, params] = historyInsertCalls(db)[0] as [string, unknown[]];
+    // insertHistoryEvent: (id, structure_id, card_id, event_type, detail)
+    const detail = params[4] as string | null;
+
+    expect(detail).not.toBeNull();
+    // Перше входження шаблону читачів мусить дати КУДИ картка стала (7) --
+    // саме це означає "якою була розкладка на цей момент" для
+    // GET /structure/layout/history.
+    expect(detail!.match(READER_CELL_INDEX_PATTERN)?.[1]).toBe('7');
+    // І звідки вона прийшла (3) -- окремим, власним токеном, щоб тренд
+    // (AC-07) мав ДРУГУ точку, відмінну від поточної позиції.
+    expect(detail!.match(FROM_CELL_INDEX_PATTERN)?.[1]).toBe('3');
+  });
+
+  it('keeps the destination token FIRST -- `from_cell_index` contains the substring `cell_index`', async () => {
+    // Пастка порядку: шаблон читачів не має межі слова, тож якби "звідки"
+    // стояло першим, регулярка прочитала б його як "куди" і історія показала
+    // б картку в клітинці, яку вона вже залишила.
+    const current = positionRow(CARD_ID, 0, { positionUpdatedAt: '2026-01-02T00:00:00Z' });
+    const moved = positionRow(CARD_ID, 12, { positionUpdatedAt: '2026-01-05T00:00:00Z' });
+    const db = fakeDb({ activePositions: [current], current, moved });
+
+    await moveCard(db, {
+      ownerUserId: OWNER,
+      cardId: CARD_ID,
+      cellIndex: 12,
+      positionUpdatedAt: '2026-01-05T00:00:00Z',
+    });
+
+    const [, params] = historyInsertCalls(db)[0] as [string, unknown[]];
+    const detail = params[4] as string;
+
+    expect(detail.indexOf('cell_index')).toBeLessThan(detail.indexOf('from_cell_index'));
+    expect(detail.match(READER_CELL_INDEX_PATTERN)?.[1]).toBe('12');
+    expect(detail.match(FROM_CELL_INDEX_PATTERN)?.[1]).toBe('0');
+  });
+
+  it('never invents a previous cell for a card coming from the unplaced tray (cell_index NULL)', async () => {
+    // Міграція 06 зробила cell_index nullable ("картка без клітинки", трей
+    // нерозкладених -- AC-11b/AC-16b/AC-17), тож перший рух картки з треї не
+    // має "звідки". Нуль тут був би не просто неточністю, а брехнею: нуль --
+    // це найвищий пріоритет у розкладці.
+    // `null as unknown as number` -- бо LayoutPositionRecord.cellIndex поки
+    // типізований як number, хоч колонка вже nullable (явно відкрите питання
+    // в infra/postgres-repo.ts, WP2).
+    const fromTray = positionRow(CARD_ID, null as unknown as number, { positionUpdatedAt: '2026-01-02T00:00:00Z' });
+    const moved = positionRow(CARD_ID, 5, { positionUpdatedAt: '2026-01-05T00:00:00Z' });
+    const db = fakeDb({ activePositions: [fromTray], current: fromTray, moved });
+
+    await moveCard(db, {
+      ownerUserId: OWNER,
+      cardId: CARD_ID,
+      cellIndex: 5,
+      positionUpdatedAt: '2026-01-05T00:00:00Z',
+    });
+
+    const [, params] = historyInsertCalls(db)[0] as [string, unknown[]];
+    const detail = params[4] as string;
+
+    expect(detail.match(READER_CELL_INDEX_PATTERN)?.[1]).toBe('5'); // куди -- відомо
+    expect(detail.match(FROM_CELL_INDEX_PATTERN)).toBeNull(); // звідки -- числа немає
+    expect(detail).not.toMatch(/from_cell_index\s*->\s*0/);
+  });
 });
 
 describe('moveCard -- AC-02 (D-62): клітинка вже зайнята іншою карткою блокується', () => {

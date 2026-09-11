@@ -18,6 +18,9 @@
 // 4. AC-08: запис нового cellIndex/positionUpdatedAt.
 // 5. AC-15: та ж подія записується в Літопис Структури ('moved'), той
 //    самий механізм, що closeCard (AC-12) вже використовує для 'closed'.
+//    Разом із `detail` (звідки -> куди, formatMovedDetail нижче): без нього
+//    подія є, але мовчить -- ні /structure/layout/history, ні тренд розриву
+//    (AC-07) не мають що з неї прочитати.
 //
 // DI (правило залежностей, ADR-0004): db приходить ззовні, use-case сам
 // з'єднання не створює.
@@ -100,7 +103,39 @@ export async function moveCard(db: Db, input: MoveCardInput): Promise<LayoutPosi
     structureId: moved.structureId,
     cardId: moved.cardId,
     eventType: 'moved',
+    detail: formatMovedDetail(current.cellIndex, moved.cellIndex),
   });
 
   return moved;
+}
+
+/**
+ * Рядок `detail` події 'moved' (data-model.md лишає точну форму TBD, тож
+ * форму диктують ЧИТАЧІ цього поля, не навпаки).
+ *
+ * Review 2026-09-11, MUST-FIX 2: до цього фіксу detail не передавався
+ * взагалі (insertHistoryEvent підставляв null), хоча обидва читачі
+ * витягують із нього клітинку одним і тим самим шаблоном
+ * /cell_index\s*->\s*(-?\d+)/:
+ * - ../ports/layout-handlers.ts (GET /structure/layout/history) -- "якою
+ *   була розкладка на момент asOf", тобто потребує КУДИ картка стала;
+ * - ../app/get-analytics.ts (AC-07, тренд розриву) -- потребує ЗВІДКИ вона
+ *   пішла, бо інакше "минула" точка дорівнює поточній позиції.
+ * Тому пишемо обидві клітинки: основний токен -- нова (куди), додатковий
+ * `from_cell_index` -- стара (звідки).
+ *
+ * ПОРЯДОК ТОКЕНІВ ЗНАЧУЩИЙ: у шаблоні читачів немає межі слова, а
+ * `from_cell_index` містить підрядок `cell_index` -- тож нова клітинка
+ * мусить стояти ПЕРШОЮ, інакше перше входження шаблону дасть "звідки" і
+ * історія покаже картку в клітинці, яку вона вже залишила.
+ *
+ * "Звідки" може не існувати: картка з треї нерозкладених (cell_index NULL
+ * після міграції 06 -- AC-11b/AC-16b/AC-17) розкладається вперше. Тоді пишемо
+ * `from_cell_index -> none`, а не число: жоден читач не має права прочитати
+ * відсутню попередню клітинку як нуль (нуль -- це найвищий пріоритет, тобто
+ * пряма брехня про минуле).
+ */
+function formatMovedDetail(fromCellIndex: number | null, toCellIndex: number): string {
+  const from = fromCellIndex === null || fromCellIndex === undefined ? 'none' : String(fromCellIndex);
+  return `cell_index -> ${toCellIndex}, from_cell_index -> ${from}`;
 }

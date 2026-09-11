@@ -1,0 +1,445 @@
+// Composition root (main.tsx) -- ЄДИНЕ місце, де народжуються справжні
+// fetch-реалізації DI-пропів (loadLayout/loadAnalytics/onSaveDeclaration...).
+// До цього файлу main.tsx не був покритий жодним тестом, і саме тут жили дві
+// знахідки рев'ю 2026-09-11 (Частина 3), через які екрани Структури показували
+// заглушки замість даних:
+//
+// 1. `justReset: false` хардкодом -- банер "Розклади заново" (AC-11b/AC-16b) не
+//    показувався НІКОЛИ, попри те, що сервер реально скидає позиції.
+// 2. `gap: null, trend: null, unmaintained: false, trendAvailable: false`
+//    хардкодом -- AC-06/AC-06b/AC-07 на екрані мертві, а банер "тренд
+//    недоступний" висів для всіх користувачів завжди.
+//
+// Як тестуємо: App підмінений (vi.mock) компонентом, що лише ЗАПАМ'ЯТОВУЄ
+// передані пропи -- далі тест викликає самі ці функції з підробленим fetch.
+// Тобто перевіряється не "проп переданий", а реальне число, яке дійде до
+// екрана. Імпорт main.tsx виконує createRoot -- тому в DOM є #root, а рендер
+// обгорнутий в act().
+
+import { act } from '@testing-library/react';
+import type { AppProps } from './App';
+
+let captured: AppProps | null = null;
+
+vi.mock('./App', () => ({
+  App: (props: AppProps) => {
+    captured = props;
+    return null;
+  },
+}));
+
+// --- підроблений сервер ------------------------------------------------------
+
+interface FakePosition {
+  cardId: string;
+  cellIndex: number | null;
+  positionUpdatedAt?: string;
+}
+
+interface FakeServer {
+  structure: { layoutMode: string | null; logicVariant: string | null };
+  positions: FakePosition[];
+  cards: { id: string; name: string }[];
+  progressByCard: Record<string, number | null>;
+  /** 'fail' -- GET /structure/layout/history відповів помилкою (trendAvailable=false). */
+  history: FakePosition[] | 'fail';
+  metricBlocksByCard: Record<string, { id: string }[]>;
+  entryCountByCard: Record<string, number>;
+  patchBodies: unknown[];
+  historyAsOf: string[];
+  closeCalls: { cardId: string; body: unknown }[];
+  /** POST .../close відповідає 409 metric_block.name_collision (life-area-card AC-15). */
+  closeNameCollision?: boolean;
+}
+
+function makeServer(overrides: Partial<FakeServer> = {}): FakeServer {
+  return {
+    structure: { layoutMode: 'logic', logicVariant: 'focus' },
+    positions: [],
+    cards: [],
+    progressByCard: {},
+    history: [],
+    metricBlocksByCard: {},
+    entryCountByCard: {},
+    patchBodies: [],
+    historyAsOf: [],
+    closeCalls: [],
+    ...overrides,
+  };
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+  } as unknown as Response;
+}
+
+function positionDto(position: FakePosition) {
+  return {
+    cardId: position.cardId,
+    cellIndex: position.cellIndex,
+    status: 'active',
+    positionUpdatedAt: position.positionUpdatedAt ?? '2026-09-01T00:00:00.000Z',
+  };
+}
+
+function fakeFetch(server: FakeServer): typeof fetch {
+  return (async (input: unknown, init?: RequestInit): Promise<Response> => {
+    const url = String(input);
+    const method = (init?.method ?? 'GET').toUpperCase();
+    const structureDto = {
+      id: 'structure-1',
+      declaration: 'декларація',
+      layoutMode: server.structure.layoutMode,
+      logicVariant: server.structure.logicVariant,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+    };
+
+    if (url.startsWith('/api/v1/structure/layout/history')) {
+      const asOf = new URL(url, 'http://localhost').searchParams.get('asOf');
+      if (asOf) server.historyAsOf.push(asOf);
+      if (server.history === 'fail') {
+        return jsonResponse({ code: 'structure.request_failed', message: 'історія недоступна' }, 500);
+      }
+      return jsonResponse({
+        items: server.history.map(positionDto),
+        has_next: false,
+        has_prev: false,
+        next_cursor: null,
+      });
+    }
+
+    const closeCard = url.match(/^\/api\/v1\/structure\/layout\/([^/?]+)\/close$/);
+    if (closeCard) {
+      server.closeCalls.push({ cardId: closeCard[1], body: JSON.parse(String(init?.body ?? 'null')) });
+      if (server.closeNameCollision) {
+        return jsonResponse(
+          { code: 'metric_block.name_collision', message: 'У картці-призначенні вже є блок із такою назвою' },
+          409,
+        );
+      }
+      return jsonResponse(positionDto({ cardId: closeCard[1], cellIndex: null }));
+    }
+
+    if (url.startsWith('/api/v1/structure/layout')) {
+      return jsonResponse({
+        items: server.positions.map(positionDto),
+        has_next: false,
+        has_prev: false,
+        next_cursor: null,
+      });
+    }
+
+    if (url === '/api/v1/structure') {
+      if (method === 'PATCH') {
+        const body = JSON.parse(String(init?.body)) as { layoutMode?: string | null; logicVariant?: string | null };
+        server.patchBodies.push(body);
+        if (body.layoutMode !== undefined) server.structure.layoutMode = body.layoutMode;
+        if (body.logicVariant !== undefined) server.structure.logicVariant = body.logicVariant;
+        return jsonResponse(structureDto);
+      }
+      return jsonResponse(structureDto);
+    }
+
+    const metricBlocks = url.match(/^\/api\/v1\/cards\/([^/?]+)\/metric-blocks/);
+    if (metricBlocks) {
+      return jsonResponse(
+        (server.metricBlocksByCard[metricBlocks[1]] ?? []).map((block) => ({
+          id: block.id,
+          cardId: metricBlocks[1],
+          label: 'мітка',
+          unit: 'раз',
+          frequency: null,
+          targetCount: null,
+          isOngoing: true,
+          targetDate: null,
+        })),
+      );
+    }
+
+    const entries = url.match(/^\/api\/v1\/cards\/([^/?]+)\/entries/);
+    if (entries) {
+      const count = server.entryCountByCard[entries[1]] ?? 0;
+      return jsonResponse({
+        items: Array.from({ length: count }, (_, index) => ({
+          id: `entry-${index}`,
+          metricBlockId: 'mb',
+          cardId: entries[1],
+          amount: 1,
+          status: 'confirmed',
+          recordedAt: '2026-09-01T00:00:00.000Z',
+        })),
+        next_cursor: null,
+      });
+    }
+
+    if (url.startsWith('/api/v1/cards/')) {
+      const cardId = url.slice('/api/v1/cards/'.length).split('?')[0];
+      return jsonResponse({
+        id: cardId,
+        name: server.cards.find((card) => card.id === cardId)?.name ?? cardId,
+        description: null,
+        aggregateProgress: server.progressByCard[cardId] ?? null,
+        dataWarning: null,
+      });
+    }
+
+    if (url.startsWith('/api/v1/cards')) {
+      return jsonResponse({ items: server.cards, has_next: false, has_prev: false, next_cursor: null });
+    }
+
+    throw new Error(`Непередбачений запит у тесті: ${method} ${url}`);
+  }) as unknown as typeof fetch;
+}
+
+/** Перезавантажує main.tsx із чистого стану й віддає пропи, які він передав у App. */
+async function loadMain(server: FakeServer): Promise<AppProps> {
+  captured = null;
+  vi.resetModules();
+  vi.stubGlobal('fetch', fakeFetch(server));
+  document.body.innerHTML = '<div id="root"></div>';
+  // payload = {"sub":"user-42"} -- currentOwnerUserId() декодує саме його.
+  localStorage.setItem(
+    'plan.jwt',
+    JSON.stringify({ token: 'h.eyJzdWIiOiJ1c2VyLTQyIn0.s', expiresAt: '2099-01-01T00:00:00.000Z' }),
+  );
+
+  await act(async () => {
+    await import('./main');
+  });
+
+  if (captured === null) throw new Error('main.tsx не передав пропи в App');
+  return captured;
+}
+
+/**
+ * Ті самі fetch-реалізації, але взяті як експорти модуля -- для AC-12 вони поки
+ * НЕ доходять до App (AppProps не має під них полів, App.tsx поза скоупом цього
+ * фіксу), тож перевіряємо їх напряму, а не через пропи.
+ */
+async function loadMainExports(server: FakeServer): Promise<typeof import('./main')> {
+  await loadMain(server);
+  return import('./main');
+}
+
+// --- AC-11b / AC-16b: банер "Розклади заново" --------------------------------
+
+test('AC-11b: після PATCH, що змінив layoutMode, наступне відкриття Схеми несе justReset=true -- і лише один раз', async () => {
+  const server = makeServer({
+    structure: { layoutMode: 'free', logicVariant: null },
+    cards: [{ id: 'card-a', name: 'Картка A' }],
+    positions: [{ cardId: 'card-a', cellIndex: null }],
+  });
+  const props = await loadMain(server);
+
+  // Клієнт спершу бачить поточний стан Структури (екран Декларації).
+  await props.loadStructure();
+  await props.onSaveDeclaration({ declaration: 'декларація', layoutMode: 'logic', logicVariant: 'focus' });
+
+  const afterSwitch = await props.loadLayout();
+  expect(afterSwitch.justReset).toBe(true);
+
+  // Прапорець одноразовий: банер не має висіти вічно на кожному наступному
+  // відкритті Схеми.
+  const secondOpen = await props.loadLayout();
+  expect(secondOpen.justReset).toBe(false);
+});
+
+test('AC-16b: зміна лише підвиду "за логікою" (режим лишається logic) теж дає justReset=true', async () => {
+  const server = makeServer({
+    structure: { layoutMode: 'logic', logicVariant: 'balance' },
+    cards: [{ id: 'card-a', name: 'Картка A' }],
+    positions: [{ cardId: 'card-a', cellIndex: null }],
+  });
+  const props = await loadMain(server);
+
+  await props.loadStructure();
+  await props.onSaveDeclaration({ declaration: 'декларація', layoutMode: 'logic', logicVariant: 'focus' });
+
+  expect((await props.loadLayout()).justReset).toBe(true);
+});
+
+test('AC-11b: картки лише в треї (cellIndex=null) -- розкладати нічого, hasArrangedCards=false', async () => {
+  // Підтвердження "картки скинуться вниз екрана" не має питатись, коли жодна
+  // картка не сидить у клітинці. Після міграції 06 активна позиція БЕЗ клітинки
+  // -- норма, тож "позицій > 0" більше не означає "є що скидати".
+  const server = makeServer({
+    cards: [{ id: 'card-a', name: 'Картка A' }],
+    positions: [{ cardId: 'card-a', cellIndex: null }],
+  });
+  const props = await loadMain(server);
+
+  expect((await props.loadStructure()).hasArrangedCards).toBe(false);
+});
+
+test('AC-10: збереження лише декларації (режим і підвид ті самі) НЕ показує банер скидання', async () => {
+  const server = makeServer({
+    structure: { layoutMode: 'logic', logicVariant: 'focus' },
+    cards: [{ id: 'card-a', name: 'Картка A' }],
+    positions: [{ cardId: 'card-a', cellIndex: 0 }],
+  });
+  const props = await loadMain(server);
+
+  await props.loadStructure();
+  await props.onSaveDeclaration({ declaration: 'новий текст', layoutMode: 'logic', logicVariant: 'focus' });
+
+  // Сервер у цьому випадку нічого не скидає (update-structure.ts: reset лише
+  // коли режим/підвид реально змінились) -- банер збрехав би.
+  expect((await props.loadLayout()).justReset).toBe(false);
+});
+
+// --- AC-06 / AC-06b / AC-07: аналітика рахується, а не заглушена -------------
+
+test('AC-06: у розкладці "за логікою" кожна розкладена картка отримує реальний ранг-розрив', async () => {
+  const server = makeServer({
+    structure: { layoutMode: 'logic', logicVariant: 'focus' },
+    cards: [
+      { id: 'card-a', name: 'Картка A' },
+      { id: 'card-b', name: 'Картка B' },
+      { id: 'card-c', name: 'Картка C' },
+    ],
+    // Сітка: максимальна клітинка 2 -> rank(0)=1, rank(2)=0.
+    positions: [
+      { cardId: 'card-a', cellIndex: 0 },
+      { cardId: 'card-b', cellIndex: 2 },
+    ],
+    progressByCard: { 'card-a': 0.4, 'card-b': 0.5, 'card-c': 0.9 },
+  });
+  const props = await loadMain(server);
+
+  const analytics = await props.loadAnalytics();
+  const byId = new Map(analytics.cards.map((card) => [card.cardId, card]));
+
+  expect(byId.get('card-a')?.gap).toBeCloseTo(0.6, 10); // 1 - 0.4
+  expect(byId.get('card-b')?.gap).toBeCloseTo(-0.5, 10); // 0 - 0.5
+  // Картка без клітинки (не в розкладці) розриву не отримує -- клітинка 0 була б
+  // найвищим пріоритетом, тобто заявою, якої користувач не робив.
+  expect(byId.get('card-c')?.gap).toBeNull();
+  // Розрив завжди в межах -1..1 (нормалізація по сітці, не по кількості карток).
+  for (const card of analytics.cards) {
+    if (card.gap !== null) expect(Math.abs(card.gap)).toBeLessThanOrEqual(1);
+  }
+});
+
+test('AC-07: минула розкладка з /structure/layout/history дає напрямок тренду', async () => {
+  const server = makeServer({
+    structure: { layoutMode: 'logic', logicVariant: 'focus' },
+    cards: [{ id: 'card-a', name: 'Картка A' }],
+    positions: [{ cardId: 'card-a', cellIndex: 0 }],
+    progressByCard: { 'card-a': 0.4 },
+    // Була в останній клітинці сітки (ранг 0): розрив 0-0.4 = -0.4, модуль 0.4.
+    // Зараз клітинка 0 (ранг 1): розрив 0.6 -- модуль зріс, отже 'росте'.
+    history: [{ cardId: 'card-a', cellIndex: 2, positionUpdatedAt: '2026-08-01T00:00:00.000Z' }],
+  });
+  const props = await loadMain(server);
+
+  const analytics = await props.loadAnalytics();
+
+  expect(analytics.trendAvailable).toBe(true);
+  expect(analytics.cards[0].trend).toBe('growing');
+  // Контрольна точка справді в минулому -- інакше сервер відповів би
+  // 422 structure.invalid_as_of.
+  expect(server.historyAsOf).toHaveLength(1);
+  expect(new Date(server.historyAsOf[0]).getTime()).toBeLessThan(Date.now());
+});
+
+test('AC-07: історія не відповіла -- trendAvailable=false, але розрив усе одно порахований', async () => {
+  const server = makeServer({
+    structure: { layoutMode: 'logic', logicVariant: 'focus' },
+    cards: [{ id: 'card-a', name: 'Картка A' }],
+    positions: [{ cardId: 'card-a', cellIndex: 0 }],
+    progressByCard: { 'card-a': 0.4 },
+    history: 'fail',
+  });
+  const props = await loadMain(server);
+
+  const analytics = await props.loadAnalytics();
+
+  expect(analytics.trendAvailable).toBe(false);
+  expect(analytics.cards[0].trend).toBeNull();
+  // Збій ОДНОГО запиту не має гасити решту екрана.
+  expect(analytics.cards[0].gap).toBeCloseTo(0.6, 10);
+});
+
+test('AC-06b: у розкладці без схеми пріоритету розриву немає, зате видно "заявлено -- не ведеться"', async () => {
+  const server = makeServer({
+    structure: { layoutMode: 'free', logicVariant: null },
+    cards: [
+      { id: 'card-a', name: 'Картка A' },
+      { id: 'card-b', name: 'Картка B' },
+      { id: 'card-c', name: 'Картка C' },
+    ],
+    positions: [
+      { cardId: 'card-a', cellIndex: 0 },
+      { cardId: 'card-b', cellIndex: 1 },
+      { cardId: 'card-c', cellIndex: 2 },
+    ],
+    progressByCard: { 'card-a': 0.5, 'card-b': 0.5, 'card-c': null },
+    metricBlocksByCard: { 'card-a': [{ id: 'mb-1' }], 'card-b': [{ id: 'mb-2' }], 'card-c': [] },
+    entryCountByCard: { 'card-a': 0, 'card-b': 3, 'card-c': 0 },
+  });
+  const props = await loadMain(server);
+
+  const analytics = await props.loadAnalytics();
+  const byId = new Map(analytics.cards.map((card) => [card.cardId, card]));
+
+  // Метрика є, записів нуль -> "заявлено важливим, не підтримується".
+  expect(byId.get('card-a')?.unmaintained).toBe(true);
+  // Записи є -> жодного прапорця.
+  expect(byId.get('card-b')?.unmaintained).toBe(false);
+  // Метрики взагалі немає -> це не "не ведеться", це просто декларативна картка.
+  expect(byId.get('card-c')?.unmaintained).toBe(false);
+  // Ранг-розрив у розкладці без схеми не показується НІКОМУ (AC-06b).
+  for (const card of analytics.cards) expect(card.gap).toBeNull();
+});
+
+// --- AC-12: транспорт для SCR-04 "Закрити напрямок" --------------------------
+
+test('AC-12: loadCloseCardOptions віддає метрики картки, що закривається, і решту карток як цілі переносу', async () => {
+  const server = makeServer({
+    cards: [
+      { id: 'card-a', name: 'Навчання (дубль)' },
+      { id: 'card-b', name: 'Навчання' },
+      { id: 'card-c', name: 'Спорт' },
+    ],
+    metricBlocksByCard: { 'card-a': [{ id: 'mb-1' }, { id: 'mb-2' }] },
+  });
+  const main = await loadMainExports(server);
+
+  const options = await main.loadCloseCardOptions('card-a');
+
+  expect(options.metricBlocks.map((block) => block.metricBlockId)).toEqual(['mb-1', 'mb-2']);
+  // Сама картка, що закривається, не може бути ціллю власного переносу.
+  expect(options.targetCards.map((card) => card.cardId)).toEqual(['card-b', 'card-c']);
+});
+
+test('AC-12: onCloseCard надсилає POST /structure/layout/{cardId}/close саме з обраними переносами', async () => {
+  const server = makeServer({ cards: [{ id: 'card-a', name: 'Навчання (дубль)' }] });
+  const main = await loadMainExports(server);
+
+  await main.onCloseCard({
+    cardId: 'card-a',
+    metricTransfers: [{ metricBlockId: 'mb-2', targetCardId: 'card-b', newLabel: 'курси (перенесено)' }],
+  });
+
+  expect(server.closeCalls).toEqual([
+    {
+      cardId: 'card-a',
+      body: { metricTransfers: [{ metricBlockId: 'mb-2', targetCardId: 'card-b', newLabel: 'курси (перенесено)' }] },
+    },
+  ]);
+});
+
+test('AC-12: 409 metric_block.name_collision доходить як помилка з code -- SCR-04 саме за ним показує поле нової назви', async () => {
+  const server = makeServer({ cards: [{ id: 'card-a', name: 'Навчання (дубль)' }], closeNameCollision: true });
+  const main = await loadMainExports(server);
+
+  // CloseCardDialog розпізнає саме `code` (duck-typing): без нього діалог
+  // показав би звичайний банер замість поля "нова назва".
+  await expect(
+    main.onCloseCard({ cardId: 'card-a', metricTransfers: [{ metricBlockId: 'mb-2', targetCardId: 'card-b' }] }),
+  ).rejects.toMatchObject({ code: 'metric_block.name_collision', httpStatus: 409 });
+});

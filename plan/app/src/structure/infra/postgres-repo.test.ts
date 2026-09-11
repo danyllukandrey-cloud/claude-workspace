@@ -191,6 +191,24 @@ describe('updateLayoutPositionCell -- AC-08 drag-and-drop save, scoped by owner 
     expect(params).toContain('owner-1');
   });
 
+  // Рев'ю 2026-09-11 (AC-11b/AC-16b/AC-17 + міграція 06): "картка без клітинки"
+  // мусить доїхати до БД справжнім SQL NULL. 0 -- це перша РЕАЛЬНА клітинка, а
+  // рядок 'null' Postgres поклав би в INTEGER-колонку як помилку типу.
+  it('binds cell_index as a real SQL NULL when the card is reset to "no cell"', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [rawLayoutPositionRow({ cell_index: null })] });
+    const db: Db = { query };
+
+    await updateLayoutPositionCell(db, 'owner-1', 'card-1', null, '2026-01-04T00:00:00Z');
+
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/cell_index\s*=\s*\$\d/);
+    expect(params[0]).toBeNull();
+    // Жодного числа серед параметрів -- саме числом (baseOrder) і протікала
+    // "клітинка" замість її відсутності.
+    expect((params as unknown[]).filter((value) => typeof value === 'number')).toEqual([]);
+    expect(params).not.toContain('null');
+  });
+
   it('a mismatched owner_user_id never moves nor discloses another owner\'s card position (AC-03)', async () => {
     const query = vi.fn().mockResolvedValue({ rows: [] });
     const db: Db = { query };

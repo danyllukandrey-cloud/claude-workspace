@@ -26,7 +26,7 @@
 // and the target cell's index -- the actual PUT happens one layer up
 // (ports/), not asserted here.
 
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { LayoutBoard } from './LayoutBoard';
 import type { LayoutBoardState } from './LayoutBoard';
 
@@ -185,4 +185,140 @@ test('error: мережева помилка при збереженні поз�
 
   const banner = await screen.findByText(/не вдалося зберегти|мереж/i);
   expect(banner.closest('[data-variant]')).not.toBeNull();
+});
+
+// --- AC-12: вхід у SCR-04 "Закрити напрямок" прямо зі Схеми ------------------
+//
+// Review 2026-09-11 (MUST-FIX 4): SCR-04 (CloseCardDialog) був написаний і
+// протестований, але НЕ мав жодної точки входу -- 0 використань поза власним
+// тестом, тож AC-12 був недосяжний користувачу. screens.md SCR-04 state
+// `success` каже "повернення на SCR-02" -- отже вхід і є SCR-02 (цей екран).
+//
+// DI лишається тим самим (plan/app/CLAUDE.md): жодного fetch() тут.
+// `loadCloseCardOptions` -- GET /cards/{id}/metric-blocks + перелік карток-цілей,
+// `onCloseCard` -- POST /structure/layout/{cardId}/close. Обидва ОПЦІЙНІ: поки
+// composition root їх не підставив, кнопки просто немає (не напівживий діалог,
+// що нікуди не веде).
+
+function closeCapability(overrides: Record<string, unknown> = {}) {
+  return {
+    loadCloseCardOptions: vi.fn().mockResolvedValue({
+      metricBlocks: [{ metricBlockId: 'mb-1', label: 'книги' }],
+      targetCards: [{ cardId: 'card-b', cardTitle: 'Картка B' }],
+    }),
+    onCloseCard: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
+
+test('AC-12: без інжектованої можливості закриття кнопки "Закрити напрямок" немає', async () => {
+  const props = baseProps();
+  render(<LayoutBoard {...props} />);
+
+  await screen.findByTestId('cell-0');
+  expect(screen.queryByRole('button', { name: /Закрити напрямок/ })).toBeNull();
+});
+
+test('AC-12: кожна картка має власну дію "Закрити напрямок", клік відкриває SCR-04 із назвою саме цієї картки', async () => {
+  const props = { ...baseProps(), ...closeCapability() };
+  render(<LayoutBoard {...props} />);
+
+  const openA = await screen.findByRole('button', { name: 'Закрити напрямок «Картка A»' });
+  expect(screen.getByRole('button', { name: 'Закрити напрямок «Картка B»' })).toBeTruthy();
+
+  fireEvent.click(openA);
+
+  // cardId тієї картки, на якій натиснули -- не першої в списку "про всяк випадок".
+  expect(props.loadCloseCardOptions).toHaveBeenCalledWith('card-a');
+
+  const dialog = await screen.findByRole('dialog');
+  // Доступність (review 2026-09-11, Частина 3): видно, ЯКУ картку закриваєш --
+  // інакше діалог без назви однаковий для будь-якої картки.
+  expect(dialog.textContent).toContain('Картка A');
+  expect(await screen.findByText('книги')).toBeTruthy();
+});
+
+test('AC-12: підтвердження викликає onCloseCard з cardId цієї картки і обраними переносами метрик', async () => {
+  const props = { ...baseProps(), ...closeCapability() };
+  render(<LayoutBoard {...props} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Закрити напрямок «Картка A»' }));
+  await screen.findByText('книги');
+
+  fireEvent.click(screen.getByRole('checkbox'));
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'card-b' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Закрити' }));
+
+  await waitFor(() =>
+    expect(props.onCloseCard).toHaveBeenCalledWith({
+      cardId: 'card-a',
+      metricTransfers: [{ metricBlockId: 'mb-1', targetCardId: 'card-b' }],
+    }),
+  );
+});
+
+test('AC-12: після успішного закриття діалог зникає, а розкладка перечитується з сервера', async () => {
+  const loadLayout = vi
+    .fn()
+    .mockResolvedValueOnce(baseState())
+    .mockResolvedValueOnce(
+      baseState({ cards: [{ cardId: 'card-b', cardTitle: 'Картка B', cellIndex: 1, baseOrder: 1 }] }),
+    );
+  const props = { loadLayout, onMoveCard: vi.fn().mockResolvedValue(undefined), ...closeCapability() };
+  render(<LayoutBoard {...props} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Закрити напрямок «Картка A»' }));
+  await screen.findByText('книги');
+  fireEvent.click(screen.getByRole('button', { name: 'Закрити' }));
+
+  // Джерело правди -- сервер: закрита позиція зникає з сітки після перечитування,
+  // а не через локальне вгадування нового стану.
+  await waitFor(() => expect(loadLayout).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(screen.getByTestId('cell-0').textContent).not.toContain('Картка A');
+});
+
+test('AC-12: "Скасувати" закриває діалог і нічого не надсилає', async () => {
+  const props = { ...baseProps(), ...closeCapability() };
+  render(<LayoutBoard {...props} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Закрити напрямок «Картка A»' }));
+  await screen.findByText('книги');
+  fireEvent.click(screen.getByRole('button', { name: 'Скасувати' }));
+
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(props.onCloseCard).not.toHaveBeenCalled();
+  expect(props.loadLayout).toHaveBeenCalledTimes(1);
+});
+
+test('AC-12: не вдалося прочитати метрики картки -- банер, діалог не відкривається', async () => {
+  const props = {
+    ...baseProps(),
+    ...closeCapability({ loadCloseCardOptions: vi.fn().mockRejectedValue(new Error('Failed to fetch')) }),
+  };
+  render(<LayoutBoard {...props} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Закрити напрямок «Картка A»' }));
+
+  const banner = await screen.findByText(/не вдалося|мереж/i);
+  expect(banner.closest('[data-variant]')).not.toBeNull();
+  expect(screen.queryByRole('dialog')).toBeNull();
+});
+
+test('AC-12 + AC-11b: картку з треї нерозкладених теж можна закрити', async () => {
+  const props = {
+    ...baseProps({
+      justReset: true,
+      cards: [{ cardId: 'card-a', cardTitle: 'Картка A', cellIndex: null, baseOrder: 0 }],
+    }),
+    ...closeCapability(),
+  };
+  render(<LayoutBoard {...props} />);
+
+  const tray = await screen.findByTestId('unassigned-tray');
+  const openA = screen.getByRole('button', { name: 'Закрити напрямок «Картка A»' });
+  expect(tray.contains(openA)).toBe(true);
+
+  fireEvent.click(openA);
+  expect(props.loadCloseCardOptions).toHaveBeenCalledWith('card-a');
 });

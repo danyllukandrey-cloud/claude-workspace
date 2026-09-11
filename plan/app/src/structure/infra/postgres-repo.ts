@@ -61,6 +61,12 @@ export interface LayoutPositionRecord {
   id: string;
   structureId: string;
   cardId: string;
+  // ВІДКРИТЕ (рев'ю 2026-09-11, WP2): після міграції 06 колонка nullable, тож на
+  // читанні тут реально може прийти null ("картка без клітинки", AC-11b/AC-16b/
+  // AC-17). Тип поки лишається `number`, бо його розширення тягне за собою
+  // get-analytics.ts, move-card.ts, layout-handlers.ts (DTO) і contracts/
+  // openapi.yaml -- файли поза скоупом цього фіксу. Запис NULL (нижче,
+  // updateLayoutPositionCell) уже типізований честно.
   cellIndex: number;
   status: LayoutPositionStatusRow;
   positionUpdatedAt: Date;
@@ -213,12 +219,18 @@ export async function listActiveLayoutPositionsByOwner(db: Db, ownerUserId: stri
  * Перетягування картки в нову клітинку (AC-08, збереження одразу після
  * відпускання). Non-disclosure (AC-03): чужий owner_user_id -- null, нічого
  * не рухається й не розкривається.
+ *
+ * `cellIndex: null` -- "картка без клітинки" (трей нерозкладених, AC-11b/AC-16b/
+ * AC-17): після міграції 06 колонка nullable, і параметр лягає СПРАВЖНІМ SQL NULL
+ * (pg біндить JS null як NULL -- ні 0, ні рядок 'null'), тому окремого запиту
+ * "SET cell_index = NULL" не треба. Рев'ю 2026-09-11: саме цього шляху бракувало,
+ * через що reset у T11 писав реальний номер клітинки замість "клітинки немає".
  */
 export async function updateLayoutPositionCell(
   db: Db,
   ownerUserId: string,
   cardId: string,
-  cellIndex: number,
+  cellIndex: number | null,
   positionUpdatedAt: string | Date
 ): Promise<LayoutPositionRecord | null> {
   const { rows } = await db.query<RawLayoutPositionRow>(

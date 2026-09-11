@@ -941,6 +941,66 @@ describe('migration 04_add_logic_variant (T27, AC-16, D-83/ISS-7) — проти
   });
 });
 
+// Рев'ю 2026-09-11 (MUST-FIX 3): поки cell_index був NOT NULL, стан «картка без
+// клітинки» не існував фізично — AC-11b/AC-16b (reset після зміни режиму/підвиду)
+// і AC-17 (відновлена з архіву картка) були неспостережувані, а app-шар писав
+// замість «немає клітинки» реальний номер. Зелене ЛИШЕ після `npm run migrate`
+// (міграція 1789151324598_make-cell-index-nullable).
+describe('migration 06_make_cell_index_nullable (AC-11b/AC-16b/AC-17) — проти реальної Neon', () => {
+  it('cell_index приймає NULL, і кілька активних позицій без клітинки в одній Структурі співіснують', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      const ownerId = crypto.randomUUID();
+      const structureId = crypto.randomUUID();
+      const cardOneId = crypto.randomUUID();
+      const cardTwoId = crypto.randomUUID();
+      await client.query('INSERT INTO app_user (id, google_sub, email) VALUES ($1, $2, $3)', [
+        ownerId,
+        `test-structure-06-${ownerId}`,
+        'structure-06@example.test',
+      ]);
+      try {
+        await client.query('INSERT INTO structure (id, owner_user_id) VALUES ($1, $2)', [structureId, ownerId]);
+        await client.query('INSERT INTO card (id, owner_user_id, name) VALUES ($1, $2, $3)', [cardOneId, ownerId, '06 card one']);
+        await client.query('INSERT INTO card (id, owner_user_id, name) VALUES ($1, $2, $3)', [cardTwoId, ownerId, '06 card two']);
+
+        // Обидві позиції активні й БЕЗ клітинки: частковий UNIQUE
+        // uq_layout_position_active_cell це дозволяє, бо в Postgres два NULL не
+        // вважаються рівними (на відміну від двох нулів — той самий INSERT з
+        // cell_index = 0 двічі падає, це перевіряє тест «T2: частковий
+        // унікальний індекс» вище).
+        await client.query(
+          'INSERT INTO structure_layout_position (id, structure_id, card_id, cell_index) VALUES ($1, $2, $3, NULL)',
+          [crypto.randomUUID(), structureId, cardOneId]
+        );
+        await client.query(
+          'INSERT INTO structure_layout_position (id, structure_id, card_id, cell_index) VALUES ($1, $2, $3, NULL)',
+          [crypto.randomUUID(), structureId, cardTwoId]
+        );
+
+        const { rows } = await client.query<{ cell_index: number | null }>(
+          "SELECT cell_index FROM structure_layout_position WHERE structure_id = $1 AND status = 'active'",
+          [structureId]
+        );
+        expect(rows).toHaveLength(2);
+        expect(rows.map((row) => row.cell_index)).toEqual([null, null]);
+
+        // І NULL справді читається як NULL, а не як 0 (0 — перша РЕАЛЬНА клітинка).
+        const { rows: placed } = await client.query<{ count: string }>(
+          'SELECT count(*)::text AS count FROM structure_layout_position WHERE structure_id = $1 AND cell_index IS NOT NULL',
+          [structureId]
+        );
+        expect(placed[0].count).toBe('0');
+      } finally {
+        await client.query('DELETE FROM app_user WHERE id = $1', [ownerId]); // каскадно прибирає все нижче
+      }
+    } finally {
+      await client.end();
+    }
+  });
+});
+
 describe('migration 05_create_structure_history_event (T3, AC-15) — проти реальної Neon', () => {
   it('structure_id/card_id — реальні FK ON DELETE CASCADE на structure(id)/card(id)', async () => {
     const client = new Client({ connectionString: process.env.DATABASE_URL });

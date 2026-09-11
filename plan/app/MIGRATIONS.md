@@ -35,3 +35,4 @@
 | `1788631003274_add-structure-owner-fk.sql` | `structure/migrations/backend/03_add_owner_fk.{up,down}.sql` | `ff2be111cf49cb80a39e9538856d4c4ec22708c9454580bfc4a9e8ca968163ee` |
 | `1789122610006_add-logic-variant.sql` | `structure/migrations/backend/04_add_logic_variant.{up,down}.sql` | `57360a2e568cd37429a70e7842177d96d2a55cfe96439b391c5ed92b4ff02bb1` |
 | `1789123033656_create-structure-history-event.sql` | `structure/migrations/backend/05_create_structure_history_event.{up,down}.sql` | `013f2e70eb3c5f6be0f29ee5725a601b16bf084f663bc44ea20dadfe9bd5eebf` |
+| `1789151324598_make-cell-index-nullable.sql` | `structure/migrations/backend/06_make_cell_index_nullable.{up,down}.sql` | `25e7368bc101d760544ca73fbe5decd5b61879a0842ddbb526b6eed664a4ed33` |

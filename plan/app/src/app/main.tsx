@@ -57,8 +57,24 @@ import {
   readCachedEntries,
   readCachedMetricBlocks,
 } from '../cards/life-area-card';
-import type { AnalyticsScreenState, DeclarationScreenState, LayoutBoardState, LayoutMode, LogicVariant } from '../structure';
-import { computeStructureAggregate } from '../structure';
+import type {
+  AnalyticsScreenState,
+  AnalyticsTrend,
+  CloseCardMetricTransferInput,
+  DeclarationScreenState,
+  GapTrend,
+  LayoutBoardCloseCardOptions,
+  LayoutBoardState,
+  LayoutMode,
+  LogicVariant,
+} from '../structure';
+import {
+  computeCardGapTrend,
+  computeLogicLayoutGaps,
+  computeStructureAggregate,
+  flagUnmaintainedCards,
+  logicLayoutScale,
+} from '../structure';
 import { AppError } from '../shared/errors';
 import { collectAllPages } from '../shared/pagination';
 import { createLocalStorageAdapter } from '../shared/storage/local';
@@ -715,7 +731,14 @@ interface StructureDto {
 
 interface LayoutPositionDto {
   cardId: string;
-  cellIndex: number;
+  /**
+   * `null` -- активна позиція БЕЗ клітинки: картка лежить у треї нерозкладених
+   * (AC-11b/AC-16b після скидання, AC-17 після відновлення з архіву). Колонка
+   * стала nullable міграцією 06 (рев'ю 2026-09-11), тож сюди реально приходить
+   * JSON-null -- трактувати його як число означало б показати картку в
+   * клітинці 0.
+   */
+  cellIndex: number | null;
   status: 'active' | 'closed';
   positionUpdatedAt: string;
 }
@@ -740,6 +763,38 @@ async function fetchActiveLayoutPositions(): Promise<LayoutPositionDto[]> {
   return page.items;
 }
 
+/**
+ * Останній відомий клієнту спосіб розкладки (з найсвіжішого GET /structure) --
+ * потрібен, щоб ВІДРІЗНИТИ "PATCH справді перемкнув режим/підвид" від "PATCH
+ * зберіг лише декларацію". Сервер (app/update-structure.ts) скидає позиції
+ * рівно за цією ж умовою: `layoutModeChanged || (logicVariantChanged &&
+ * режим-результат === 'logic')` -- умова нижче її дзеркалить, а не вгадує.
+ *
+ * `null` -- клієнт ще не бачив Структури (екран Декларації не відкривався), тож
+ * і зберегти з нього нічого не міг: банер у такому разі не показуємо, бо
+ * порівнювати ні з чим (хибний банер гірший за відсутній).
+ */
+let lastKnownLayoutChoice: { layoutMode: LayoutMode; logicVariant: LogicVariant } | null = null;
+
+/**
+ * Клієнтський прапорець "щойно скинуто розкладку" (AC-11b/AC-16b).
+ *
+ * Review 2026-09-11 (MUST-FIX 3): тут стояв хардкод `justReset: false` із
+ * коментарем "поки сервер не почне позначати" -- тобто банер "Розклади заново"
+ * не показувався НІКОЛИ, попри те, що сервер реально знімає клітинку з кожної
+ * позиції. Окремого поля в контракті (openapi.yaml) під цей факт немає й не
+ * потрібно: скидання -- наслідок дії, яку зробив САМ цей клієнт, тож він її і
+ * пам'ятає. Прапорець ОДНОРАЗОВИЙ: перше ж відкриття Схеми його з'їдає, інакше
+ * банер висів би на кожному наступному заході.
+ */
+let layoutJustReset = false;
+
+function consumeLayoutJustReset(): boolean {
+  const justReset = layoutJustReset;
+  layoutJustReset = false;
+  return justReset;
+}
+
 /** GET /api/v1/structure -- декларація + спосіб розкладки (DeclarationScreen.loadStructure). `hasArrangedCards` (AC-11b/AC-16b confirm-reset) -- поза Structure DTO, похідне з активних позицій розкладки. */
 async function loadStructure(): Promise<DeclarationScreenState> {
   const response = await fetch('/api/v1/structure', { headers: authHeaders() });
@@ -750,14 +805,23 @@ async function loadStructure(): Promise<DeclarationScreenState> {
   }
 
   const structure = (await response.json()) as StructureDto;
+  rememberLayoutChoice(structure);
   const activePositions = await fetchActiveLayoutPositions();
 
   return {
     declaration: structure.declaration,
     layoutMode: structure.layoutMode,
     logicVariant: structure.logicVariant,
-    hasArrangedCards: activePositions.length > 0,
+    // AC-11b/AC-16b: картка в треї (cellIndex === null) вже НЕ розкладена --
+    // підтвердження "картки скинуться вниз" не має питатись, коли скидати
+    // нічого. Після міграції 06 таких позицій реально повно.
+    hasArrangedCards: activePositions.some((position) => position.cellIndex !== null),
   };
+}
+
+/** Єдине місце, де запам'ятовується спосіб розкладки з відповіді сервера. */
+function rememberLayoutChoice(structure: StructureDto): void {
+  lastKnownLayoutChoice = { layoutMode: structure.layoutMode, logicVariant: structure.logicVariant };
 }
 
 /** PATCH /api/v1/structure -- зберігає декларацію/режим розкладки (DeclarationScreen.onSave). */
@@ -772,6 +836,23 @@ async function onSaveDeclaration(input: { declaration: string; layoutMode: Layou
     const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
     throw new AppError(body?.code ?? 'structure.request_failed', body?.message ?? 'Не вдалося зберегти Структуру', response.status);
   }
+
+  // AC-11b/AC-16b: та сама умова, за якою сервер скидає позиції
+  // (app/update-structure.ts). Прапорець ставиться ЛИШЕ після успішної
+  // відповіді -- збій PATCH нічого на сервері не скинув, тож банер був би
+  // брехнею.
+  const previous = lastKnownLayoutChoice;
+  if (previous !== null) {
+    const layoutModeChanged = input.layoutMode !== previous.layoutMode;
+    const logicVariantSwitched = input.logicVariant !== previous.logicVariant && input.layoutMode === 'logic';
+    if (layoutModeChanged || logicVariantSwitched) {
+      layoutJustReset = true;
+    }
+  }
+
+  const saved = (await response.json().catch(() => null)) as StructureDto | null;
+  if (saved) rememberLayoutChoice(saved);
+  else lastKnownLayoutChoice = { layoutMode: input.layoutMode, logicVariant: input.logicVariant };
 }
 
 /**
@@ -783,22 +864,29 @@ async function onSaveDeclaration(input: { declaration: string; layoutMode: Layou
  * `/structure/layout`) потрапляють у нерозкладений трей (`cellIndex: null`),
  * `baseOrder` -- порядок їх повернення GET /cards.
  *
- * `cellCount`/`justReset` НЕ несе жодний ендпоінт контракту (openapi.yaml)
- * -- відома прогалина (sad.md §11 "щільність поля розкладки" закрито лише
- * на рівні §5.2 тексту, без окремого API-поля). cellCount тут -- найбільший
- * зайнятий індекс + запас вільних клітинок (той самий текстовий принцип,
- * що sad.md §5.2); justReset -- завжди false, поки сервер не почне
- * позначати щойно скинуту розкладку окремим прапорцем.
+ * `cellCount` НЕ несе жодний ендпоінт контракту (openapi.yaml) -- відома
+ * прогалина (sad.md §11 "щільність поля розкладки" закрито лише на рівні §5.2
+ * тексту, без окремого API-поля): тут це найбільший зайнятий індекс + запас
+ * вільних клітинок (той самий текстовий принцип, що sad.md §5.2).
+ *
+ * `justReset` (AC-11b/AC-16b) -- клієнтський одноразовий прапорець, див.
+ * layoutJustReset вище. Окремого поля в контракті він не потребує: скидання --
+ * наслідок PATCH, який зробив цей самий клієнт.
  */
 async function loadLayout(): Promise<LayoutBoardState> {
   const [positions, cards] = await Promise.all([fetchActiveLayoutPositions(), loadCards()]);
   const positionByCardId = new Map(positions.map((position) => [position.cardId, position]));
-  const maxCellIndex = positions.reduce((max, position) => Math.max(max, position.cellIndex), -1);
+  // Позиції без клітинки (трей) у розмір сітки не входять -- інакше NULL
+  // коерціювався б у 0 і міг би штучно підтягнути сітку до однієї клітинки.
+  const maxCellIndex = positions.reduce(
+    (max, position) => (position.cellIndex === null ? max : Math.max(max, position.cellIndex)),
+    -1,
+  );
   const FREE_CELL_BUFFER = 6;
 
   return {
     cellCount: maxCellIndex + 1 + FREE_CELL_BUFFER,
-    justReset: false,
+    justReset: consumeLayoutJustReset(),
     cards: cards.map((card, index) => {
       const position = positionByCardId.get(card.id);
       return {
@@ -826,6 +914,70 @@ async function onMoveCard(input: { cardId: string; cellIndex: number }): Promise
 }
 
 /**
+ * AC-12, SCR-04 -- що показати в діалозі "Закрити напрямок": метрики картки, що
+ * закривається (GET /cards/{cardId}/metric-blocks), і куди їх можна перенести
+ * (решта активних карток власника, GET /cards). Сама картка зі списку цілей
+ * виключена -- переносити метрику в картку, яку закриваєш, безглуздо.
+ *
+ * ЕКСПОРТОВАНО, А НЕ ПЕРЕДАНО В <App>: AppProps (src/app/App.tsx) поля під
+ * закриття напрямку поки не має, а App.tsx -- поза скоупом цього фіксу. Щойно
+ * App.tsx отримає `loadCloseCardOptions`/`onCloseCard` і прокине їх у
+ * <LayoutBoard> (LayoutBoardProps їх уже приймає), ці дві функції під'єднаються
+ * без жодної зміни -- і AC-12 стане досяжним користувачу.
+ */
+export async function loadCloseCardOptions(cardId: string): Promise<LayoutBoardCloseCardOptions> {
+  const [blocksResponse, cards] = await Promise.all([
+    fetch(`/api/v1/cards/${cardId}/metric-blocks`, { headers: authHeaders() }),
+    loadCards(),
+  ]);
+
+  if (!blocksResponse.ok) {
+    const body = (await blocksResponse.json().catch(() => null)) as { code?: string; message?: string } | null;
+    throw new AppError(
+      body?.code ?? 'card.request_failed',
+      body?.message ?? 'Не вдалося прочитати метрики картки',
+      blocksResponse.status,
+    );
+  }
+
+  const blocks = (await blocksResponse.json()) as MetricBlockDto[];
+  return {
+    metricBlocks: blocks.map((block) => ({ metricBlockId: block.id, label: block.label })),
+    targetCards: cards
+      .filter((card) => card.id !== cardId)
+      .map((card) => ({ cardId: card.id, cardTitle: card.name })),
+  };
+}
+
+/**
+ * AC-12 -- POST /api/v1/structure/layout/{cardId}/close (LayoutBoard.onCloseCard).
+ * Код помилки прокидається як є: SCR-04 розрізняє саме за ним
+ * `metric_block.name_collision` (409 -> поле "нова назва") від
+ * `structure.metric_transfer_target_invalid` (422 -> банер).
+ *
+ * Експортовано з тієї ж причини, що loadCloseCardOptions вище.
+ */
+export async function onCloseCard(input: {
+  cardId: string;
+  metricTransfers: CloseCardMetricTransferInput[];
+}): Promise<void> {
+  const response = await fetch(`/api/v1/structure/layout/${input.cardId}/close`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ metricTransfers: input.metricTransfers }),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    throw new AppError(
+      body?.code ?? 'structure.close_failed',
+      body?.message ?? 'Не вдалося закрити напрямок',
+      response.status,
+    );
+  }
+}
+
+/**
  * Зведена аналітика (AnalyticsScreen.loadAnalytics, AC-01/AC-04/AC-13).
  *
  * ADR-0001 ("ніколи не кешувати агрегат -- рахувати з сирих даних щоразу"):
@@ -836,13 +988,16 @@ async function onMoveCard(input: { cardId: string; cellIndex: number }): Promise
  * use-case `structure/app/get-analytics.ts` (domain/aggregate.ts, D-19
  * "одне рішення -- одне місце").
  *
- * ВІДОМА ПРОГАЛИНА (openapi.yaml не несе жодного ендпоінту під ранг-розрив/
- * тренд/"не підтримується" — лише GET /structure/layout/history, який сам
- * реконструює МИНУЛУ розкладку, а не готовий gap): gap/trend/unmaintained
- * тут НЕ рахуються (`gap: null`, `trend: null`, `unmaintained: false`,
- * `trendAvailable: false`) -- рахувати їх повністю клієнтською композицією
- * без дублювання формули бекенда виходить за межі цього wiring-завдання
- * (T24 DoD -- лише 3 нав-вкладки досяжні, не повна коректність аналітики).
+ * РАНГ-РОЗРИВ, ТРЕНД І "НЕ ВЕДЕТЬСЯ" (AC-06/AC-06b/AC-07) -- теж тут, на
+ * клієнті. Review 2026-09-11 (MUST-FIX 5): раніше всі три стояли хардкодом
+ * (`gap: null`, `trend: null`, `unmaintained: false`, `trendAvailable: false`),
+ * тож екран показував порожні числа й вічний банер "тренд недоступний".
+ * Окремого ендпоінта аналітики контракт не має і не потребує: sad.md §6
+ * Critical flow 9 прямо описує, що ці числа зводить САМ PWA -- із поточної
+ * розкладки (GET /structure/layout), прогресу карток і МИНУЛОЇ розкладки
+ * (GET /structure/layout/history?asOf=...). Формули -- доменні функції
+ * structure/domain/aggregate.ts, ті самі, що бекендний use-case, не копія
+ * (D-19).
  */
 async function loadAnalytics(): Promise<AnalyticsScreenState> {
   const [structureResponse, positions, cards] = await Promise.all([
@@ -857,6 +1012,7 @@ async function loadAnalytics(): Promise<AnalyticsScreenState> {
   }
 
   const structure = (await structureResponse.json()) as StructureDto;
+  rememberLayoutChoice(structure);
   const positionByCardId = new Map(positions.map((position) => [position.cardId, position]));
 
   const cardDetails = await Promise.all(
@@ -877,20 +1033,186 @@ async function loadAnalytics(): Promise<AnalyticsScreenState> {
     })),
   );
 
+  const isLogicLayout = structure.layoutMode === 'logic';
+
+  // AC-07: минулу розкладку читаємо ДО розрахунку розриву, бо вона входить у
+  // шкалу (нижче). `null` -- історія не відповіла; порожній список -- відповіла,
+  // просто другої точки немає.
+  const pastPositions = isLogicLayout ? await fetchLayoutHistoryAsOf(trendCheckpoint()) : [];
+
+  // AC-06/AC-07: ОДНА шкала нормалізації на обидві точки часу.
+  //
+  // Беремо УСІ активні позиції (навіть карток без обчислюваного відсотка -- вони
+  // теж займають клітинки) ПЛЮС клітинки з минулої точки. Чому разом: справжній
+  // розмір сітки -- властивість режиму розкладки, і жодне поле контракту його не
+  // несе (sad.md §11, відома прогалина), тож найкращий доступний клієнту проксі
+  // -- найбільша клітинка, яку видно хоч в одній із двох точок. Якщо взяти лише
+  // поточні позиції, минула клітинка за межами теперішньої сітки тихо
+  // підтягнеться до її краю, і тренд сплющиться в "не змінився" саме тоді, коли
+  // картка реально переїхала (рев'ю 2026-09-11, Частина 1/2: "поточний і минулий
+  // gap рахуються в різних шкалах" -- тут навпаки, ОДНА лінійка на обидва числа
+  // і на показаний розрив).
+  const scale = logicLayoutScale([...positions, ...(pastPositions ?? [])]);
+
+  const gapByCardId = new Map<string, number>();
+  if (isLogicLayout) {
+    const gaps = computeLogicLayoutGaps(
+      cards
+        .filter((card) => progressByCardId.get(card.id) !== null && progressByCardId.get(card.id) !== undefined)
+        .map((card) => ({
+          cardId: card.id,
+          // Картка без активної позиції (чи в треї) -- cellIndex null: розриву
+          // не отримує взагалі (aggregate.ts), а не розрив "як для клітинки 0".
+          cellIndex: positionByCardId.get(card.id)?.cellIndex ?? null,
+          progress: progressByCardId.get(card.id) as number,
+        })),
+      scale,
+    );
+    for (const gap of gaps) gapByCardId.set(gap.cardId, gap.gap);
+  }
+
+  // AC-07: напрямок зміни розриву. Контракт дає саме реконструкцію МИНУЛОЇ
+  // розкладки (GET /structure/layout/history?asOf=...), не готовий розрив --
+  // розрив на ту дату рахується тією ж формулою й тією ж шкалою, що поточний.
+  // trendAvailable = false ТІЛЬКИ коли цей запит не відповів (AnalyticsScreen
+  // саме так його й описує) -- не коли в конкретної картки бракує точок і не
+  // коли розкладка не "за логікою" (там історію не питаємо взагалі, тож і
+  // ламатись нічому: банер "тренд недоступний" мав би сенс лише як повідомлення
+  // про збій).
+  const trendAvailable = pastPositions !== null;
+  const trendByCardId = new Map<string, AnalyticsTrend>();
+  if (isLogicLayout && pastPositions !== null) {
+    const pastByCardId = new Map(pastPositions.map((position) => [position.cardId, position]));
+    for (const card of cards) {
+      const past = pastByCardId.get(card.id);
+      const current = positionByCardId.get(card.id);
+      const progress = progressByCardId.get(card.id);
+      // Бракує хоч однієї з двох точок (картка не рухалась до контрольної дати,
+      // лежить у треї, чи відсотка не має) -- напрямок невідомий, і це `null`,
+      // а не вигадана стрілка.
+      if (
+        !past ||
+        past.cellIndex === null ||
+        !current ||
+        current.cellIndex === null ||
+        progress === null ||
+        progress === undefined
+      ) {
+        continue;
+      }
+
+      trendByCardId.set(
+        card.id,
+        toAnalyticsTrend(
+          computeCardGapTrend(
+            {
+              pastCellIndex: past.cellIndex,
+              pastObservedAt: past.positionUpdatedAt,
+              currentCellIndex: current.cellIndex,
+              currentObservedAt: now().toISOString(),
+              progress,
+            },
+            scale,
+          ),
+        ),
+      );
+    }
+  }
+
+  // AC-06b: розкладка без схеми пріоритету рангу не має -- натомість прапорець
+  // "заявлено важливим (метрика є), не ведеться (нуль записів)". Запити за
+  // метриками/записами робимо ЛИШЕ в цьому випадку: у режимі "за логікою"
+  // прапорець не показується, тож і питати нічого.
+  const unmaintainedIds = new Set<string>();
+  if (!isLogicLayout) {
+    const maintenance = await Promise.all(
+      cards.map(async (card) => ({ cardId: card.id, ...(await fetchCardMaintenance(card.id)) })),
+    );
+    for (const cardId of flagUnmaintainedCards(maintenance)) unmaintainedIds.add(cardId);
+  }
+
   return {
     layoutMode: structure.layoutMode,
     average,
     excludedCount,
-    trendAvailable: false,
+    trendAvailable,
     cards: cards.map((card) => ({
       cardId: card.id,
       cardTitle: card.name,
       progress: progressByCardId.get(card.id) ?? null,
-      gap: null,
-      trend: null,
-      unmaintained: false,
+      gap: gapByCardId.get(card.id) ?? null,
+      trend: trendByCardId.get(card.id) ?? null,
+      unmaintained: unmaintainedIds.has(card.id),
     })),
   };
+}
+
+/**
+ * Контрольна точка в минулому для тренду (AC-07). Конкретного вікна ні spec.md,
+ * ні sad.md не називають ("попередня контрольна точка часу", Critical flow 9) --
+ * тут тиждень: досить довго, щоб перетягування встигло статись, і досить
+ * коротко, щоб "росте/меншає" говорило про зараз. Мусить бути в МИНУЛОМУ:
+ * ports/layout-handlers.ts відповідає 422 structure.invalid_as_of на майбутню
+ * дату.
+ */
+const TREND_CHECKPOINT_MS = 7 * 24 * 60 * 60 * 1000;
+
+function trendCheckpoint(): Date {
+  return new Date(now().getTime() - TREND_CHECKPOINT_MS);
+}
+
+/**
+ * GET /api/v1/structure/layout/history?asOf=... -- розкладка на минулу дату.
+ * `null` означає "історія не відповіла" (trendAvailable=false), а не "подій
+ * немає": порожній список -- це теж успішна відповідь, просто без другої точки.
+ * Збій цього одного запиту НЕ гасить решту екрана (T14 DoD: відсутність історії
+ * ніколи не валить увесь розрахунок).
+ */
+async function fetchLayoutHistoryAsOf(asOf: Date): Promise<LayoutPositionDto[] | null> {
+  try {
+    const response = await fetch(`/api/v1/structure/layout/history?asOf=${encodeURIComponent(asOf.toISOString())}`, {
+      headers: authHeaders(),
+    });
+    if (!response.ok) return null;
+    const page = (await response.json()) as LayoutPositionPageDto;
+    return page.items;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Чи картку "заявили й ведуть" (AC-06b): метрика є / записів скільки. Читається
+ * ЛИШЕ перша сторінка записів -- питання стоїть "нуль чи не нуль", а не
+ * "скільки саме", тож доганяти next_cursor нема за чим. Збій будь-якого з двох
+ * запитів -> `hasMetricBlock: false`: прапорець "не ведеться" не виставляється
+ * на здогад (звинувачення без даних гірше за відсутній сигнал).
+ */
+async function fetchCardMaintenance(cardId: string): Promise<{ hasMetricBlock: boolean; entryCount: number }> {
+  try {
+    const [blocksResponse, entriesResponse] = await Promise.all([
+      fetch(`/api/v1/cards/${cardId}/metric-blocks`, { headers: authHeaders() }),
+      fetch(`/api/v1/cards/${cardId}/entries`, { headers: authHeaders() }),
+    ]);
+    if (!blocksResponse.ok || !entriesResponse.ok) return { hasMetricBlock: false, entryCount: 0 };
+
+    const blocks = (await blocksResponse.json()) as MetricBlockDto[];
+    const page = (await entriesResponse.json()) as EntryPageDto;
+    return { hasMetricBlock: blocks.length > 0, entryCount: page.items.length };
+  } catch {
+    return { hasMetricBlock: false, entryCount: 0 };
+  }
+}
+
+/**
+ * Доменний GapTrend має чотири стани, а AnalyticsScreen's AnalyticsTrend -- три:
+ * 'stable' ("точки є, розрив не змінився") він не знає. Звужуємо тут, на межі,
+ * а не ховаємо всередині домену: `null` у 'stable' означає лише "стрілку не
+ * показуємо". Розширення AnalyticsTrend до 'stable' -- правка
+ * structure/ui/AnalyticsScreen.tsx, поза скоупом цього фіксу.
+ */
+function toAnalyticsTrend(trend: GapTrend): AnalyticsTrend {
+  return trend === 'growing' || trend === 'shrinking' ? trend : null;
 }
 
 const root = document.getElementById('root');
@@ -923,6 +1245,8 @@ createRoot(root).render(
       loadLayout={loadLayout}
       onMoveCard={onMoveCard}
       loadAnalytics={loadAnalytics}
+      loadCloseCardOptions={loadCloseCardOptions}
+      onCloseCard={onCloseCard}
     />
   </StrictMode>,
 );
