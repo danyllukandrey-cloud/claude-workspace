@@ -108,13 +108,15 @@ describe('confirmProposal handler (POST /api/v1/proposals/{proposalId}/confirm, 
       proposalRecord({ status: 'confirmed' })
     );
 
-    const result = await confirmProposal(db, USER_ID, PROPOSAL_ID, { recordedAt: 1_000, sourceDeviceId: 'device-a' });
+    const result = await confirmProposal(db, USER_ID, PROPOSAL_ID);
 
+    // Review 2026-09-12: openapi.yaml не визначає жодного тіла запиту для
+    // confirmProposal -- ані `recordedAt`, ані `sourceDeviceId` більше не
+    // проходять через порт-шар, симетрично entry-handlers.ts createEntry
+    // (сервер сам підставляє момент запису в ../app/confirm.ts).
     expect(confirmProposalUseCase).toHaveBeenCalledWith(db, {
       userId: USER_ID,
       proposalId: PROPOSAL_ID,
-      recordedAt: 1_000,
-      sourceDeviceId: 'device-a',
     });
     expect(result).toEqual({
       id: PROPOSAL_ID,

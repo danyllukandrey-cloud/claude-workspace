@@ -82,36 +82,32 @@ export async function getActiveProposal(db: Db, ownerUserId: string): Promise<Ac
   return { proposal: active ? toProposalResponse(active) : null };
 }
 
-export interface ConfirmProposalBody {
-  /** Час запису для life-area-card's createEntry (мс з епохи) -- дефолт Date.now() у app-шарі. */
-  recordedAt?: number;
-  sourceDeviceId?: string | null;
-}
-
 /**
  * POST /api/v1/proposals/{proposalId}/confirm (AC-02) -- ЦІЛКОМ делегує
  * оркестрацію в ../app/confirm.ts (T17): запис події в картку через
  * life-area-card's createEntry, потім перехід agent_proposal у 'confirmed'.
  *
+ * Review 2026-09-12: контракт (openapi.yaml, operationId confirmProposal)
+ * НЕ визначає жодного тіла запиту -- попередня версія цього хендлера все
+ * одно приймала `recordedAt`/`sourceDeviceId` з `req.body` і передавала їх
+ * далі непроконтрольованими значеннями клієнта. Симетрично документованому
+ * рішенню ../../cards/life-area-card/ports/entry-handlers.ts createEntry
+ * (контракт мовчить про recordedAt -- сервер сам підставляє момент прийому
+ * запиту): жодного параметра тіла тут більше немає, ../app/confirm.ts сам
+ * підставляє `Date.now()` і `sourceDeviceId: null`.
+ *
  * 404 `agent.proposal_not_found` -- пропозиції немає серед пропозицій ЦЬОГО
  * користувача (не існує, чи чужа -- AC-06 non-disclosure, той самий код для
  * обох випадків).
  * 409 `agent.proposal_not_active` -- пропозиція вже не активна
- * (`confirmed`/`dropped`) -- domain invariant "мовчазного запису не буває"
- * (D-30, AC-03).
+ * (`confirmed`/`dropped`), або програла гонитву з паралельним confirm --
+ * domain invariant "мовчазного запису не буває" (D-30, AC-03).
  * Обидва коди -- AppError з ../app/confirm.ts, пропускаються нагору без змін.
  */
-export async function confirmProposal(
-  db: Db,
-  ownerUserId: string,
-  proposalId: string,
-  body: ConfirmProposalBody = {}
-): Promise<ProposalResponse> {
+export async function confirmProposal(db: Db, ownerUserId: string, proposalId: string): Promise<ProposalResponse> {
   const input: ConfirmProposalInput = {
     userId: ownerUserId,
     proposalId,
-    recordedAt: body.recordedAt,
-    sourceDeviceId: body.sourceDeviceId,
   };
   const confirmed = await confirmProposalUseCase(db, input);
   return toProposalResponse(confirmed);

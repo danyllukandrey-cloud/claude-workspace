@@ -245,6 +245,31 @@ export async function updateProposal(
   return rows[0] ? toProposalRecord(rows[0]) : null;
 }
 
+/**
+ * Review 2026-09-12 (double-confirm race, AC-02/AC-03): `updateProposal`'s
+ * unconditional status write let two concurrent confirms (or a client retry)
+ * both pass an in-memory `status === 'active'` check and both proceed --
+ * ../../app/confirm.ts called this ONLY after that check, with no predicate
+ * tying the write to the state it was read from. This is the narrowly-scoped
+ * fix: the transition itself is the atomic compare-and-swap, `status = 'active'`
+ * in the WHERE clause alongside id/user_id, same non-disclosure shape as
+ * `updateProposal` above. Whichever caller's UPDATE actually flips the row
+ * gets it back; a caller that loses the race (row already 'confirmed' or
+ * 'dropped' by the time this runs) gets zero rows back, indistinguishable at
+ * the SQL level from "not found" or "foreign" -- confirm.ts is the one that
+ * turns that into the existing 409 `agent.proposal_not_active`, using its
+ * own earlier plain read to already know the row exists and belongs to this
+ * user.
+ */
+export async function confirmActiveProposal(db: Db, userId: string, proposalId: string): Promise<ProposalRecord | null> {
+  const { rows } = await db.query<RawProposalRow>(
+    `UPDATE agent_proposal SET status = 'confirmed', updated_at = now()
+     WHERE id = $1 AND user_id = $2 AND status = 'active' RETURNING ${PROPOSAL_COLUMNS}`,
+    [proposalId, userId]
+  );
+  return rows[0] ? toProposalRecord(rows[0]) : null;
+}
+
 // --- imperative_rule (AC-07/AC-08/AC-12/AC-14) -----------------------------
 
 interface RawRuleRow extends QueryResultRow {

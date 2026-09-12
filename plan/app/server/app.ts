@@ -584,8 +584,13 @@ export function createApp(deps: AppDeps): express.Express {
       // createCard/archiveCard вище вже закрили withTransaction: без неї
       // збій другого запису лишив би запис у картці вже вставленим, а
       // пропозицію -- досі 'active' (ризик повторного запису при retry).
+      //
+      // Review 2026-09-12: жодного тіла запиту тут немає (openapi.yaml,
+      // confirmProposal не визначає requestBody) -- `req.body` свідомо не
+      // передається далі, симетрично life-area-card's entry-handlers.ts
+      // createEntry.
       const proposal = await deps.withTransaction((txDb) =>
-        proposalHandlers.confirmProposal(txDb, ownerUserId(req), param(req, 'proposalId'), req.body)
+        proposalHandlers.confirmProposal(txDb, ownerUserId(req), param(req, 'proposalId'))
       );
       res.status(200).json(proposal);
     })
