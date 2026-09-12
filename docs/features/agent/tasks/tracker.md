@@ -40,7 +40,7 @@
 | T33 | Migration: extend agent_audit_event types | migration | TBD | S | T6 | done |
 | T34 | Domain: account deletion orchestration | domain | TBD | S | — | done |
 | T35 | Domain: resource-sync scheduling model | domain | TBD | S | — | done |
-| T36 | Domain: developer-report classification | domain | TBD | S | — | todo |
+| T36 | Domain: developer-report classification | domain | TBD | S | — | done |
 | T37 | Infra: outbound email client | infra | TBD | M | — | todo |
 | T38 | Infra (agent-worker): external resource writer | infra | TBD | M | — | todo |
 | T39 | App: deleteAccount use-case | app | TBD | M | T34, T13 | todo |
