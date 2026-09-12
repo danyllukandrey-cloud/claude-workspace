@@ -4,17 +4,22 @@
 //
 // Той самий підхід, що ../ports/proposal-handler.test.ts: createMessage делегує
 // оркестрацію ВЖЕ юніт-тестованому ../app/handle-message.ts (T16, мокнутий тут на
-// межі порту) -- цей тест перевіряє лише (1) rate-limit перевірку ДО виклику
-// handleMessage, (2) мапінг HandleMessageResult -> контрактний MessageTurn DTO,
-// (3) запис обох реплік ходу в chat_message ПІСЛЯ успішного виклику (AC-15), і
-// (4) що AppError (422/503) з handleMessage проходить нагору незмінно, без
-// жодного запису chat_message у цих гілках -- не повторює app-шарове тестування
-// (уже покрите ../app/handle-message.test.ts).
+// межі порту) -- цей тест перевіряє лише (1) 422 `agent.message_empty` ДО будь-
+// якого звернення до бази, коли ні тексту, ні вкладення немає, (2) rate-limit
+// перевірку ДО виклику handleMessage, (3) мапінг HandleMessageResult ->
+// контрактний MessageTurn DTO, (4) запис репліки користувача в chat_message
+// ОДРАЗУ ПІСЛЯ виклику handleMessage -- незалежно від успіху -- і репліки
+// агента лише при успіху (AC-15), і (5) що AppError (422/503) з handleMessage
+// проходить нагору незмінно, АЛЕ репліка користувача вже записана до того (Review
+// 2026-09-12: інакше повторний 422/503-хід лишався невидимим для наступного
+// rate-limit підрахунку) -- не повторює app-шарове тестування (уже покрите
+// ../app/handle-message.test.ts).
 //
 // DoD (tasks.json T20): "Handlers return the contract shapes exactly: 201
 // MessageTurn, 422 agent.attachment_unrecognized, 429 agent.rate_limited, 503
 // agent.llm_unavailable; attachment field accepts document/spreadsheet MIME
-// types, not just photo".
+// types, not just photo". Розширено Review 2026-09-12: 422 `agent.message_empty`
+// (порожній хід), 60/год лічильник рахує СПРОБИ, не лише успішні ходи.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AppError } from '../../shared/errors';
@@ -171,8 +176,11 @@ describe('createMessage handler (POST /api/v1/messages)', () => {
     });
   });
 
-  it('propagates agent.attachment_unrecognized (422) from handleMessage unchanged, persisting nothing (AC-10b/AC-19b)', async () => {
-    const query = vi.fn().mockResolvedValueOnce({ rows: [{ count: '0' }] });
+  it('propagates agent.attachment_unrecognized (422) from handleMessage unchanged, but still records the user turn (Review 2026-09-12: the attempt must count toward the rate limit)', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] }) // rate-limit count
+      .mockResolvedValueOnce({ rows: [chatRow({ content: '[вкладення: application/zip]' })] }); // insertChatMessage(user) despite the failure
     const db: Db = { query };
     const askClaude: AskClaude = vi.fn();
 
@@ -184,12 +192,19 @@ describe('createMessage handler (POST /api/v1/messages)', () => {
       createMessage(db, askClaude, USER_ID, { content: null, attachment: { mediaType: 'application/zip', base64Data: 'AA==' } }, { now: NOW })
     ).rejects.toMatchObject({ code: 'agent.attachment_unrecognized', httpStatus: 422 });
 
-    // Лише rate-limit count -- жодного insertChatMessage після кинутого винятку.
-    expect(query).toHaveBeenCalledTimes(1);
+    // rate-limit count + insertChatMessage(user) -- NO agent-reply insert (there
+    // was no reply), but the user's attempt IS recorded so it counts toward the
+    // next call's rate-limit check.
+    expect(query).toHaveBeenCalledTimes(2);
+    const userInsertParams = query.mock.calls[1][1] as unknown[];
+    expect(userInsertParams).toEqual(expect.arrayContaining(['[вкладення: application/zip]', USER_ID, 'user']));
   });
 
-  it('propagates agent.llm_unavailable (503) from handleMessage unchanged, persisting nothing (Critical flow 2)', async () => {
-    const query = vi.fn().mockResolvedValueOnce({ rows: [{ count: '0' }] });
+  it('propagates agent.llm_unavailable (503) from handleMessage unchanged, but still records the user turn (Review 2026-09-12)', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] }) // rate-limit count
+      .mockResolvedValueOnce({ rows: [chatRow({ content: 'привіт' })] }); // insertChatMessage(user) despite the failure
     const db: Db = { query };
     const askClaude: AskClaude = vi.fn();
 
@@ -201,7 +216,67 @@ describe('createMessage handler (POST /api/v1/messages)', () => {
       code: 'agent.llm_unavailable',
       httpStatus: 503,
     });
-    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it('a 422/503 turn still counts toward the 60/hour rate limit on the very next call (Review 2026-09-12: the bug this fixes)', async () => {
+    // First call: handleMessage fails with 503 (Claude outage). The count query
+    // reports 59 already-recorded attempts -- one below the cap.
+    const firstQuery = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [{ count: '59' }] }) // rate-limit count
+      .mockResolvedValueOnce({ rows: [chatRow({ content: 'привіт' })] }); // insertChatMessage(user) despite the failure
+    const db: Db = { query: firstQuery };
+    const askClaude: AskClaude = vi.fn();
+
+    (handleMessage as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new AppError('agent.llm_unavailable', 'The agent is temporarily unavailable', 503)
+    );
+
+    await expect(createMessage(db, askClaude, USER_ID, { content: 'привіт' }, { now: NOW })).rejects.toMatchObject({
+      code: 'agent.llm_unavailable',
+      httpStatus: 503,
+    });
+    // The failed attempt left a row -- a real system would now report 60 recent
+    // user messages on the very next call, one hour's cap already reached.
+    const secondQuery = vi.fn().mockResolvedValueOnce({ rows: [{ count: '60' }] });
+    const retryDb: Db = { query: secondQuery };
+
+    await expect(createMessage(retryDb, askClaude, USER_ID, { content: 'привіт ще раз' }, { now: NOW })).rejects.toMatchObject({
+      code: 'agent.rate_limited',
+      httpStatus: 429,
+    });
+    // handleMessage was never retried -- rejected purely on the (now correctly
+    // updated) count, before any second Claude call could be attempted.
+    expect(handleMessage).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('createMessage handler -- empty turn validation (POST /api/v1/messages)', () => {
+  it('rejects with 422 agent.message_empty BEFORE touching the database or calling handleMessage when both content and attachment are absent', async () => {
+    const query = vi.fn();
+    const db: Db = { query };
+    const askClaude: AskClaude = vi.fn();
+
+    await expect(createMessage(db, askClaude, USER_ID, {}, { now: NOW })).rejects.toMatchObject({
+      code: 'agent.message_empty',
+      httpStatus: 422,
+    });
+    expect(handleMessage).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('rejects with 422 agent.message_empty when content and attachment are explicitly null', async () => {
+    const query = vi.fn();
+    const db: Db = { query };
+    const askClaude: AskClaude = vi.fn();
+
+    await expect(createMessage(db, askClaude, USER_ID, { content: null, attachment: null }, { now: NOW })).rejects.toMatchObject({
+      code: 'agent.message_empty',
+      httpStatus: 422,
+    });
+    expect(handleMessage).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
   });
 });
 

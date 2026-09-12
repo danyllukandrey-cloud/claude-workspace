@@ -14,20 +14,23 @@
 //
 // createMessage -- ЦІЛКОМ делегує розбір повідомлення/вкладення в ../app/handle-message.ts
 // (T16, вже повністю юніт-тестований: AC-01/AC-04/AC-05/AC-09/AC-10/AC-10b/AC-15/AC-19/
-// AC-19b). Цей файл лише: (1) rate-limit перевірка ДО виклику handleMessage (§8 SAD "60
-// повідомлень/годину" -- захист проти спаму й економіки важкого вводу, spec.md §6.1; жоден
-// domain/infra/app-таск не володіє цим інваріантом, тому лічильник -- пряме SQL тут, той
-// самий підхід, що ../ports/reports-handler.ts вже застосовує для власного читання поза
-// ../infra/postgres-repo.ts), (2) переклад параметрів у HandleMessageInput, (3) запис ОБОХ
-// реплік ходу в chat_message ПІСЛЯ успішного виклику (AC-15 -- майбутні сесії/ходи бачать
-// їх через getShortTermWindow, T10; той самий insertChatMessage, T13, що вже
-// ../ports/onboarding-handler.ts використовує для вітальної репліки), (4) мапінг
-// HandleMessageResult -> контрактний MessageTurn DTO, (5) НЕ ловить AppError -- 422
-// (`agent.attachment_unrecognized`) і 503 (`agent.llm_unavailable`), кинуті всередині
-// handleMessage/askAgent (T18) ДО будь-якого запису, проходять нагору без змін; жодного
-// insertChatMessage не виконується в цих гілках, бо виклик нижче в цій функції просто не
-// доходить (не спеціальний catch, а природний наслідок порядку: спершу handleMessage,
-// потім запис).
+// AC-19b). Цей файл лише: (1) валідація "порожнього ходу" (ні тексту, ні вкладення) ДО
+// виклику handleMessage -- 422 `agent.message_empty` (Review 2026-09-12: раніше порожній
+// хід доходив до Claude і там же й падав, спливаючи як оманливий 503
+// `agent.llm_unavailable`); (2) rate-limit перевірка ДО виклику handleMessage (§8 SAD "60
+// повідомлень/годину" -- захист проти спаму й економіки важкого вводу, spec.md §6.1;
+// лічильник -- ../infra/postgres-repo.ts's countRecentUserMessages, ADR-0005 "ports сам не
+// пише SQL", не пряме SQL тут, як було до Review 2026-09-12); (3) переклад параметрів у
+// HandleMessageInput; (4) запис репліки користувача в chat_message ОДРАЗУ ПІСЛЯ виклику
+// handleMessage -- незалежно від того, успішний він чи ні (Review 2026-09-12: раніше запис
+// відбувався лише ПІСЛЯ успіху, тож 422/503-хід був невидимий для лічильника наступного
+// виклику -- клієнт міг повторювати непідтримуване вкладення чи "їздити" на збої Claude
+// необмежено, і кожна спроба лишалась реальним (оплаченим) викликом Claude); репліка
+// агента дописується лише коли виклик успішний (5) мапінг HandleMessageResult ->
+// контрактний MessageTurn DTO, (6) AppError (422 `agent.attachment_unrecognized`/503
+// `agent.llm_unavailable`), кинуті всередині handleMessage/askAgent (T18), проходять
+// нагору без змін ПІСЛЯ того, як репліка користувача вже записана (пункт 4) -- catch тут
+// лише для цього запису, не для приховування помилки.
 //
 // "attachment field accepts document/spreadsheet MIME types, not just photo" (DoD) -- цей
 // файл НЕ накладає власного MIME-фільтра на вхідне вкладення: `body.attachment` передається
@@ -52,13 +55,13 @@
 // ендпоінта); `after` рухається вперед (новіші за курсор), `before` -- назад (старіші за
 // курсор), обидва повертають сторінку в тому самому хронологічному порядку. Це practical
 // вибір ЦЬОГО файлу, не задокументоване рішення -- предмет перегляду людиною, якщо UI
-// (T26) очікує іншу семантику.
+// (T26) очікує іншу семантику. Читання (Review 2026-09-12) -- ../infra/postgres-repo.ts's
+// findAllMessagesByUser (ADR-0005), сторінкування лишається відповідальністю цього файлу.
 
 import { randomUUID } from 'node:crypto';
-import type { QueryResultRow } from 'pg';
 import type { AskClaude, ClaudeAttachment } from '../infra/claude-client';
 import { handleMessage } from '../app/handle-message';
-import { insertChatMessage } from '../infra/postgres-repo';
+import { insertChatMessage, countRecentUserMessages, findAllMessagesByUser } from '../infra/postgres-repo';
 import type { Db, ProposalRecord, ChatMessageRecord, ChatRoleRow } from '../infra/postgres-repo';
 import { AppError } from '../../shared/errors';
 
@@ -134,29 +137,20 @@ function toSessionDate(date: Date): string {
 const RATE_LIMIT_PER_HOUR = 60;
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 
-interface CountRow extends QueryResultRow {
-  count: string | number;
-}
-
-async function countRecentUserMessages(db: Db, userId: string, since: Date): Promise<number> {
-  const { rows } = await db.query<CountRow>(
-    `SELECT COUNT(*) AS count FROM chat_message WHERE user_id = $1 AND role = 'user' AND created_at > $2`,
-    [userId, since]
-  );
-  const raw = rows[0]?.count ?? 0;
-  return typeof raw === 'string' ? parseInt(raw, 10) : raw;
-}
-
 /**
  * 429 `agent.rate_limited` -- перевіряється ДО виклику handleMessage (не витрачаємо
  * виклик Claude на повідомлення, яке однаково відхилиться, spec.md §6.1 "економіка
  * важкого вводу"). Ліміт -- ковзне вікно останньої години, а не календарна година
  * (§8 SAD не уточнює межу вікна -- ковзне вікно консервативніше: не дозволяє сплеск
- * рівно на межі календарної години).
+ * рівно на межі календарної години). Лічильник -- ../infra/postgres-repo.ts's
+ * countRecentUserMessages (ADR-0005, Review 2026-09-12) -- рахує РЯДКИ chat_message,
+ * тому денумератор коректний лише якщо кожна спроба (успішна чи ні) лишає рядок; це
+ * забезпечує createMessage нижче, записуючи репліку користувача одразу після виклику
+ * handleMessage незалежно від результату, а не лише після успіху.
  */
 async function assertNotRateLimited(db: Db, userId: string, now: Date): Promise<void> {
   const since = new Date(now.getTime() - RATE_LIMIT_WINDOW_MS);
-  const count = await countRecentUserMessages(db, userId, since);
+  const count = await countRecentUserMessages(db, userId, since.toISOString());
   if (count >= RATE_LIMIT_PER_HOUR) {
     throw new AppError('agent.rate_limited', 'Too many messages — try again later', 429);
   }
@@ -190,29 +184,47 @@ export async function createMessage(
 ): Promise<MessageTurnDto> {
   const now = options.now ?? new Date();
 
-  await assertNotRateLimited(db, ownerUserId, now);
-
   const text = body.content ?? null;
   const attachment = body.attachment ?? null;
 
-  // AC-10b/AC-19b (422) і Critical flow 2 (503) -- AppError кинуто всередині
-  // handleMessage/askAgent (T18) ДО будь-якого запису; пропускаємо нагору незмінно.
-  // Нічого нижче в цій функції не виконується в цій гілці -- природний наслідок
-  // порядку виклику, не окремий catch.
-  const result = await handleMessage(db, askClaude, { userId: ownerUserId, text, attachment, now });
+  // Review 2026-09-12: порожній хід (ні тексту, ні вкладення) раніше доходив
+  // до Claude і там же й падав -- спливало як оманливий 503
+  // `agent.llm_unavailable` замість чіткої помилки валідації. Перевіряється
+  // ДО rate-limit запиту до бази -- невалідне тіло відхиляється без жодного
+  // звернення до БД чи Claude.
+  if (text === null && attachment === null) {
+    throw new AppError('agent.message_empty', 'A message needs text, an attachment, or both', 422);
+  }
 
-  // AC-15: обидві репліки цього ходу лягають у chat_message ПІСЛЯ успішного виклику --
-  // майбутні ходи (getShortTermWindow, T10, читане всередині НАСТУПНОГО виклику
-  // handleMessage) побачать їх; поточний хід уже мав власний текст, переданий напряму
-  // вище, тому не потребує самопрочитання з БД.
+  await assertNotRateLimited(db, ownerUserId, now);
+
   const sessionDate = toSessionDate(now);
-  await insertChatMessage(db, {
-    id: randomUUID(),
-    userId: ownerUserId,
-    role: 'user',
-    content: contentForLog(text, attachment),
-    sessionDate,
-  });
+
+  // Review 2026-09-12: репліка користувача лягає в chat_message одразу
+  // після виклику handleMessage -- НЕЗАЛЕЖНО від того, успішний він чи ні
+  // (`finally`, не лише "гілка успіху"). Без цього 422 (`agent.attachment_
+  // unrecognized`)/503 (`agent.llm_unavailable`) хід лишався невидимим для
+  // countRecentUserMessages вище: клієнт міг повторювати непідтримуване
+  // вкладення чи "їздити" на збої Claude необмежено, і кожна спроба була
+  // реальним (оплаченим) викликом Claude, не врахованим лічильником.
+  let result: Awaited<ReturnType<typeof handleMessage>>;
+  try {
+    result = await handleMessage(db, askClaude, { userId: ownerUserId, text, attachment, now });
+  } finally {
+    await insertChatMessage(db, {
+      id: randomUUID(),
+      userId: ownerUserId,
+      role: 'user',
+      content: contentForLog(text, attachment),
+      sessionDate,
+    });
+  }
+
+  // AC-15: репліка агента лягає в chat_message лише коли виклик успішний --
+  // майбутні ходи (getShortTermWindow, T10, читане всередині НАСТУПНОГО
+  // виклику handleMessage) побачать обидві репліки цього ходу; поточний хід
+  // уже мав власний текст, переданий напряму вище, тому не потребує
+  // самопрочитання з БД.
   await insertChatMessage(db, {
     id: randomUUID(),
     userId: ownerUserId,
@@ -247,35 +259,6 @@ function clampLimit(limit: number | undefined): number {
     return DEFAULT_LIMIT;
   }
   return Math.min(MAX_LIMIT, Math.max(MIN_LIMIT, Math.trunc(limit)));
-}
-
-interface RawMessageRow extends QueryResultRow {
-  id: string;
-  user_id: string;
-  role: ChatRoleRow;
-  content: string;
-  session_date: string;
-  created_at: Date;
-}
-
-function toChatMessageRecordLocal(row: RawMessageRow): ChatMessageRecord {
-  return {
-    id: row.id,
-    userId: row.user_id,
-    role: row.role,
-    content: row.content,
-    sessionDate: row.session_date,
-    createdAt: row.created_at,
-  };
-}
-
-/** Усі повідомлення користувача (немає окремого T13-репозиторного читання поза сесією) -- той самий "порт сам пише SQL, коли немає готового репозиторного читання" підхід, що ../ports/reports-handler.ts. Non-disclosure: `WHERE user_id = $1` у самому SQL. */
-async function findAllMessagesByUser(db: Db, userId: string): Promise<ChatMessageRecord[]> {
-  const { rows } = await db.query<RawMessageRow>(
-    'SELECT id, user_id, role, content, session_date, created_at FROM chat_message WHERE user_id = $1 ORDER BY created_at, id',
-    [userId]
-  );
-  return rows.map(toChatMessageRecordLocal);
 }
 
 /** Хронологічно (найстаріше спершу), id як тай-брейк при однаковому часі -- детермінований порядок незалежно від того, що саме повернув мокований `Db.query` у тестах (той самий підхід, що ../ports/reports-handler.ts's sortReportsForPaging). */
