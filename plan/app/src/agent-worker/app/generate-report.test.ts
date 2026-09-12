@@ -8,6 +8,13 @@
 //
 // DoD: "due period produces a passive activity_report row with no outbound
 // notification; a failed write after retries is marked dead_letter".
+//
+// schedule.ts's readLifeAreaCardActivity no longer hand-writes an
+// entry/card join (review fix, see schedule.ts/schedule.test.ts) -- it
+// calls life-area-card's own listCardsByOwner/listEntriesByCard, so this
+// fake Db now routes `FROM card` and `FROM entry` separately, the same
+// two-step shape ./daily-sync.test.ts's fakeDb already uses for the same
+// cross-feature read.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Db } from '../infra/schedule';
@@ -15,15 +22,35 @@ import { generateReport } from './generate-report';
 
 const USER_ID = 'user-1';
 const REPORT_ID = 'report-1';
+const CARD_ID = 'card-1';
 // referenceDate 2026-09-12 (Sat) falls in the ISO week 2026-09-07 (Mon) .. 2026-09-13 (Sun).
 
+/** A `card` row shaped the way life-area-card/infra/postgres-repo.ts's CARD_COLUMNS returns it. */
+function cardRow() {
+  return {
+    id: CARD_ID,
+    owner_user_id: USER_ID,
+    name: 'Спорт',
+    description: null,
+    status: 'active' as const,
+    created_at: new Date('2026-01-01T00:00:00Z'),
+    updated_at: new Date('2026-01-01T00:00:00Z'),
+  };
+}
+
+/** An `entry` row shaped the way life-area-card/infra/postgres-repo.ts's ENTRY_COLUMNS returns it. */
 function activityRow() {
   return {
     id: 'entry-1',
-    card_id: 'card-1',
+    metric_block_id: 'metric-block-1',
+    card_id: CARD_ID,
     amount: '5',
     raw_text: 'біг 5 км',
+    status: 'confirmed' as const,
+    source_device_id: null,
     recorded_at: new Date('2026-09-08T10:00:00Z'),
+    confirmed_at: new Date('2026-09-08T10:01:00Z'),
+    created_at: new Date('2026-09-08T10:00:00Z'),
   };
 }
 
@@ -51,8 +78,13 @@ function fakeDb(opts: {
   const query = vi.fn(async (text: string, params?: unknown[]) => {
     const upper = text.trim().toUpperCase();
 
+    if (upper.startsWith('SELECT') && text.includes('FROM card')) {
+      const ownerUserId = params?.[0];
+      return { rows: ownerUserId === USER_ID && opts.activity.length > 0 ? [cardRow()] : [] };
+    }
     if (upper.startsWith('SELECT') && text.includes('FROM entry')) {
-      return { rows: opts.activity };
+      const cardId = params?.[0];
+      return { rows: cardId === CARD_ID ? opts.activity : [] };
     }
     if (upper.startsWith('INSERT INTO ACTIVITY_REPORT')) {
       const isDeadLetterWrite = text.includes('dead_letter');
@@ -97,9 +129,10 @@ describe('generateReport -- AC-11 happy path', () => {
     expect(params?.[5]).toContain('5 км'); // report content reflects the read activity
 
     // Passive record only -- generateReport performs no email/webhook/push call
-    // of any kind; the only side effect visible to the fake Db is the one
-    // SELECT + one INSERT below.
-    expect(query).toHaveBeenCalledTimes(2);
+    // of any kind; the only side effects visible to the fake Db are the
+    // card lookup + entry lookup (readLifeAreaCardActivity's two-step
+    // cross-feature read, see schedule.ts) and the one INSERT below.
+    expect(query).toHaveBeenCalledTimes(3);
   });
 
   it('a period with no activity still produces a report row (empty activity is a valid, not an error)', async () => {
