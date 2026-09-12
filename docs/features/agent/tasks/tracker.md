@@ -15,7 +15,7 @@
 | T8 | Domain: proposal lifecycle model | domain | TBD | M | — | todo |
 | T9 | Domain: imperative rule model + guard-check enforcement | domain | TBD | M | — | todo |
 | T10 | Domain: hybrid memory model | domain | TBD | M | — | todo |
-| T11 | Domain (agent-worker): activity-report model | domain | TBD | S | — | todo |
+| T11 | Domain (agent-worker): activity-report model | domain | TBD | S | — | done |
 | T12 | Infra: Claude API client | infra | TBD | M | — | todo |
 | T13 | Infra: Postgres repo | infra | TBD | L | T2, T3, T4, T5, T6 | todo |
 | T14 | Infra: Google OAuth + app_user provisioning | infra | TBD | M | T1 | done (early, via life-area-card's T30 -- D-109/ISS-51) |
