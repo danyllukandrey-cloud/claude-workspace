@@ -57,6 +57,13 @@ import * as accountHandlers from '../src/agent/ports/account-handler';
 import * as syncResourceHandlers from '../src/agent/ports/sync-resource-handler';
 import type { AskClaude } from '../src/agent/infra/claude-client';
 import type { EmailTransport } from '../src/agent/infra/email-client';
+// AC-20 wiring (review finding, docs/features/agent/spec.md AC-20): the
+// generic/unexpected-error branch of the error-middleware below is the only
+// defensible trigger point for `fileAgentDetectedErrorReport` -- no sad.md
+// flow names one (already flagged as an under-specified integration point in
+// AppDeps.emailTransport's docblock above). Narrow interpretation, not a
+// product decision: flagged in the PR/handoff for a human to confirm.
+import { fileAgentDetectedErrorReport } from '../src/agent/app/developer-report';
 
 /** Мінімум, потрібний verifyGoogleIdToken -- google-auth-library повертає значно більше полів. */
 export interface GoogleIdTokenPayload {
@@ -121,20 +128,19 @@ export interface AppDeps {
   /**
    * T29 -- developer-report.ts's (T42) outbound email dependency (AC-20/
    * AC-20b), wired the same optional-DI way as callClaude/askClaude above.
-   * OPEN INTEGRATION GAP (not decided here, flagged not silently skipped):
-   * contracts/openapi.yaml has NO endpoint for AC-20/AC-20b -- spec.md
-   * describes it as an internal, non-HTTP service action ("агент сам виявив
-   * технічну помилку... без участі користувача, службова дія"), and
-   * tasks.json's T29 deps/files_hint do not list T42/developer-report.ts at
-   * all. This field exists so the DI shape is ready (same pattern as every
-   * other injected side-effect here), but no route below actually calls
-   * fileAgentDetectedErrorReport/fileUserRequestedIssueReport yet -- wiring
-   * the real trigger point (e.g. from the error-middleware below, or from
-   * askAgent's Claude-unavailable branch) is a follow-up decision for a
-   * human, not invented here.
+   * OPEN INTEGRATION GAP (review finding, fixed narrowly, still not fully
+   * decided): contracts/openapi.yaml has NO endpoint for AC-20/AC-20b --
+   * spec.md describes AC-20 as an internal, non-HTTP service action ("агент
+   * сам виявив технічну помилку... без участі користувача, службова дія"),
+   * and no sad.md flow names where it should trigger. The error-middleware
+   * below now calls `fileAgentDetectedErrorReport` best-effort when it is
+   * present (generic/non-AppError branch only) -- the most defensible, narrow
+   * reading available, NOT a confirmed product decision; flagged for a human
+   * to confirm AC-20's real trigger point. AC-20b (user-initiated) still has
+   * no caller anywhere -- unaffected by this fix.
    */
   emailTransport?: EmailTransport;
-  /** T29 -- developer's notification email address (AC-20/AC-20b) -- never read from process.env inside src/ (plan/app/CLAUDE.md dependency rule); composition root (server/index.ts) supplies it. Same open-gap note as `emailTransport` above -- nothing calls it yet. */
+  /** T29 -- developer's notification email address (AC-20/AC-20b) -- never read from process.env inside src/ (plan/app/CLAUDE.md dependency rule); composition root (server/index.ts) supplies it. See `emailTransport` above -- now used by the generic error-middleware branch, still an open integration-gap for AC-20b. */
   developerEmail?: string;
 }
 
@@ -740,6 +746,31 @@ export function createApp(deps: AppDeps): express.Express {
     }
     // eslint-disable-next-line no-console -- немає власного логера (one-person MVP, ADR-0006).
     console.error(err);
+    // AC-20 (US-14, "агент сам виявив технічну помилку чи збій") -- цей
+    // catch-all і є та точка: справжня, непередбачена помилка (не звичайний
+    // очікуваний доменний код 4xx/5xx на кшталт agent.llm_unavailable вище).
+    // Best-effort, fire-and-forget: клієнт мусить отримати ЦЮ Ж саму 500-
+    // відповідь незалежно від того, чи вдалось зафайлити звіт -- filing
+    // ніколи не є частиною контракту відповіді (звідси .catch(() => {}),
+    // а не await/throw). ownerUserId НЕ передається -- ця точка не
+    // гарантовано має користувача (запит міг впасти ще до Bearer-auth-
+    // middleware, напр. у POST /api/v1/session), тож "без userId" тут
+    // безпечніший, а не менш правильний варіант, ніж читання req.ownerUserId.
+    // Best-effort лише коли DI-залежності реально підключені (composition
+    // root, server/index.ts) -- у юніт-тестах/раннix середовищах без
+    // emailTransport/developerEmail генерик-гілка й далі поводиться так, як
+    // до цього фіксу.
+    if (deps.emailTransport && deps.developerEmail) {
+      const errorSummary = err instanceof Error && err.message ? err.message : 'Unexpected server error';
+      fileAgentDetectedErrorReport(
+        { db: deps.db, transport: deps.emailTransport, developerEmail: deps.developerEmail },
+        { errorSummary }
+      ).catch(() => {
+        // Навмисно проковтнуто (review finding fix): збій самого filing
+        // (БД, email-провайдер) НЕ повинен ані змінити вже надіслану
+        // клієнту відповідь, ані впасти некерованим unhandled rejection.
+      });
+    }
     res.status(500).json({ code: 'internal.error', message: 'Internal server error' });
   });
 

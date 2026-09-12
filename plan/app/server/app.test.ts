@@ -1205,3 +1205,130 @@ describe('composition root -- маршрути агента змонтовані
     }
   });
 });
+
+// AC-20 (US-14, spec.md "агент сам виявив технічну помилку чи збій") -- review
+// finding: reportAgentDetectedError (domain, T36) + fileAgentDetectedErrorReport
+// (app, T42) existed fully tested but had ZERO callers anywhere, so AC-20 could
+// never fire in production. No sad.md flow names the exact trigger point
+// (flagged as under-specified) -- the generic/non-AppError branch of the
+// error-middleware (server/app.ts) is the most defensible, narrow reading:
+// a genuine unexpected bug reaching that branch now best-effort files an
+// agent-detected developer report, WITHOUT ever changing the client-visible
+// response (filing is a side effect, not part of the response contract).
+describe('AC-20: generic error-middleware branch best-effort files an agent-detected developer report', () => {
+  it('files fileAgentDetectedErrorReport when an unexpected error reaches the generic branch, without changing the 500 response', async () => {
+    const boom = new Error('кешований драйвер БД впав -- справжній непередбачений баг');
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes('FROM card')) throw boom;
+      if (sql.includes('INSERT INTO developer_report')) {
+        return {
+          rows: [
+            {
+              id: 'report-1',
+              user_id: null,
+              trigger_type: 'agent_detected',
+              description: boom.message,
+              delivery_status: 'sent',
+              sent_at: new Date('2026-09-12T00:00:00Z'),
+            },
+          ],
+        };
+      }
+      throw new Error(`Непередбачений запит у тесті (AC-20): ${sql}`);
+    });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const emailTransport = vi.fn().mockResolvedValue({ messageId: 'msg-1' });
+    const developerEmail = 'dev@example.com';
+    const { server, baseUrl } = await startServer({
+      ...noopDeps({ query }, verifyJwt),
+      emailTransport,
+      developerEmail,
+    });
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/cards/card-1`, { headers: AUTHED });
+      const body = await res.json();
+
+      // (a) клієнт і далі отримує ОРИГІНАЛЬНУ 500-відповідь -- filing звіту не
+      // частина контракту відповіді.
+      expect(res.status).toBe(500);
+      expect(body).toEqual({ code: 'internal.error', message: 'Internal server error' });
+
+      // (b) fileAgentDetectedErrorReport реально викликаний (fire-and-forget,
+      // тому чекаємо, поки мікрозадачі долетять, а не перевіряємо синхронно).
+      await vi.waitFor(() => {
+        expect(emailTransport).toHaveBeenCalledTimes(1);
+      });
+      expect(emailTransport.mock.calls[0][0]).toEqual(
+        expect.objectContaining({ to: developerEmail, body: expect.stringContaining(boom.message) })
+      );
+      const insertCall = query.mock.calls.find(([sql]: [string]) => sql.includes('INSERT INTO developer_report'));
+      expect(insertCall).toBeDefined();
+      // AC-20: службова дія без участі користувача -- ownerUserId НЕ
+      // читається в error-middleware (не гарантовано доступний саме тут).
+      expect(insertCall![1]).toEqual(expect.arrayContaining([null]));
+    } finally {
+      server.close();
+    }
+  });
+
+  it('a failure inside fileAgentDetectedErrorReport itself never changes the client response or crashes the server', async () => {
+    const boom = new Error('справжній непередбачений баг');
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes('FROM card')) throw boom;
+      if (sql.includes('INSERT INTO developer_report')) throw new Error('developer_report insert теж впав');
+      throw new Error(`Непередбачений запит у тесті (AC-20): ${sql}`);
+    });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const emailTransport = vi.fn().mockResolvedValue({ messageId: 'msg-1' });
+    const { server, baseUrl } = await startServer({
+      ...noopDeps({ query }, verifyJwt),
+      emailTransport,
+      developerEmail: 'dev@example.com',
+    });
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/cards/card-1`, { headers: AUTHED });
+      const body = await res.json();
+
+      // (c) filing сам провалився (INSERT кинув) -- клієнт і далі бачить ТУ Ж
+      // саму 500-відповідь, не 502/іншу помилку email.send_failed зсередини.
+      expect(res.status).toBe(500);
+      expect(body).toEqual({ code: 'internal.error', message: 'Internal server error' });
+
+      await vi.waitFor(() => {
+        const insertAttempted = query.mock.calls.some(([sql]: [string]) => sql.includes('INSERT INTO developer_report'));
+        expect(insertAttempted).toBe(true);
+      });
+      // INSERT провалився ДО sendEmail -- transport ніколи не викликаний.
+      expect(emailTransport).not.toHaveBeenCalled();
+
+      // Сервер і далі відповідає (не впав некерованим unhandled rejection).
+      const res2 = await fetch(`${baseUrl}/api/v1/cards/card-1`, { headers: AUTHED });
+      expect(res2.status).toBe(500);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('does nothing when emailTransport/developerEmail are not wired (existing behavior unchanged)', async () => {
+    const boom = new Error('непередбачений баг без DI-звіту');
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes('FROM card')) throw boom;
+      throw new Error(`Непередбачений запит у тесті (AC-20): ${sql}`);
+    });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/cards/card-1`, { headers: AUTHED });
+      const body = await res.json();
+
+      expect(res.status).toBe(500);
+      expect(body).toEqual({ code: 'internal.error', message: 'Internal server error' });
+      expect(query.mock.calls.some(([sql]: [string]) => sql.includes('INSERT INTO developer_report'))).toBe(false);
+    } finally {
+      server.close();
+    }
+  });
+});
