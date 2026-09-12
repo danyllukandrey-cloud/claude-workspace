@@ -9,51 +9,27 @@
 // .code/.message/.httpStatus; 401 у контракті -- турбота авторизаційного
 // мідлвара (D-33), не цього файлу.
 //
-// Читання без окремого репозиторію: postgres-repo.ts (T13) явно документує
-// себе як покриття лише 5 таблиць агента (proposal/rules/memory/chat/audit)
-// -- `activity_report` туди навмисно не входить, її власник -- `agent-worker`
-// (окремий контейнер §5 SAD), а write-сторона (T15, schedule + report
-// persistence) ще не реалізована й не є залежністю цієї задачі (tasks.json
-// T23 deps: ["T13"] лише). Тому SQL тут прямий, той самий inline-`Db`-патерн,
-// що вже встановлений ../../agent-worker/infra/resource-writer.ts (T38) для
-// таблиці без власного репозиторного файлу. `Db`-контракт (query(text,
-// params) -> {rows}) той самий, що ../infra/postgres-repo.ts вже задає --
-// перевикористовуємо його тип, не дублюємо інтерфейс.
-//
-// Non-disclosure: WHERE user_id = $1 у самому SQL -- чужий звіт фізично
-// відсутній у результаті, не відфільтрований пост-фактум (той самий підхід,
-// що postgres-repo.ts вже документує для своїх 5 таблиць).
-//
-// Filterable by periodType (DoD) -- переданий фільтр іде прямо в SQL
-// (додатковий `AND period_type = $N`), не постфільтрується в пам'яті; коли
-// periodType не задано, умова взагалі відсутня в запиті. `ORDER BY
-// generated_at DESC, id DESC` -- ідентична пара сортування й тай-брейку, що
-// idx_activity_report_user_time (data-model.md) підтримує ("перелік звітів
-// користувача"); тай-брейк на id гарантує єдиний детермінований порядок,
-// потрібний для стабільного cursor-пагінування нижче.
+// Review 2026-09-12 (ADR-0005, "ports не володіє SQL"): читання
+// `activity_report` (запит + мапінг рядка) винесено в
+// ../../agent-worker/infra/activity-report-repo.ts -- `activity_report`
+// належить agent-worker (окремий контейнер §5 SAD), не цьому модулю
+// (postgres-repo.ts (T13) явно документує себе як покриття лише 5 таблиць
+// агента, `activity_report` туди навмисно не входить). Цей файл лишає собі
+// тільки пагінацію й DTO-мапінг поверх записів, що повертає репозиторій.
 //
 // Cursor pagination (DoD) -- той самий in-memory підхід над уже
 // відсортованим масивом, що ../../structure/ports/layout-handlers.ts's
 // pagePositions і ../../cards/life-area-card/ports/card-handlers.ts's
 // listCards: `after` -- id останнього звіту попередньої сторінки, `limit`
-// затиснутий у межі контракту [1,100], дефолт 50. Прострочений/вигаданий
-// cursor не вважається помилкою -- падає на першу сторінку.
+// затиснутий у межі контракту [1,100], дефолт 20 (openapi.yaml GET /reports
+// `limit.default`). Прострочений/вигаданий cursor не вважається помилкою --
+// падає на першу сторінку.
 
-import type { QueryResultRow } from 'pg';
 import type { Db } from '../infra/postgres-repo';
+import type { ReportPeriodTypeRow, ReportRecord, ReportStatusRow } from '../../agent-worker/infra/activity-report-repo';
+import { findActivityReportsByUser } from '../../agent-worker/infra/activity-report-repo';
 
-export type ReportPeriodTypeRow = 'weekly' | 'monthly' | 'quarterly';
-export type ReportStatusRow = 'generated' | 'dead_letter';
-
-export interface ReportRecord {
-  id: string;
-  periodType: ReportPeriodTypeRow;
-  periodStart: Date;
-  periodEnd: Date;
-  content: string;
-  status: ReportStatusRow;
-  generatedAt: Date;
-}
+export type { ReportPeriodTypeRow, ReportStatusRow };
 
 // --- DTO -- форма відповіді, camelCase, точно як components.schemas.Report --
 
@@ -92,52 +68,7 @@ function toReportDto(record: ReportRecord): ReportDto {
   };
 }
 
-interface RawReportRow extends QueryResultRow {
-  id: string;
-  period_type: ReportPeriodTypeRow;
-  period_start: Date;
-  period_end: Date;
-  content: string;
-  status: ReportStatusRow;
-  generated_at: Date;
-}
-
-function toReportRecord(row: RawReportRow): ReportRecord {
-  return {
-    id: row.id,
-    periodType: row.period_type,
-    periodStart: row.period_start,
-    periodEnd: row.period_end,
-    content: row.content,
-    status: row.status,
-    generatedAt: row.generated_at,
-  };
-}
-
-/** Один звіт користувача, опційно звужений за periodType -- DoD "filterable by periodType". */
-async function findActivityReportsByUser(
-  db: Db,
-  userId: string,
-  periodType: ReportPeriodTypeRow | undefined
-): Promise<ReportRecord[]> {
-  const params: unknown[] = [userId];
-  let periodTypeCondition = '';
-  if (periodType) {
-    params.push(periodType);
-    periodTypeCondition = ` AND period_type = $${params.length}`;
-  }
-
-  const { rows } = await db.query<RawReportRow>(
-    `SELECT id, period_type, period_start, period_end, content, status, generated_at
-     FROM activity_report
-     WHERE user_id = $1${periodTypeCondition}
-     ORDER BY generated_at DESC, id DESC`,
-    params
-  );
-  return rows.map(toReportRecord);
-}
-
-const DEFAULT_LIMIT = 50;
+const DEFAULT_LIMIT = 20;
 const MIN_LIMIT = 1;
 const MAX_LIMIT = 100;
 
@@ -195,7 +126,7 @@ export interface ListReportsQuery {
   periodType?: ReportPeriodTypeRow;
   /** uuid курсор попередньої сторінки (id останнього звіту). */
   after?: string;
-  /** 1..100, default 50. */
+  /** 1..100, default 20. */
   limit?: number;
 }
 
