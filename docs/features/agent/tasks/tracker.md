@@ -13,7 +13,7 @@
 | T6 | Create agent_audit_event table | migration | TBD | S | T1 | done |
 | T7 | Create activity_report table | migration | TBD | S | T1 | done |
 | T8 | Domain: proposal lifecycle model | domain | TBD | M | — | done |
-| T9 | Domain: imperative rule model + guard-check enforcement | domain | TBD | M | — | todo |
+| T9 | Domain: imperative rule model + guard-check enforcement | domain | TBD | M | — | done |
 | T10 | Domain: hybrid memory model | domain | TBD | M | — | todo |
 | T11 | Domain (agent-worker): activity-report model | domain | TBD | S | — | todo |
 | T12 | Infra: Claude API client | infra | TBD | M | — | todo |
