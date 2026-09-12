@@ -50,7 +50,7 @@
 | T43 | Ports: DELETE /account handler | ports | TBD | S | T39 | todo |
 | T44 | Ports: sync-resources handlers | ports | TBD | S | T40 | todo |
 | T45 | UI: SCR-04 Обліковий запис і дані | ui | TBD | M | T25, T43, T44 | todo |
-| T46 | Tests: cascading account deletion | tests | TBD | M | T39 | todo |
+| T46 | Tests: cascading account deletion | tests | TBD | M | T39 | done |
 | T47 | UI: HintBubble + SCR-01 confirmed-hint | ui | TBD | S | T25, T26 | todo |
 
 **Total:** 47 tasks — 21 S + 21 M + 5 L. Доповнено 2026-08-29 (T31-T47, D-89) — 17 задач на видалення акаунта / синхронізацію / документи / звіт про баг / раніше пропущену T3-підказку. Найбільша фіча SDD-конвеєра (9 сутностей, 13 ендпоінтів, 3 поверхні) — реалістично довше за одну сесію навіть у термінах size-matrix (M); у реальному часі — значно довше через темп проєкту (~8-12 год/тиждень, уточнено 2026-08-29 — стара оцінка 1-2 год/тиждень застаріла, [D-87](../../../DECISIONS.md#d-87)).
