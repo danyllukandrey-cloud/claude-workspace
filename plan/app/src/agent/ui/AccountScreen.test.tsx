@@ -56,6 +56,28 @@ test('loading: перед резолвом loadResources показує Spinner'
   expect(screen.getByRole('status')).toBeTruthy();
 });
 
+test('error: відхилений loadResources -- Banner variant="error", не вічний Spinner', async () => {
+  const props = baseProps({ loadResources: vi.fn().mockRejectedValue(new Error('мережа недоступна')) });
+  render(<AccountScreen {...props} />);
+
+  const banner = await screen.findByText('мережа недоступна');
+  expect(banner.closest('[data-variant]')?.getAttribute('data-variant')).toBe('error');
+  expect(screen.queryByRole('status')).toBeNull();
+});
+
+test('default: відхилений onRemoveResource -- Banner variant="error", ресурс лишається у списку', async () => {
+  const onRemoveResource = vi.fn().mockRejectedValue(new Error('не вдалося прибрати'));
+  const props = baseProps({ onRemoveResource });
+  render(<AccountScreen {...props} />);
+
+  await screen.findByText(/docs.google.com\/document\/d\/abc/);
+  fireEvent.click(screen.getByRole('button', { name: /Прибрати/i }));
+
+  const banner = await screen.findByText('не вдалося прибрати');
+  expect(banner.closest('[data-variant]')?.getAttribute('data-variant')).toBe('error');
+  expect(screen.getByText(/docs.google.com\/document\/d\/abc/)).toBeTruthy();
+});
+
 test('default: показує список ресурсів синхронізації, кнопку "Додати ресурс" і небезпечну зону (AC-18)', async () => {
   const props = baseProps();
   render(<AccountScreen {...props} />);

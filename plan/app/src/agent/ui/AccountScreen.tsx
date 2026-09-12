@@ -49,6 +49,8 @@ import { Banner, Button, EmptyState, Spinner, TextField } from '../../shared/ui'
 const DELETE_CONFIRMATION_WORD = 'ВИДАЛИТИ';
 const ADD_RESOURCE_FAILURE_MESSAGE = 'Не вдалося додати ресурс';
 const DELETE_ACCOUNT_FAILURE_MESSAGE = 'Не вдалося видалити акаунт';
+const LOAD_RESOURCES_FAILURE_MESSAGE = 'Не вдалося завантажити ресурси синхронізації';
+const REMOVE_RESOURCE_FAILURE_MESSAGE = 'Не вдалося прибрати ресурс';
 
 export interface AccountScreenResource {
   id: string;
@@ -91,8 +93,10 @@ export function AccountScreen({
   onDeleted,
 }: AccountScreenProps): JSX.Element {
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [resources, setResources] = useState<AccountScreenResource[]>([]);
   const [mode, setMode] = useState<Mode>('default');
+  const [removeError, setRemoveError] = useState<string | null>(null);
 
   const [newResourceUrl, setNewResourceUrl] = useState('');
   const [addError, setAddError] = useState<string | null>(null);
@@ -105,12 +109,24 @@ export function AccountScreen({
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setLoadError(null);
 
-    loadResources().then((loaded) => {
-      if (cancelled) return;
-      setResources(loaded);
-      setLoading(false);
-    });
+    loadResources()
+      .then((loaded) => {
+        if (cancelled) return;
+        setResources(loaded);
+        setLoading(false);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        const message = isAppErrorShape(error)
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : LOAD_RESOURCES_FAILURE_MESSAGE;
+        setLoadError(message);
+        setLoading(false);
+      });
 
     return () => {
       cancelled = true;
@@ -122,6 +138,19 @@ export function AccountScreen({
 
   if (loading) {
     return <Spinner />;
+  }
+
+  // Той самий підхід, що ReportsScreen.tsx: провал початкового завантаження
+  // -- окрема error-гілка (Banner variant="error"), а не вічний Spinner чи
+  // мовчазний порожній список (без цього промайс, що відхилився, лишав
+  // loading=true назавжди -- unhandled rejection + вічний спінер).
+  if (loadError !== null) {
+    return (
+      <div>
+        <h1>Обліковий запис і дані</h1>
+        <Banner variant="error" text={loadError} />
+      </div>
+    );
   }
 
   if (mode === 'deleted') {
@@ -171,9 +200,19 @@ export function AccountScreen({
   };
 
   const handleRemoveResource = (resourceId: string): void => {
-    onRemoveResource(resourceId).then(() => {
-      setResources((prev) => prev.filter((resource) => resource.id !== resourceId));
-    });
+    setRemoveError(null);
+    onRemoveResource(resourceId)
+      .then(() => {
+        setResources((prev) => prev.filter((resource) => resource.id !== resourceId));
+      })
+      .catch((error: unknown) => {
+        const message = isAppErrorShape(error)
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : REMOVE_RESOURCE_FAILURE_MESSAGE;
+        setRemoveError(message);
+      });
   };
 
   const handleStartDeleteAccount = (): void => {
@@ -279,6 +318,8 @@ export function AccountScreen({
       {errorResources.map((resource) => (
         <Banner key={resource.id} variant="error" text={resource.lastError as string} />
       ))}
+
+      {removeError !== null && <Banner variant="error" text={removeError} />}
 
       <Button label="Додати ресурс" onClick={handleStartAddResource} />
 

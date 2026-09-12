@@ -62,6 +62,7 @@ const CATEGORY_OPTIONS: CategoryOption[] = [
 
 const VALIDATION_MESSAGE = 'Оберіть хоча б одну категорію або впишіть власне правило';
 const SAVE_FAILURE_MESSAGE = 'Не вдалося зберегти правило';
+const LOAD_RULES_FAILURE_MESSAGE = 'Не вдалося завантажити правила';
 
 export interface RuleSettingsScreenRule {
   id: string;
@@ -112,6 +113,7 @@ interface BannerState {
 
 export function RuleSettingsScreen({ targetCards, loadRules, onSave }: RuleSettingsScreenProps): JSX.Element {
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isCardScope, setIsCardScope] = useState(false);
   const [scopeCardId, setScopeCardId] = useState<string | null>(null);
   const [rules, setRules] = useState<RuleSettingsScreenRule[]>([]);
@@ -124,12 +126,24 @@ export function RuleSettingsScreen({ targetCards, loadRules, onSave }: RuleSetti
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setLoadError(null);
 
-    loadRules(scopeCardId).then((loaded) => {
-      if (cancelled) return;
-      setRules(loaded);
-      setLoading(false);
-    });
+    loadRules(scopeCardId)
+      .then((loaded) => {
+        if (cancelled) return;
+        setRules(loaded);
+        setLoading(false);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        const message = isAppErrorShape(error)
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : LOAD_RULES_FAILURE_MESSAGE;
+        setLoadError(message);
+        setLoading(false);
+      });
 
     return () => {
       cancelled = true;
@@ -141,6 +155,18 @@ export function RuleSettingsScreen({ targetCards, loadRules, onSave }: RuleSetti
 
   if (loading) {
     return <Spinner />;
+  }
+
+  // Той самий підхід, що ReportsScreen.tsx: провал початкового завантаження
+  // -- окрема error-гілка (Banner variant="error"), а не вічний Spinner
+  // (без .catch промайс, що відхилився, лишав loading=true назавжди).
+  if (loadError !== null) {
+    return (
+      <div>
+        <h1>{isCardScope ? 'Налаштування правил — для картки' : 'Налаштування правил'}</h1>
+        <Banner variant="error" text={loadError} />
+      </div>
+    );
   }
 
   const existingCategories = new Set(
@@ -198,29 +224,83 @@ export function RuleSettingsScreen({ targetCards, loadRules, onSave }: RuleSetti
     setBanner(null);
     setSaving(true);
 
-    const tasks = categoriesToSave.map((category) => onSave({ scopeCardId, category, ruleText: null }));
+    // Кожен елемент -- один onSave-виклик; entries лишається паралельним
+    // масивом до tasks, щоб після Promise.allSettled знати, ЯКА категорія
+    // (чи вільний текст) стоїть за кожним результатом за індексом.
+    type SaveEntry = { kind: 'category'; category: ImperativeRuleCategory } | { kind: 'text' };
+    const entries: SaveEntry[] = categoriesToSave.map((category) => ({ kind: 'category', category }));
     if (hasText) {
-      tasks.push(onSave({ scopeCardId, category: null, ruleText: trimmedText }));
+      entries.push({ kind: 'text' });
     }
 
-    Promise.all(tasks)
-      .then((saved) => {
-        setRules((prev) => [...prev, ...saved]);
-        setSelectedCategories(new Set());
-        setRuleText('');
-        setBanner({ variant: 'success', text: 'Збережено' });
-      })
-      .catch((error: unknown) => {
-        if (isAppErrorShape(error) && error.code === 'agent.rule_conflict') {
-          setBanner({ variant: 'error', text: error.message });
-        } else if (isAppErrorShape(error) && error.code === 'agent.rule_empty') {
-          setValidationError(error.message);
-        } else {
-          const message = error instanceof Error ? error.message : SAVE_FAILURE_MESSAGE;
-          setBanner({ variant: 'error', text: message });
+    const tasks = entries.map((entry) =>
+      entry.kind === 'category'
+        ? onSave({ scopeCardId, category: entry.category, ruleText: null })
+        : onSave({ scopeCardId, category: null, ruleText: trimmedText }),
+    );
+
+    // Promise.allSettled, НЕ Promise.all: один відхилений виклик (напр. 409
+    // agent.rule_conflict на одній категорії) не повинен ховати успіх решти
+    // -- інакше збережені категорії зникають з екрана до перезавантаження, а
+    // ще позначені чекбокси запрошують на повторну відправку вже збереженого.
+    Promise.allSettled(tasks).then((results) => {
+      const savedRules: RuleSettingsScreenRule[] = [];
+      const succeededCategories = new Set<ImperativeRuleCategory>();
+      let succeededText = false;
+      const errorMessages: string[] = [];
+      let ruleEmptyMessage: string | null = null;
+
+      results.forEach((result, index) => {
+        const entry = entries[index];
+        if (result.status === 'fulfilled') {
+          savedRules.push(result.value);
+          if (entry.kind === 'category') {
+            succeededCategories.add(entry.category);
+          } else {
+            succeededText = true;
+          }
+          return;
         }
-      })
-      .finally(() => setSaving(false));
+
+        const error: unknown = result.reason;
+        if (isAppErrorShape(error) && error.code === 'agent.rule_empty') {
+          ruleEmptyMessage = error.message;
+          return;
+        }
+        const message = isAppErrorShape(error)
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : SAVE_FAILURE_MESSAGE;
+        errorMessages.push(message);
+      });
+
+      if (savedRules.length > 0) {
+        setRules((prev) => [...prev, ...savedRules]);
+      }
+
+      // Тільки успішні категорії зникають з чекбокс-стану -- відхилені
+      // лишаються позначеними, щоб користувач бачив, що саме не збереглось,
+      // а не втратив свій вибір разом з тим, що дійсно пройшло.
+      setSelectedCategories((prev) => {
+        const next = new Set(prev);
+        succeededCategories.forEach((category) => next.delete(category));
+        return next;
+      });
+      if (succeededText) {
+        setRuleText('');
+      }
+
+      if (ruleEmptyMessage !== null) {
+        setValidationError(ruleEmptyMessage);
+      }
+
+      if (errorMessages.length > 0) {
+        setBanner({ variant: 'error', text: errorMessages.join('; ') });
+      } else if (savedRules.length > 0) {
+        setBanner({ variant: 'success', text: 'Збережено' });
+      }
+    }).finally(() => setSaving(false));
   };
 
   return (
