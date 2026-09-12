@@ -40,6 +40,37 @@ const VALID_CATEGORIES: readonly ImperativeRuleCategory[] = [
   'reminder',
 ];
 
+// AC-08 fix (review finding): раніше категорійне правило (без власного
+// `ruleText`) доходило до системного промпту як голий enum-слаг
+// (`rule.ruleText ?? rule.category`, напр. "reminder") -- це не інструкція,
+// яку модель здатна виконати, а просто назва категорії. Один опис на
+// категорію тут -- єдине джерело правди (D-19): і промпт (ask-agent.ts), і
+// guard (guard.ts) читають ту саму мапу через `ruleDirectiveText` нижче,
+// замість кожен по-своєму вирішувати, що показати замість `ruleText`.
+export const CATEGORY_DIRECTIVES: Record<ImperativeRuleCategory, string> = {
+  data: 'Перш ніж записати значення, уточнюй одиниці виміру та деталі даних, якщо вони неочевидні.',
+  correction: 'Дозволяй користувачу виправляти вже записані дані без заперечень; не наполягай на початковому значенні.',
+  survey: 'Час від часу став короткі уточнюючі запитання щодо цієї теми, а не лише пасивно фіксуй.',
+  context_clarification: 'Якщо повідомлення користувача неоднозначне, спершу уточни контекст, а не здогадуйся.',
+  owner_impact: 'Перш ніж пропонувати запис, зваж, як він вплине на власника картки.',
+  reminder: 'Регулярно нагадуй користувачу про цю тему, не перериваючи занадто часто.',
+};
+
+// AC-08: людський текст правила для промпту й guard-перевірки -- власний
+// `ruleText`, якщо він є (CHECK у БД -- OR, не XOR, тож обидва поля можуть
+// бути заповнені одночасно, і власне формулювання тоді має пріоритет), інакше
+// -- директива категорії з мапи вище. Порожній рядок неможливий: домен не
+// пускає рядок, де і категорія, і `ruleText` -- null (`createImperativeRule`).
+export function ruleDirectiveText(rule: Pick<ImperativeRule, 'category' | 'ruleText'>): string {
+  if (rule.ruleText !== null) {
+    return rule.ruleText;
+  }
+  if (rule.category !== null) {
+    return CATEGORY_DIRECTIVES[rule.category];
+  }
+  return '';
+}
+
 export interface ImperativeRule {
   id: string;
   userId: string;
@@ -118,6 +149,66 @@ export function createFreeTextRule(input: {
 // AC-12 -- чи це перевизначення на конкретній картці (а не глобальне правило).
 export function isCardOverride(rule: ImperativeRule): boolean {
   return rule.scopeCardId !== null;
+}
+
+// AC-12 fix (review finding: precedence inversion): визначає, чи `override`
+// (card-override, `isCardOverride(override)` вже true в кожному виклику
+// нижче) і `candidateGlobal` (глобальне правило) -- "той самий топік", тобто
+// override свідомо ПЕРЕВИЗНАЧАЄ саме це глобальне правило (AC-12), а не
+// просто ще одне незалежне правило поруч. Як і `RuleConflictPredicate`
+// (AC-14) вище, сама семантика "той самий топік" для довільного вільного
+// тексту -- не предмет domain-шару (ADR-0004 Neutral), тож викликач може
+// підставити власний предикат; тут лише дефолт.
+export type RuleShadowPredicate = (
+  override: Pick<ImperativeRule, 'category' | 'ruleText'>,
+  candidateGlobal: ImperativeRule,
+) => boolean;
+
+// Дефолт свідомо консервативний і однозначний: збіг категорії з D-27
+// закритого меню (шість фіксованих значень -- жодної потреби в семантиці,
+// щоб знати, що "reminder" перевизначає "reminder") АБО точний збіг
+// вільного тексту (без урахування регістру/пробілів по краях). Він НЕ
+// розпізнає, що два по-різному сформульовані вільнотекстові правила -- про
+// один і той самий топік (той самий Neutral-розрив, що й `findConflictingRule`
+// вище) -- викликач підставляє власний предикат, коли це потрібно.
+export function defaultRuleShadowPredicate(
+  override: Pick<ImperativeRule, 'category' | 'ruleText'>,
+  candidateGlobal: ImperativeRule,
+): boolean {
+  if (override.category !== null && candidateGlobal.category !== null) {
+    return override.category === candidateGlobal.category;
+  }
+  if (override.ruleText !== null && candidateGlobal.ruleText !== null) {
+    return override.ruleText.trim().toLowerCase() === candidateGlobal.ruleText.trim().toLowerCase();
+  }
+  return false;
+}
+
+// AC-12: набір правил, що РЕАЛЬНО діють на відповідь (промпт + guard), а не
+// лише "показані поруч". Раніше викликач (ask-agent.ts) брав список
+// глобальні+card-override як є і прогонив guard проти КОЖНОГО -- порушення
+// глобального правила проваляло guard, навіть коли саме на цій картці
+// користувач свідомо задав протилежне (spec.md AC-12: "перевизначення
+// свідомо переважає глобальне... це очікуваний намір, а не суперечність").
+// Тут override завжди виграє: глобальне правило, яке він перевизначає
+// (`isShadowing`), відкидається з ефективного набору повністю -- не просто
+// переставляється в списку. Вхідний `rules` -- вже скоуплений викликачем
+// список (глобальні + ЦІЄЇ картки override, `listEffectiveRulesForCard`,
+// T13) -- тут не перевіряється належність override саме "цій" картці
+// (isCardOverride бачить лише "не null"), бо той вхідний інваріант
+// встановлює викликач, не ця чиста функція.
+export function computeEffectiveRules(
+  rules: ImperativeRule[],
+  isShadowing: RuleShadowPredicate = defaultRuleShadowPredicate,
+): ImperativeRule[] {
+  const overrides = rules.filter(isCardOverride);
+  const globals = rules.filter((rule) => !isCardOverride(rule));
+
+  const survivingGlobals = globals.filter(
+    (global) => !overrides.some((override) => isShadowing(override, global)),
+  );
+
+  return [...survivingGlobals, ...overrides];
 }
 
 // AC-14 -- перевірка на несуперечливість звіряє нове формулювання ЛИШЕ з

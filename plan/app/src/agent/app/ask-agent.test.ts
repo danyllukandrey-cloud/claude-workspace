@@ -17,6 +17,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { askAgent } from './ask-agent';
 import type { AskClaude, ClaudeResult } from '../infra/claude-client';
 import { AppError } from '../../shared/errors';
+import { CATEGORY_DIRECTIVES } from '../domain/rules';
 import type { ImperativeRule } from '../domain/rules';
 
 function rule(overrides: Partial<ImperativeRule> = {}): ImperativeRule {
@@ -153,6 +154,79 @@ describe('askAgent (T18: ask-agent orchestration)', () => {
     expect(isViolating).toHaveBeenCalled();
     expect(result.retried).toBe(true);
     expect(result.reply).toBe('друга чернетка');
+  });
+
+  // AC-12 fix (review finding: precedence inversion) -- spec.md AC-12: "цe
+  // очікуваний намір користувача, а не суперечність, яку потрібно
+  // розв'язувати". `isViolating` нижче навмисно позначає порушеним лише
+  // глобальне правило (за id) -- ЩОБ Я НЕ ЗАЛЕЖАВ від тексту відповіді:
+  // guard пройде тоді і тільки тоді, коли глобальне правило справді
+  // виключене з ефективного набору (перевизначене card-override з тією
+  // самою категорією), а не залишилось поруч у плаский список.
+  it('AC-12: a card override shadows the global rule it overrides -- guard passes on the override, not the shadowed global', async () => {
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(okResult('будь-яка відповідь'));
+    const globalRule = rule({
+      id: 'global-reminder',
+      scopeCardId: null,
+      category: 'reminder',
+      ruleText: null,
+    });
+    const cardOverride = rule({
+      id: 'override-reminder',
+      scopeCardId: 'card-1',
+      category: 'reminder',
+      ruleText: 'на цій картці взагалі не нагадуй',
+    });
+    const isViolating = (_draftReply: string, candidate: ImperativeRule) => candidate.id === 'global-reminder';
+
+    const result = await askAgent(askClaude, {
+      text: 'щось',
+      activeRules: [globalRule, cardOverride],
+      isViolating,
+    });
+
+    expect(result.guard.passed).toBe(true);
+    expect(result.retried).toBe(false);
+    expect(result.reply).toBe('будь-яка відповідь');
+  });
+
+  // Mirror/control case: WITHOUT a matching card override the same global
+  // rule stays active and the same isViolating predicate must still flag it
+  // -- proves the previous test passes because of shadowing, not because
+  // isViolating never fires.
+  it('AC-12 control: the same global rule is still enforced when no card override shadows it', async () => {
+    const askClaude = vi
+      .fn<AskClaude>()
+      .mockResolvedValueOnce(okResult('перша чернетка'))
+      .mockResolvedValueOnce(okResult('друга чернетка'));
+    const globalRule = rule({ id: 'global-reminder', scopeCardId: null, category: 'reminder', ruleText: null });
+    const isViolating = (_draftReply: string, candidate: ImperativeRule) => candidate.id === 'global-reminder';
+
+    const result = await askAgent(askClaude, {
+      text: 'щось',
+      activeRules: [globalRule],
+      isViolating,
+    });
+
+    expect(result.guard.passed).toBe(false);
+    expect(result.retried).toBe(true);
+  });
+
+  // AC-08 fix (review finding) -- a category-only rule (no ruleText) must
+  // reach the system prompt as a real, human-readable directive
+  // (`CATEGORY_DIRECTIVES`, domain/rules.ts), not a bare enum slug like
+  // "reminder" that the model has no chance of actually following.
+  it('AC-08: a category-only rule reaches the system prompt as a real directive, not a bare category slug', async () => {
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(okResult('відповідь'));
+
+    await askAgent(askClaude, {
+      text: 'щось',
+      activeRules: [rule({ id: 'rule-cat', category: 'reminder', ruleText: null })],
+    });
+
+    const sentPrompt = askClaude.mock.calls[0][0].systemPrompt ?? '';
+    expect(sentPrompt).toContain(CATEGORY_DIRECTIVES.reminder);
+    expect(sentPrompt).not.toMatch(/^-\s*reminder\s*$/m);
   });
 
   // Claude unavailable / timeout (sad.md Critical flow 2) -- mapped to

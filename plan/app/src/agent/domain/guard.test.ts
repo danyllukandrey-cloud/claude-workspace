@@ -82,3 +82,27 @@ describe('defaultRuleViolationCheck (AC-07 canonical example, ADR-0004 Neutral: 
     expect(result.violatedRuleId).toBe('rule-advice');
   });
 });
+
+describe('defaultRuleViolationCheck (AC-08 fix, review finding: category rule was never guard-enforced)', () => {
+  // Before the fix, `rule.ruleText != null && ...` gated the ENTIRE function
+  // to `false` whenever a category-only rule (no free text) was checked --
+  // AC-08 rules reached the prompt but could never be flagged as violated.
+  it('flags an explicit refusal to remind against an active "reminder" category rule', () => {
+    const reminderCategoryRule = rule({ id: 'rule-reminder', category: 'reminder', ruleText: null });
+    expect(defaultRuleViolationCheck('Гаразд, більше не буду нагадувати про це.', reminderCategoryRule)).toBe(true);
+  });
+
+  it('does not flag a normal reminder-following reply against the "reminder" category rule', () => {
+    const reminderCategoryRule = rule({ id: 'rule-reminder', category: 'reminder', ruleText: null });
+    expect(defaultRuleViolationCheck('Нагадаю про це завтра.', reminderCategoryRule)).toBe(false);
+  });
+
+  // Honest scope limit (documented, not silently overclaimed): the other
+  // five D-27 categories still have no dedicated heuristic here -- they
+  // reach the model as a real directive (`ruleDirectiveText`, rules.ts) but
+  // are not yet guard-enforced. This is the remaining gap, not a regression.
+  it('still returns false for a category with no dedicated check yet (documented gap, not silently different from before)', () => {
+    const dataCategoryRule = rule({ id: 'rule-data', category: 'data', ruleText: null });
+    expect(defaultRuleViolationCheck('Записав 5 кг.', dataCategoryRule)).toBe(false);
+  });
+});
