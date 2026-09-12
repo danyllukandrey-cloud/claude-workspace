@@ -45,7 +45,7 @@
 | T38 | Infra (agent-worker): external resource writer | infra | TBD | M | — | done |
 | T39 | App: deleteAccount use-case | app | TBD | M | T34, T13 | todo |
 | T40 | App: sync-resource CRUD use-cases | app | TBD | S | T35, T13 | todo |
-| T41 | App (agent-worker): daily-sync use-case | app | TBD | M | T35, T38 | todo |
+| T41 | App (agent-worker): daily-sync use-case | app | TBD | M | T35, T38 | done |
 | T42 | App: developer-report use-case | app | TBD | S | T36, T37 | todo |
 | T43 | Ports: DELETE /account handler | ports | TBD | S | T39 | todo |
 | T44 | Ports: sync-resources handlers | ports | TBD | S | T40 | todo |
