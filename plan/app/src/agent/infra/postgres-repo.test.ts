@@ -27,6 +27,7 @@ import {
   findActiveFactsByTopic,
   insertChatMessage,
   listMessagesForSession,
+  hasAnyChatMessage,
   insertAuditEvent,
   listAuditEventsByUser,
 } from './postgres-repo';
@@ -356,6 +357,31 @@ describe('insertChatMessage + listMessagesForSession -- AC-15 same-session short
     const db: Db = { query };
 
     await expect(listMessagesForSession(db, 'someone-elses-user-id', '2026-01-01')).resolves.toEqual([]);
+  });
+});
+
+// T24 -- hasAnyChatMessage: чи для user_id уже є хоч ОДИН chat_message,
+// незалежно від session_date -- відрізняється від listMessagesForSession
+// вище (та scopeована одним календарним днем, AC-15), тут перевірка "чи
+// це взагалі перший виклик користувача" (AC-13, onboarding-handler.ts).
+describe('hasAnyChatMessage -- AC-13 first-call detection, any session_date', () => {
+  it('returns true when at least one chat_message row exists for the user', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [{ exists: true }] });
+    const db: Db = { query };
+
+    await expect(hasAnyChatMessage(db, 'user-1')).resolves.toBe(true);
+
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/chat_message/);
+    expect(sql).toMatch(/user_id/);
+    expect(params).toEqual(['user-1']);
+  });
+
+  it('returns false -- and never confuses another user\'s messages with this one\'s -- when none exist', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    const db: Db = { query };
+
+    await expect(hasAnyChatMessage(db, 'brand-new-user')).resolves.toBe(false);
   });
 });
 

@@ -404,6 +404,18 @@ export async function listMessagesForSession(db: Db, userId: string, sessionDate
   return rows.map(toChatMessageRecord);
 }
 
+/**
+ * AC-13 (onboarding-handler.ts, T24): чи для user_id уже є хоч ОДИН
+ * chat_message, незалежно від session_date -- на відміну від
+ * listMessagesForSession вище (scopeована одним календарним днем, AC-15),
+ * тут перевіряється "чи це взагалі перший виклик користувача" за весь час.
+ * `LIMIT 1` -- питання лише про існування, а не про кількість чи вміст.
+ */
+export async function hasAnyChatMessage(db: Db, userId: string): Promise<boolean> {
+  const { rows } = await db.query('SELECT 1 FROM chat_message WHERE user_id = $1 LIMIT 1', [userId]);
+  return rows.length > 0;
+}
+
 // --- agent_audit_event -------------------------------------------------
 // Append-only (data-model.md Aggregate root note) -- жодного update/delete
 // нижче навмисно.
