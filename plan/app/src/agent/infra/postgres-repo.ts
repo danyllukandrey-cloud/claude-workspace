@@ -87,8 +87,13 @@ export interface ChatMessageRecord {
   createdAt: Date;
 }
 
-// Base (migration 06 / T6) event_type set -- extended by migration 10 (T33), not
-// a T13 dependency. Widening this union is that later task's job.
+// Base (migration 06 / T6) event_type set, widened by migration 10 (T33,
+// 1789151864598_extend-audit-event-types.sql) -- 'account_deleted'/
+// 'resource_sync_failed' and 'account'/'sync_resource' added there to the DB
+// CHECK constraint. This TS union is widened here, by T39 (the first
+// consumer that actually writes an 'account_deleted'/'account' row --
+// AC-17, deleteAccount use-case) rather than by T33 itself, which only
+// carried the migration.
 export type AuditEventTypeRow =
   | 'proposal_created'
   | 'proposal_updated'
@@ -97,9 +102,11 @@ export type AuditEventTypeRow =
   | 'guard_passed'
   | 'guard_failed'
   | 'memory_fact_edited'
-  | 'memory_fact_deleted';
+  | 'memory_fact_deleted'
+  | 'account_deleted'
+  | 'resource_sync_failed';
 
-export type AuditSubjectTypeRow = 'proposal' | 'guard' | 'memory_fact';
+export type AuditSubjectTypeRow = 'proposal' | 'guard' | 'memory_fact' | 'account' | 'sync_resource';
 
 export interface AuditEventRecord {
   id: string;
