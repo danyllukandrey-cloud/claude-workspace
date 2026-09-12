@@ -7,7 +7,7 @@ acs: ["AC-20", "AC-20b"]
 files_hint: ["plan/app/src/agent/domain/developer-report.ts"]
 owner: "TBD"
 estimate: "S"
-status: "todo"
+status: "done"
 ---
 
 # T36 — Domain: developer-report classification
@@ -22,6 +22,6 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Unit test: agent-detected payload не потребує тексту від користувача
-- [ ] Unit test: user-requested payload зберігає опис користувача дослівно
-- [ ] lint + vet clean
+- [x] Unit test: agent-detected payload не потребує тексту від користувача
+- [x] Unit test: user-requested payload зберігає опис користувача дослівно
+- [x] lint + vet clean
