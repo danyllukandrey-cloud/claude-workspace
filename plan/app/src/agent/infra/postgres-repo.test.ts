@@ -25,9 +25,13 @@ import {
   listEffectiveRulesForCard,
   insertFact,
   findActiveFactsByTopic,
+  updateFact,
+  softDeleteFact,
   insertChatMessage,
   listMessagesForSession,
   hasAnyChatMessage,
+  countRecentUserMessages,
+  findAllMessagesByUser,
   insertAuditEvent,
   listAuditEventsByUser,
 } from './postgres-repo';
@@ -324,6 +328,43 @@ describe('insertFact + findActiveFactsByTopic -- AC-09 read-your-own-writes by t
   });
 });
 
+// Review 2026-09-12 (AC-09 write path): updateFact/softDeleteFact -- the two
+// functions AC-09's "edit/forget" half needed and never had.
+describe('updateFact + softDeleteFact -- AC-09 edit/forget a long-term fact', () => {
+  it('updates fact_text/topic scoped to id + user_id', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [rawFactRow({ fact_text: 'оновлений текст' })] });
+    const db: Db = { query };
+
+    const updated = await updateFact(db, 'user-1', 'fact-1', { factText: 'оновлений текст' });
+
+    expect(updated?.factText).toBe('оновлений текст');
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/UPDATE long_term_memory_fact/);
+    expect(sql).toMatch(/user_id/);
+    expect(params).toEqual(['оновлений текст', 'fact-1', 'user-1']);
+  });
+
+  it('a mismatched user_id updates nothing -- non-disclosure', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    const db: Db = { query };
+
+    await expect(updateFact(db, 'someone-elses-user-id', 'fact-1', { factText: 'x' })).resolves.toBeNull();
+  });
+
+  it('softDeleteFact sets status=deleted, never a physical DELETE ("забудь, що...")', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [rawFactRow({ status: 'deleted' })] });
+    const db: Db = { query };
+
+    const deleted = await softDeleteFact(db, 'user-1', 'fact-1');
+
+    expect(deleted?.status).toBe('deleted');
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/UPDATE long_term_memory_fact SET status = 'deleted'/);
+    expect(sql).not.toMatch(/DELETE FROM/);
+    expect(params).toEqual(['fact-1', 'user-1']);
+  });
+});
+
 // --- chat_message (AC-15) --------------------------------------------------
 
 describe('insertChatMessage + listMessagesForSession -- AC-15 same-session short-term window', () => {
@@ -382,6 +423,53 @@ describe('hasAnyChatMessage -- AC-13 first-call detection, any session_date', ()
     const db: Db = { query };
 
     await expect(hasAnyChatMessage(db, 'brand-new-user')).resolves.toBe(false);
+  });
+});
+
+// Review 2026-09-12: ports-шар (chat-handler.ts) не пише SQL сам (ADR-0005) --
+// countRecentUserMessages/findAllMessagesByUser виносять два запити, які
+// раніше жили інлайн у ports-хендлері, сюди.
+describe('countRecentUserMessages -- §8 SAD 60/hour rate limit, role=user only', () => {
+  it('counts only role=user rows within the given window, scoped by user_id', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [{ count: '3' }] });
+    const db: Db = { query };
+
+    const count = await countRecentUserMessages(db, 'user-1', '2026-01-01T00:00:00.000Z');
+
+    expect(count).toBe(3);
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/user_id/);
+    expect(sql).toMatch(/role = 'user'/);
+    expect(params).toEqual(['user-1', '2026-01-01T00:00:00.000Z']);
+  });
+
+  it('a mismatched user_id never inflates another user\'s count', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [{ count: '0' }] });
+    const db: Db = { query };
+
+    await expect(countRecentUserMessages(db, 'someone-elses-user-id', '2026-01-01T00:00:00.000Z')).resolves.toBe(0);
+  });
+});
+
+describe('findAllMessagesByUser -- GET /messages full history, scoped to user_id', () => {
+  it('returns the user\'s messages in chronological order', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [rawChatMessageRow()] });
+    const db: Db = { query };
+
+    const messages = await findAllMessagesByUser(db, 'user-1');
+
+    expect(messages).toHaveLength(1);
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/user_id/);
+    expect(sql).toMatch(/ORDER BY created_at/);
+    expect(params).toEqual(['user-1']);
+  });
+
+  it('a mismatched user_id never returns another user\'s history', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    const db: Db = { query };
+
+    await expect(findAllMessagesByUser(db, 'someone-elses-user-id')).resolves.toEqual([]);
   });
 });
 

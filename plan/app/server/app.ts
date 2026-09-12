@@ -203,7 +203,13 @@ async function upsertAppUser(db: Db, googleSub: string, email: string): Promise<
 
 export function createApp(deps: AppDeps): express.Express {
   const app = express();
-  app.use(express.json());
+  // Review 2026-09-12: агент приймає вкладення (фото/документ) як base64 у
+  // JSON-тілі (main.tsx FileReader -> base64), не multipart -- дефолтний
+  // ліміт express.json() (~100kb) відхиляв би будь-яке реальне фото/PDF ще
+  // до того, як agent.attachment_unrecognized встиг би спрацювати, і
+  // помилка виглядала б як generic request.invalid_body, не контрактна
+  // 422. 10mb -- запас під base64-роздування (~33%) навіть великого фото.
+  app.use(express.json({ limit: '10mb' }));
   // Review 2026-09-07 (backend hardening, T50, "Express 5 req.body===undefined"):
   // express.json() лишає req.body undefined, коли Content-Type не збігається
   // (чи взагалі відсутній) -- не {}, як можна було б очікати. Кожен обробник

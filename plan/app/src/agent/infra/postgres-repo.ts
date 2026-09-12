@@ -363,6 +363,59 @@ export async function findActiveFactsByTopic(db: Db, userId: string, topic: stri
   return rows.map(toFactRecord);
 }
 
+/**
+ * Review 2026-09-12 (AC-09 write path): факт правиться на місці (не
+ * append-only, на відміну від `agent_audit_event`) -- data-model.md
+ * `updated_at` "редагування факту". Non-disclosure: чужий/неіснуючий факт --
+ * `null`, нічого не пишеться.
+ */
+export async function updateFact(
+  db: Db,
+  userId: string,
+  factId: string,
+  patch: { factText?: string; topic?: string | null }
+): Promise<FactRecord | null> {
+  const sets: string[] = [];
+  const values: unknown[] = [];
+
+  const assign = (column: string, value: unknown) => {
+    values.push(value);
+    sets.push(`${column} = $${values.length}`);
+  };
+
+  if (patch.factText !== undefined) assign('fact_text', patch.factText);
+  if (patch.topic !== undefined) assign('topic', patch.topic);
+
+  if (sets.length === 0) {
+    const { rows } = await db.query<RawFactRow>(
+      `SELECT ${FACT_COLUMNS} FROM long_term_memory_fact WHERE id = $1 AND user_id = $2`,
+      [factId, userId]
+    );
+    return rows[0] ? toFactRecord(rows[0]) : null;
+  }
+  sets.push('updated_at = now()');
+  values.push(factId, userId);
+
+  const { rows } = await db.query<RawFactRow>(
+    `UPDATE long_term_memory_fact SET ${sets.join(', ')} WHERE id = $${values.length - 1} AND user_id = $${values.length} RETURNING ${FACT_COLUMNS}`,
+    values
+  );
+  return rows[0] ? toFactRecord(rows[0]) : null;
+}
+
+/**
+ * Review 2026-09-12 (AC-09 "забудь, що..."): м'яке видалення -- `status =
+ * 'deleted'` (data-model.md, той самий підхід, що `card.status`), НІКОЛИ
+ * фізичне видалення. Non-disclosure: чужий/неіснуючий факт -- `null`.
+ */
+export async function softDeleteFact(db: Db, userId: string, factId: string): Promise<FactRecord | null> {
+  const { rows } = await db.query<RawFactRow>(
+    `UPDATE long_term_memory_fact SET status = 'deleted', updated_at = now() WHERE id = $1 AND user_id = $2 RETURNING ${FACT_COLUMNS}`,
+    [factId, userId]
+  );
+  return rows[0] ? toFactRecord(rows[0]) : null;
+}
+
 // --- chat_message (AC-15) --------------------------------------------------
 
 interface RawChatMessageRow extends QueryResultRow {
@@ -421,6 +474,34 @@ export async function listMessagesForSession(db: Db, userId: string, sessionDate
 export async function hasAnyChatMessage(db: Db, userId: string): Promise<boolean> {
   const { rows } = await db.query('SELECT 1 FROM chat_message WHERE user_id = $1 LIMIT 1', [userId]);
   return rows.length > 0;
+}
+
+/**
+ * Review 2026-09-12: ports-шар (chat-handler.ts) не пише SQL сам (ADR-0005)
+ * -- виносить сюди підрахунок для 60/год rate-limit (§8 SAD). `role='user'`
+ * -- лише спроби користувача рахуються, не відповіді агента.
+ */
+export async function countRecentUserMessages(db: Db, userId: string, sinceIso: string): Promise<number> {
+  const { rows } = await db.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count FROM chat_message WHERE user_id = $1 AND role = 'user' AND created_at >= $2`,
+    [userId, sinceIso]
+  );
+  return Number(rows[0]?.count ?? '0');
+}
+
+/**
+ * Review 2026-09-12: GET /messages (T20) без пагінаційного репозиторного
+ * читання -- та сама причина, що countRecentUserMessages вище. Повна
+ * історія користувача хронологічно; сторінкування -- відповідальність
+ * ports-шару (той самий підхід, що вже listActiveLayoutPositionsByOwner +
+ * сортування на боці порту в structure).
+ */
+export async function findAllMessagesByUser(db: Db, userId: string): Promise<ChatMessageRecord[]> {
+  const { rows } = await db.query<RawChatMessageRow>(
+    `SELECT ${CHAT_MESSAGE_COLUMNS} FROM chat_message WHERE user_id = $1 ORDER BY created_at`,
+    [userId]
+  );
+  return rows.map(toChatMessageRecord);
 }
 
 // --- agent_audit_event -------------------------------------------------
