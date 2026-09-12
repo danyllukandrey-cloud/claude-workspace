@@ -37,6 +37,10 @@ updated_at: "2026-09-06"
 | `Spinner`       | `plan/app/src/shared/ui/Spinner.tsx:6`        | — (без пропів, лише індикатор)                      | Індикатор завантаження (T24)                                                                                                   |
 | `EmptyState`    | `plan/app/src/shared/ui/EmptyState.tsx:13`    | — (повідомлення + підказка наступної дії) | Стандартний порожній стан, без ілюстрацій (T24)                                                                 |
 | `ConfirmDialog` | `plan/app/src/shared/ui/ConfirmDialog.tsx:20` | — (повідомлення + confirm/cancel)                             | Підтвердження дії з незворотними наслідками — ніколи`confirm()` (T24)                               |
+| `MessageList`   | `plan/app/src/agent/ui/chat/MessageList.tsx:19` | default (заповнена історія), empty-onboarding (порожній список) | Прокручуваний список `MessageBubble` у порядку надходження (SCR-01, T25) |
+| `MessageBubble` | `plan/app/src/agent/ui/chat/MessageBubble.tsx:15` | user, agent (проп `message.role`) | Одне повідомлення чату — `data-role` розрізняє відправника (SCR-01, T25) |
+| `ProposalCard`  | `plan/app/src/agent/ui/chat/ProposalCard.tsx:31` | proposal-pending — кнопки "Підтвердити"/"Уточнити" | Пропозиція запису, що чекає підтвердження (AC-01/AC-02/AC-02b/AC-10, SCR-01, T25) |
+| `Composer`      | `plan/app/src/agent/ui/chat/Composer.tsx:33` | default, disabled (сабміт заблоковано) | Текст і/або вкладення (фото/документ) — надсилання лише коли хоч одне не порожнє (AC-01/AC-10, SCR-01, T25) |
 
 `screens.md` кожної фічі описує екрани цими назвами; коли `implement` напише компонент насправді, рядок оновлюється реальним `file:line` і переліком станів.
 
