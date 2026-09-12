@@ -28,7 +28,7 @@ import {
   dropProposal as dropDomainProposal,
 } from '../domain/proposal';
 import type { Proposal as DomainProposal } from '../domain/proposal';
-import { getShortTermWindow, findFactsByTopic } from '../domain/memory';
+import { getShortTermWindow, findFactsByTopic, stripThirdPersonNames, prepareFactText } from '../domain/memory';
 import type { ChatMessage, LongTermMemoryFact } from '../domain/memory';
 import {
   findActiveProposalByUser,
@@ -38,6 +38,9 @@ import {
   listMessagesForSession,
   findActiveFactsByTopic,
   insertAuditEvent,
+  insertFact,
+  updateFact,
+  softDeleteFact,
 } from '../infra/postgres-repo';
 import type { Db, ProposalRecord, ChatMessageRecord, FactRecord } from '../infra/postgres-repo';
 // app -> cards (plan/app/CLAUDE.md, той самий крос-фічевий імпорт, що вже
@@ -84,6 +87,35 @@ interface AgentDecision {
   proposedSummary: string | null;
   /** Значуще лише коли активна пропозиція вже існувала (Flow 5, AC-03 mechanics). */
   activeProposalRelated: boolean;
+  /**
+   * AC-06 (sad.md §8/Flow 4) -- імена третіх осіб, які Claude вже розпізнав
+   * у вхідному тексті ("біг з Марією 5 км" -> ["Марією"]). Домен сам НЕ
+   * розпізнає імена (ніякого NLP у domain/memory.ts) -- лише прибирає ті,
+   * що йому передали (`stripThirdPersonNames`); ЦЕЙ файл лише прокидає
+   * список від Claude в domain-функцію перед записом.
+   */
+  thirdPersonNames: string[];
+  /**
+   * AC-09/US-06 -- значущий факт, вартий запам'ятовування довгостроково,
+   * фонова дія без окремого підтвердження (spec.md §2). `null`, якщо цей
+   * хід нічого не додає до довгострокової пам'яті.
+   */
+  rememberFact: string | null;
+  /** Тема щойно запам'ятованого факту -- той самий тег, що `findFactsByTopic` шукає пізнішою сесією. */
+  rememberTopic: string | null;
+  /**
+   * AC-09 "забудь, що..." (sad.md §4) -- тема раніше запам'ятованого факту,
+   * який користувач хоче скасувати чи виправити. `findFactsByTopic` --
+   * єдиний доступний доменний пошук, тому зіставлення робиться лише за
+   * темою, без додаткового вгадування, яку саме репліку мав на увазі.
+   */
+  forgetTopic: string | null;
+  /**
+   * Заданий разом із `forgetTopic` -- виправлення факту на цей текст
+   * (`memory_fact_edited`). Якщо `forgetTopic` заданий, а це `null` --
+   * факт видаляється (`memory_fact_deleted`).
+   */
+  forgetReplacementText: string | null;
 }
 
 function safeString(value: unknown): string | null {
@@ -92,6 +124,11 @@ function safeString(value: unknown): string | null {
 
 function safeNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function safeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string');
 }
 
 /**
@@ -115,6 +152,11 @@ function parseAgentDecision(raw: string): AgentDecision {
       proposedAmount: safeNumber(parsed.proposedAmount),
       proposedSummary: safeString(parsed.proposedSummary),
       activeProposalRelated: parsed.activeProposalRelated === true,
+      thirdPersonNames: safeStringArray(parsed.thirdPersonNames),
+      rememberFact: safeString(parsed.rememberFact),
+      rememberTopic: safeString(parsed.rememberTopic),
+      forgetTopic: safeString(parsed.forgetTopic),
+      forgetReplacementText: safeString(parsed.forgetReplacementText),
     };
   } catch {
     return {
@@ -125,6 +167,11 @@ function parseAgentDecision(raw: string): AgentDecision {
       proposedAmount: null,
       proposedSummary: null,
       activeProposalRelated: false,
+      thirdPersonNames: [],
+      rememberFact: null,
+      rememberTopic: null,
+      forgetTopic: null,
+      forgetReplacementText: null,
     };
   }
 }
@@ -202,6 +249,25 @@ async function buildCardCatalog(db: Db, cards: CardRecord[]): Promise<CardCatalo
   return { entries, cardIds: new Set(cards.map((card) => card.id)) };
 }
 
+/**
+ * AC-12 (review 2026-09-12) -- дешевий, детермінований здогад про картку,
+ * якої стосується САМЕ повідомлення, ще ДО виклику Claude (ефективні
+ * правила мають бути готові заздалегідь -- вони йдуть у системний промпт).
+ * Не NLP: пряма підстрокова згадка назви картки з каталогу САМЕ цього
+ * користувача (той самий каталог, що вже будується для outcome:'proposal'
+ * нижче) -- без регістру. Кілька збігів -- перший за порядком каталогу;
+ * жодного -- null (викликач сам вирішує fallback).
+ */
+function resolveCandidateCardId(catalog: CardCatalog, text: string | null): string | null {
+  if (!text) return null;
+  const normalized = text.toLowerCase();
+  const match = catalog.entries.find((entry) => {
+    const name = entry.name.trim().toLowerCase();
+    return name.length > 0 && normalized.includes(name);
+  });
+  return match ? match.id : null;
+}
+
 function buildCardCatalogText(catalog: CardCatalog): string {
   if (catalog.entries.length === 0) {
     return 'У користувача ще немає жодної активної картки -- якщо факт потребує картки, запропонуй створити нову (AC-05).';
@@ -251,7 +317,12 @@ const RESPONSE_FORMAT_INSTRUCTION = `Відповідай СТРОГО одни�
   "metricBlockId": "<id блоку-метрики зі списку нижче, або null>",
   "proposedAmount": <число або null>,
   "proposedSummary": "<короткий людський опис запису, або null>",
-  "activeProposalRelated": <true/false -- дивись опис активної пропозиції нижче>
+  "activeProposalRelated": <true/false -- дивись опис активної пропозиції нижче>,
+  "thirdPersonNames": [<масив імен третіх осіб, згаданих у тексті, або порожній масив (AC-06) -- напр. "біг з Марією 5 км" -> ["Марією"]>],
+  "rememberFact": "<значущий факт, вартий довгострокової пам'яті (AC-09), або null -- фонова дія, окреме підтвердження не потрібне>",
+  "rememberTopic": "<тема цього факту для пізнішого пошуку, або null>",
+  "forgetTopic": "<тема раніше запам'ятованого факту, який користувач хоче скасувати чи виправити ('забудь, що...'), або null>",
+  "forgetReplacementText": "<заданий разом із forgetTopic -- новий текст факту (виправлення); null разом із forgetTopic -- факт просто видаляється>"
 }
 "outcome": "proposal" ЛИШЕ тоді, коли proposedSummary заповнено і ти дійсно пропонуєш конкретний запис (AC-01/AC-10/AC-19). В решті випадків -- "clarification": суперечливі чи невизначені дані (AC-04), кілька однаково ймовірних карток або жодної підходящої (AC-05), чи вкладення, з якого не вдалось виділити факт (AC-10b/AC-19b). Обирай cardId/metricBlockId ЛИШЕ зі списку нижче -- ніколи не вигадуй id.`;
 
@@ -291,6 +362,73 @@ async function dropStaleProposal(db: Db, proposal: ProposalRecord): Promise<void
   });
 }
 
+/**
+ * AC-09 -- write-шлях довгострокової пам'яті (review 2026-09-12: до цього
+ * insertFact/updateFact/softDeleteFact не мали жодного продакшн-виклику).
+ * "забудь, що..." (forgetTopic) перевіряється першим і, якщо знайдено
+ * відповідний активний факт, виключає одночасне "запам'ятай" у ЦЬОМУ ж
+ * ході -- той самий хід не повинен і скасувати, і одразу заново створити
+ * факт на ту саму тему без явного другого повідомлення користувача.
+ * Пошук лише за темою (`findFactsByTopic` -- єдиний доступний доменний
+ * пошук, свідомо без глибшого зіставлення тексту, за інструкцією задачі).
+ */
+async function persistFactMemoryUpdates(db: Db, userId: string, decision: AgentDecision): Promise<void> {
+  const forgetTopic = decision.forgetTopic?.trim();
+  if (forgetTopic) {
+    const rows = await findActiveFactsByTopic(db, userId, forgetTopic);
+    const [target] = findFactsByTopic(rows.map(toLongTermFact), forgetTopic);
+    if (!target) {
+      return;
+    }
+    const replacementText = decision.forgetReplacementText?.trim();
+    if (replacementText) {
+      const prepared = prepareFactText(replacementText, decision.thirdPersonNames);
+      if (prepared.ok) {
+        const updated = await updateFact(db, userId, target.id, { factText: prepared.value });
+        if (updated) {
+          await insertAuditEvent(db, {
+            id: crypto.randomUUID(),
+            userId,
+            eventType: 'memory_fact_edited',
+            subjectType: 'memory_fact',
+            subjectId: updated.id,
+          });
+        }
+      }
+      return;
+    }
+    const deleted = await softDeleteFact(db, userId, target.id);
+    if (deleted) {
+      await insertAuditEvent(db, {
+        id: crypto.randomUUID(),
+        userId,
+        eventType: 'memory_fact_deleted',
+        subjectType: 'memory_fact',
+        subjectId: deleted.id,
+      });
+    }
+    return;
+  }
+
+  const rememberFact = decision.rememberFact?.trim();
+  if (!rememberFact) {
+    return;
+  }
+  const prepared = prepareFactText(rememberFact, decision.thirdPersonNames);
+  if (!prepared.ok) {
+    // AC-06: після прибирання третьої особи нічого не лишилось -- domain-
+    // інваріант `fact_text NOT NULL` (той самий сентинел, що proposal.ts) --
+    // тихо нічого не запам'ятовуємо, а не кидаємо виняток за очікуваний результат.
+    return;
+  }
+  await insertFact(db, {
+    id: crypto.randomUUID(),
+    userId,
+    factText: prepared.value,
+    topic: decision.rememberTopic?.trim() || null,
+  });
+}
+
 /** AC-02b (Flow 1's refinement leg) -- та сама пропозиція, оновлена на місці, не новий запис. */
 async function refineActiveProposal(
   db: Db,
@@ -298,8 +436,11 @@ async function refineActiveProposal(
   decision: AgentDecision
 ): Promise<HandleMessageResult> {
   if (decision.outcome === 'proposal' && decision.proposedSummary) {
+    // AC-06: те саме прибирання третьої особи, що й для нової пропозиції
+    // нижче -- уточнення так само лягає в agent_proposal.proposed_summary.
+    const sanitizedSummary = stripThirdPersonNames(decision.proposedSummary, decision.thirdPersonNames);
     const refined = refineDomainProposal(toDomainProposal(proposal), {
-      proposedSummary: decision.proposedSummary,
+      proposedSummary: sanitizedSummary,
       proposedAmount: decision.proposedAmount,
     });
     if (refined.ok) {
@@ -356,9 +497,20 @@ export async function handleMessage(
   // Flow 5 / AC-03 mechanics: чи вже є активна пропозиція, що чекає.
   const activeProposal = await findActiveProposalByUser(db, input.userId);
 
-  // AC-07/AC-12: ефективні правила для контексту активної пропозиції (чи
-  // без картки, якщо жодної немає) -- той самий читальний виклик, що Flow 6.
-  const activeRules = await listEffectiveRulesForCard(db, input.userId, activeProposal?.cardId ?? null);
+  // AC-12: скоуп ефективних правил -- це картка, якої стосується САМЕ ЦЕ
+  // повідомлення, не обов'язково картка попередньої активної пропозиції.
+  // Review 2026-09-12: раніше тут завжди бралась лише activeProposal?.cardId
+  // -- на першому повідомленні ходу (активної пропозиції ще нема) картка
+  // виходила null, і card-override правило (AC-12) мовчки не діяло. Каталог
+  // (той самий, що нижче для outcome:'proposal') дозволяє дешево здогадатись
+  // про цільову картку ще ДО виклику Claude -- пряма згадка назви картки в
+  // тексті користувача; коли такої згадки нема, лишається попередній
+  // fallback на картку активної пропозиції.
+  const candidateCardId = resolveCandidateCardId(catalog, input.text) ?? activeProposal?.cardId ?? null;
+
+  // AC-07/AC-12: ефективні правила для контексту, що реально стосується
+  // цього повідомлення (той самий читальний виклик, що Flow 6).
+  const activeRules = await listEffectiveRulesForCard(db, input.userId, candidateCardId);
 
   const baseSystemPrompt = buildBaseSystemPrompt({ shortTermWindow, longTermFacts, catalog, activeProposal });
 
@@ -375,7 +527,29 @@ export async function handleMessage(
     activeRules,
   });
 
+  // AC-07: askAgent повертає guard-вердикт ОСТАННЬОЇ виконаної перевірки
+  // (DoD ask-agent.ts: "returned for audit logging") -- раніше цей use-case
+  // читав лише .reply й мовчки відкидав .guard, тож жоден guard_passed/
+  // guard_failed рядок не потрапляв в agent_audit_event. Пишеться одразу
+  // після виклику -- той самий транзакційний контекст, що решта запису
+  // цього ходу, до розбору decision (не залежить від outcome).
+  await insertAuditEvent(db, {
+    id: crypto.randomUUID(),
+    userId: input.userId,
+    eventType: askResult.guard.passed ? 'guard_passed' : 'guard_failed',
+    subjectType: 'guard',
+    subjectId: askResult.guard.violatedRuleId,
+    detail: askResult.guard.reason,
+  });
+
   const decision = parseAgentDecision(askResult.reply);
+
+  // AC-09: "запам'ятати" (US-06) чи "забудь, що..." (sad.md §4) -- фонова
+  // дія, незалежна від того, чи цей хід ще й формує proposal (spec.md §2:
+  // "фонова дія без окремого підтвердження, за винятком випадків, коли той
+  // самий факт одночасно є записом у картку" -- той виняток тут свідомо не
+  // додатково обробляється, задача лише про сам відсутній write-шлях).
+  await persistFactMemoryUpdates(db, input.userId, decision);
 
   if (activeProposal) {
     if (decision.activeProposalRelated) {
@@ -401,20 +575,37 @@ export async function handleMessage(
   const resolvedCardId = decision.cardId && catalog.cardIds.has(decision.cardId) ? decision.cardId : null;
   const resolvedMetricBlockId = resolvedCardId ? decision.metricBlockId : null;
 
+  // AC-01/AC-02/AC-05 (review 2026-09-12): картка/блок чи сума, що не
+  // резолвнулись -- пропозиція, яку ЦЕЙ хід все одно поставив би 'active',
+  // ChatScreen показала б із робочою кнопкою "Підтвердити", а confirm.ts
+  // кинув би 409 agent.proposal_incomplete щойно користувач її натисне --
+  // глухий кут, не "агент перепитує" (AC-05). Замість цього -- та сама
+  // гілка уточнення, що вже вище для outcome !== 'proposal': нічого не
+  // персистимо, той самий reply від Claude йде як просте уточнення.
+  if (!resolvedCardId || !resolvedMetricBlockId || decision.proposedAmount === null) {
+    return { reply: decision.reply, proposal: null };
+  }
+
+  // AC-06: третя особа прибирається з тексту ПЕРЕД записом -- і з сирого
+  // вводу, і з короткого підсумку (sad.md §6 Flow 4: "біг з Марією 5 км" ->
+  // лишається лише "5 км"), іменами, які вже розпізнав Claude (decision).
+  const sanitizedRawInput = stripThirdPersonNames(rawInput, decision.thirdPersonNames);
+  const sanitizedSummary = stripThirdPersonNames(decision.proposedSummary, decision.thirdPersonNames);
+
   const created = createDomainProposal({
     id: crypto.randomUUID(),
     userId: input.userId,
     sourceType: input.attachment ? 'attachment' : 'text',
-    rawInput,
-    proposedSummary: decision.proposedSummary,
+    rawInput: sanitizedRawInput,
+    proposedSummary: sanitizedSummary,
     cardId: resolvedCardId,
     metricBlockId: resolvedMetricBlockId,
     proposedAmount: decision.proposedAmount,
   });
 
   if (!created.ok) {
-    // Доменний інваріант відхилив (напр. порожній rawInput) -- fallback у
-    // звичайне уточнення, нічого не пишемо.
+    // Доменний інваріант відхилив (напр. порожній rawInput після зачистки
+    // третьої особи) -- fallback у звичайне уточнення, нічого не пишемо.
     return { reply: decision.reply, proposal: null };
   }
 

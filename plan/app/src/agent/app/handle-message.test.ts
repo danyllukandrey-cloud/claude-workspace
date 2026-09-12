@@ -99,6 +99,8 @@ interface FakeDbOptions {
   updateResult?: ReturnType<typeof proposalRow> | null;
   /** Row returned by INSERT INTO agent_proposal. */
   insertedProposal?: ReturnType<typeof proposalRow>;
+  /** Row returned by any UPDATE/soft-delete on long_term_memory_fact. */
+  factUpdateResult?: Record<string, unknown> | null;
 }
 
 /** SQL-text router (get-card.test.ts convention) -- only db.query is mocked, real repo modules run unchanged. */
@@ -114,12 +116,19 @@ function fakeDb(opts: FakeDbOptions = {}) {
       return { rows: opts.activeProposal ? [opts.activeProposal] : [] };
     }
     if (text.includes('FROM imperative_rule')) {
-      return { rows: opts.rules ?? [] };
+      // Real SQL (listEffectiveRulesForCard/listRulesByScope): global rules
+      // (scope_card_id IS NULL) always match, a card-override row only when
+      // the query's own cardId param ($2) equals its scope_card_id -- routed
+      // here so a test can actually observe AC-12's card resolution, not just
+      // assert on the params handed to db.query.
+      const cardIdParam = (params?.[1] as string | null | undefined) ?? null;
+      const rows = (opts.rules ?? []) as { scope_card_id: string | null }[];
+      return { rows: rows.filter((rule) => rule.scope_card_id === null || rule.scope_card_id === cardIdParam) };
     }
     if (text.includes('FROM chat_message')) {
       return { rows: opts.chatMessages ?? [] };
     }
-    if (text.includes('FROM long_term_memory_fact')) {
+    if (text.startsWith('SELECT') && text.includes('FROM long_term_memory_fact')) {
       return { rows: opts.facts ?? [] };
     }
     if (text.startsWith('INSERT INTO agent_proposal')) {
@@ -128,12 +137,31 @@ function fakeDb(opts: FakeDbOptions = {}) {
     if (text.startsWith('UPDATE agent_proposal')) {
       return { rows: opts.updateResult === undefined ? [proposalRow()] : opts.updateResult ? [opts.updateResult] : [] };
     }
+    if (text.startsWith('INSERT INTO long_term_memory_fact')) {
+      return { rows: [factRowFromParams(params)] };
+    }
+    if (text.startsWith('UPDATE long_term_memory_fact')) {
+      return { rows: opts.factUpdateResult === undefined ? [factRowFromParams()] : opts.factUpdateResult ? [opts.factUpdateResult] : [] };
+    }
     if (text.startsWith('INSERT INTO agent_audit_event')) {
       return { rows: [{ id: 'audit-1', user_id: USER_ID, event_type: 'proposal_created', subject_type: 'proposal', subject_id: 'proposal-1', detail: null, occurred_at: new Date() }] };
     }
     throw new Error(`Непередбачений запит у тесті: ${text}`);
   });
   return { query: query as unknown as Db['query'] };
+}
+
+function factRowFromParams(params?: unknown[]) {
+  const [id, userId, factText, topic] = params ?? [];
+  return {
+    id: id ?? 'fact-1',
+    user_id: userId ?? USER_ID,
+    fact_text: factText ?? '',
+    topic: topic ?? null,
+    status: 'active',
+    created_at: new Date('2026-01-01T00:00:00Z'),
+    updated_at: new Date('2026-01-01T00:00:00Z'),
+  };
 }
 
 function paramsToProposalRow(params?: unknown[]) {
@@ -169,7 +197,12 @@ describe('handleMessage -- Flow 1 (AC-01): text -> proposal', () => {
       expect.arrayContaining(['card-1', 'block-1', 'text', 'пробіг 5 км', 5, '5 км бігу'])
     );
 
-    const auditCall = (db.query as ReturnType<typeof vi.fn>).mock.calls.find((c) => String(c[0]).startsWith('INSERT INTO agent_audit_event'));
+    // Two audit rows now land per turn (AC-07 fix also wires a guard_passed/
+    // guard_failed row on every call) -- filter by content, not just the SQL
+    // prefix, to isolate the proposal_created one this assertion cares about.
+    const auditCall = (db.query as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => String(c[0]).startsWith('INSERT INTO agent_audit_event') && (c[1] as unknown[]).includes('proposal_created')
+    );
     expect(auditCall).toBeDefined();
     expect(auditCall![1]).toEqual(expect.arrayContaining(['proposal_created', 'proposal']));
   });
@@ -187,14 +220,20 @@ describe('handleMessage -- Flow 1 (AC-01): text -> proposal', () => {
     expect(sentPrompt).toContain('Пробіжки');
   });
 
-  it('never trusts a cardId Claude returns that is outside this user\'s own catalog (AC-06)', async () => {
+  it('never trusts a cardId Claude returns that is outside this user\'s own catalog (AC-06), and -- since that leaves the proposal without a card (AC-05 fix) -- persists nothing at all', async () => {
     const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()] });
     const askClaude = vi.fn<AskClaude>().mockResolvedValue(okClaude(decisionJson({ cardId: OTHER_CARD_ID, metricBlockId: 'block-other' })));
 
     const result = await handleMessage(db, askClaude, { userId: USER_ID, text: 'пробіг 5 км' });
 
-    expect(result.proposal?.cardId).toBeNull();
-    expect(result.proposal?.metricBlockId).toBeNull();
+    // Review 2026-09-12 (AC-01/AC-02/AC-05 dead end): a foreign cardId never
+    // resolves (AC-06 non-disclosure, unchanged) -- and an unresolved card
+    // now falls through to the SAME clarification branch as AC-04/AC-05,
+    // rather than persisting a null-card 'active' proposal that confirm.ts
+    // would later reject with 409 agent.proposal_incomplete.
+    expect(result.proposal).toBeNull();
+    const inserted = (db.query as ReturnType<typeof vi.fn>).mock.calls.some((c) => String(c[0]).startsWith('INSERT INTO agent_proposal'));
+    expect(inserted).toBe(false);
   });
 });
 
@@ -281,10 +320,17 @@ describe('handleMessage -- AC-10b/AC-19b: unrecognized attachment -- no persiste
 
     expect(result.proposal).toBeNull();
     expect(result.reply).toContain('опиши');
-    const writes = (db.query as ReturnType<typeof vi.fn>).mock.calls.filter(
-      (c) => String(c[0]).startsWith('INSERT') || String(c[0]).startsWith('UPDATE')
+    // AC-07 fix: a guard_passed/guard_failed audit row is now written for
+    // every completed Claude turn, clarification included -- so "nothing
+    // persisted" here means no proposal/fact write, not zero writes at all.
+    const proposalOrFactWrites = (db.query as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (c) =>
+        String(c[0]).startsWith('INSERT INTO agent_proposal') ||
+        String(c[0]).startsWith('UPDATE agent_proposal') ||
+        String(c[0]).startsWith('INSERT INTO long_term_memory_fact') ||
+        String(c[0]).startsWith('UPDATE long_term_memory_fact')
     );
-    expect(writes).toHaveLength(0);
+    expect(proposalOrFactWrites).toHaveLength(0);
   });
 });
 
@@ -468,5 +514,246 @@ describe('handleMessage -- AC-06: every read is scoped to this call\'s own userI
     for (const call of scopedReads) {
       expect(call[1]).toContain(USER_ID);
     }
+  });
+});
+
+// ---------------------------------------------------------------------
+// Review 2026-09-12 -- five findings converging on this one file (AC-06,
+// AC-07, AC-09, AC-12, AC-01/AC-02/AC-05).
+// ---------------------------------------------------------------------
+
+describe('handleMessage -- AC-06 fix: third-person names are stripped before persistence', () => {
+  it('removes a third-person name Claude identified from both rawInput and proposedSummary before they reach agent_proposal', async () => {
+    const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()] });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(
+      okClaude(
+        decisionJson({
+          proposedSummary: 'біг з Марією 5 км',
+          thirdPersonNames: ['Марією'],
+        })
+      )
+    );
+
+    const result = await handleMessage(db, askClaude, { userId: USER_ID, text: 'біг з Марією 5 км' });
+
+    expect(result.proposal).not.toBeNull();
+    expect(result.proposal?.proposedSummary).not.toContain('Марією');
+    expect(result.proposal?.rawInput).not.toContain('Марією');
+
+    const insertCall = (db.query as ReturnType<typeof vi.fn>).mock.calls.find((c) => String(c[0]).startsWith('INSERT INTO agent_proposal'));
+    expect(insertCall).toBeDefined();
+    const params = insertCall![1] as unknown[];
+    expect(String(params[5])).not.toContain('Марією'); // raw_input
+    expect(String(params[7])).not.toContain('Марією'); // proposed_summary
+  });
+});
+
+describe("handleMessage -- AC-07 fix: askAgent's guard verdict is audited every turn", () => {
+  it('writes a guard_passed audit row when no active rule is violated', async () => {
+    const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()] });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(okClaude(decisionJson()));
+
+    await handleMessage(db, askClaude, { userId: USER_ID, text: 'пробіг 5 км' });
+
+    const guardAudit = (db.query as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => String(c[0]).startsWith('INSERT INTO agent_audit_event') && (c[1] as unknown[]).includes('guard_passed')
+    );
+    expect(guardAudit).toBeDefined();
+    expect(guardAudit![1]).toEqual(expect.arrayContaining(['guard_passed', 'guard']));
+  });
+
+  it('writes a guard_failed audit row carrying the violated rule reason when the reply violates an active rule', async () => {
+    const rule = {
+      id: 'rule-1',
+      user_id: USER_ID,
+      scope_card_id: null,
+      category: null,
+      rule_text: 'Не радь, якщо не питаю',
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+    const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()], rules: [rule] });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(
+      okClaude(decisionJson({ reply: 'Раджу бігати частіше для кращих результатів.' }))
+    );
+
+    await handleMessage(db, askClaude, { userId: USER_ID, text: 'пробіг 5 км' });
+
+    const guardAudit = (db.query as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => String(c[0]).startsWith('INSERT INTO agent_audit_event') && (c[1] as unknown[]).includes('guard_failed')
+    );
+    expect(guardAudit).toBeDefined();
+    expect(guardAudit![1]).toEqual(expect.arrayContaining(['guard_failed', 'guard', 'Не радь, якщо не питаю']));
+  });
+});
+
+describe('handleMessage -- AC-09 fix: long-term fact write path (remember)', () => {
+  it('remembers a fact Claude flagged as worth long-term memory', async () => {
+    const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()] });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(
+      okClaude(decisionJson({ rememberFact: 'Тренується для півмарафону', rememberTopic: 'біг' }))
+    );
+
+    await handleMessage(db, askClaude, { userId: USER_ID, text: 'пробіг 5 км, готуюсь до півмарафону' });
+
+    const insertFactCall = (db.query as ReturnType<typeof vi.fn>).mock.calls.find((c) =>
+      String(c[0]).startsWith('INSERT INTO long_term_memory_fact')
+    );
+    expect(insertFactCall).toBeDefined();
+    expect(insertFactCall![1]).toEqual(expect.arrayContaining([USER_ID, 'Тренується для півмарафону', 'біг']));
+  });
+
+  it('never remembers a fact that becomes empty after stripping third-person names (AC-06 invariant, ADR-0006 sentinel)', async () => {
+    const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()] });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(
+      okClaude(decisionJson({ rememberFact: 'Марією', thirdPersonNames: ['Марією'] }))
+    );
+
+    await handleMessage(db, askClaude, { userId: USER_ID, text: 'щось про Марією' });
+
+    const insertedFact = (db.query as ReturnType<typeof vi.fn>).mock.calls.some((c) => String(c[0]).startsWith('INSERT INTO long_term_memory_fact'));
+    expect(insertedFact).toBe(false);
+  });
+});
+
+describe('handleMessage -- AC-09 fix: forgetting/correcting a previously-remembered fact ("забудь, що...")', () => {
+  it('soft-deletes the matching fact and audits memory_fact_deleted when no replacement text is given', async () => {
+    const existingFact = {
+      id: 'fact-1',
+      user_id: USER_ID,
+      fact_text: 'Тренується для півмарафону',
+      topic: 'біг',
+      status: 'active',
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+    const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()], facts: [existingFact] });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(
+      okClaude(decisionJson({ outcome: 'clarification', proposedSummary: null, forgetTopic: 'біг' }))
+    );
+
+    await handleMessage(db, askClaude, { userId: USER_ID, text: 'забудь, що я готуюсь до півмарафону' });
+
+    const deleteCall = (db.query as ReturnType<typeof vi.fn>).mock.calls.find((c) => String(c[0]).startsWith('UPDATE long_term_memory_fact'));
+    expect(deleteCall).toBeDefined();
+    expect(deleteCall![1]).toEqual(expect.arrayContaining(['fact-1', USER_ID]));
+
+    const auditCall = (db.query as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => String(c[0]).startsWith('INSERT INTO agent_audit_event') && (c[1] as unknown[]).includes('memory_fact_deleted')
+    );
+    expect(auditCall).toBeDefined();
+  });
+
+  it('edits the matching fact in place and audits memory_fact_edited when a replacement text is given', async () => {
+    const existingFact = {
+      id: 'fact-1',
+      user_id: USER_ID,
+      fact_text: 'Тренується для півмарафону',
+      topic: 'біг',
+      status: 'active',
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+    const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()], facts: [existingFact] });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(
+      okClaude(
+        decisionJson({
+          outcome: 'clarification',
+          proposedSummary: null,
+          forgetTopic: 'біг',
+          forgetReplacementText: 'Тренується для марафону, не півмарафону',
+        })
+      )
+    );
+
+    await handleMessage(db, askClaude, { userId: USER_ID, text: 'насправді я готуюсь до марафону, не півмарафону' });
+
+    const updateCall = (db.query as ReturnType<typeof vi.fn>).mock.calls.find((c) => String(c[0]).startsWith('UPDATE long_term_memory_fact'));
+    expect(updateCall).toBeDefined();
+    expect(updateCall![1]).toEqual(expect.arrayContaining(['Тренується для марафону, не півмарафону']));
+
+    const auditCall = (db.query as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => String(c[0]).startsWith('INSERT INTO agent_audit_event') && (c[1] as unknown[]).includes('memory_fact_edited')
+    );
+    expect(auditCall).toBeDefined();
+  });
+});
+
+describe('handleMessage -- AC-12 fix: rule scope resolves from the message target card, not only the prior active proposal', () => {
+  it('applies a card-scoped rule override on the FIRST message of a turn (no active proposal yet) when the message names that card', async () => {
+    const overrideRule = {
+      id: 'rule-1',
+      user_id: USER_ID,
+      scope_card_id: 'card-1',
+      category: null,
+      rule_text: 'Не радь, якщо не питаю',
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+    const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()], rules: [overrideRule] });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(
+      okClaude(decisionJson({ reply: 'Раджу бігати частіше для кращих результатів.' }))
+    );
+
+    await handleMessage(db, askClaude, { userId: USER_ID, text: 'Спорт: пробіг 5 км' });
+
+    // Proves the override rule actually reached the system prompt BEFORE the
+    // Claude call -- only possible if the candidate card was resolved from
+    // this message's own text, since there is no active proposal yet.
+    const sentPrompt = askClaude.mock.calls[0][0].systemPrompt ?? '';
+    expect(sentPrompt).toContain('Не радь, якщо не питаю');
+
+    // ...and its guard EFFECT actually fired: the reply violates it, so the
+    // audited verdict is guard_failed -- not guard_passed, which is what the
+    // old bug (candidate card always taken from the PRIOR active proposal,
+    // null on a first message) would have silently produced instead.
+    const guardAudit = (db.query as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => String(c[0]).startsWith('INSERT INTO agent_audit_event') && (c[1] as unknown[]).includes('guard_failed')
+    );
+    expect(guardAudit).toBeDefined();
+  });
+
+  it('control: the same card-scoped rule does NOT apply when the message names no card and there is no active proposal', async () => {
+    const overrideRule = {
+      id: 'rule-1',
+      user_id: USER_ID,
+      scope_card_id: 'card-1',
+      category: null,
+      rule_text: 'Не радь, якщо не питаю',
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+    const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()], rules: [overrideRule] });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(
+      okClaude(decisionJson({ reply: 'Раджу бігати частіше для кращих результатів.' }))
+    );
+
+    await handleMessage(db, askClaude, { userId: USER_ID, text: 'просто хочу поговорити' });
+
+    const sentPrompt = askClaude.mock.calls[0][0].systemPrompt ?? '';
+    expect(sentPrompt).not.toContain('Не радь, якщо не питаю');
+
+    const guardAudit = (db.query as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => String(c[0]).startsWith('INSERT INTO agent_audit_event') && (c[1] as unknown[]).includes('guard_passed')
+    );
+    expect(guardAudit).toBeDefined();
+  });
+});
+
+describe('handleMessage -- AC-01/AC-02/AC-05 fix: an incomplete proposal never becomes an active one', () => {
+  it('falls through to clarification (nothing persisted) when Claude proposes a record but leaves the amount unresolved', async () => {
+    const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()] });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(okClaude(decisionJson({ proposedAmount: null })));
+
+    const result = await handleMessage(db, askClaude, { userId: USER_ID, text: 'пробіг трохи' });
+
+    // Previously this created an 'active' agent_proposal with proposed_amount
+    // NULL -- ChatScreen would render a working "Підтвердити" button, and
+    // confirm.ts would only THEN throw 409 agent.proposal_incomplete. Now the
+    // same clarification branch as AC-04/AC-05 applies instead -- a dead end
+    // never reaches the user.
+    expect(result.proposal).toBeNull();
+    const inserted = (db.query as ReturnType<typeof vi.fn>).mock.calls.some((c) => String(c[0]).startsWith('INSERT INTO agent_proposal'));
+    expect(inserted).toBe(false);
   });
 });
