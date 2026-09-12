@@ -29,7 +29,7 @@
 | T22 | Ports: GET/POST /rules handlers | ports | TBD | S | T9, T13 | todo |
 | T23 | Ports: GET /reports handler | ports | TBD | S | T13 | todo |
 | T24 | Ports: GET /onboarding handler | ports | TBD | S | T13 | todo |
-| T25 | UI: SCR-01 chat components | ui | TBD | M | — | todo |
+| T25 | UI: SCR-01 chat components | ui | TBD | M | — | done |
 | T26 | UI: SCR-01 Чат screen | ui | TBD | L | T25, T20, T21, T24 | todo |
 | T27 | UI: SCR-02 Налаштування правил screen | ui | TBD | M | T22 | todo |
 | T28 | UI: SCR-03 Звіти активності screen | ui | TBD | M | T23 | todo |
