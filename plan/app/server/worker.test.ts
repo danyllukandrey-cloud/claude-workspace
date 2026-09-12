@@ -14,11 +14,21 @@ const NOW = new Date('2026-09-12T10:00:00.000Z'); // -> referenceDate '2026-09-1
 const USER_OK = 'user-ok';
 const USER_BROKEN = 'user-broken';
 
+const CARD_BROKEN = 'card-broken';
+const CARD_OK = 'card-ok';
+
 /**
  * Fake Db routed by SQL text, same approach as generate-report.test.ts's
  * fakeDb: enumerates two app_user rows, one of which fails the moment
  * generateReport tries to read its activity (simulating a per-user failure
  * that must not stop the other user's reports or the sync pass).
+ *
+ * Post-merge fix (review-fix task 7, schedule-dedup): readLifeAreaCardActivity
+ * no longer runs its own SQL against `entry` directly -- it now calls
+ * life-area-card's own listCardsByOwner (`FROM card`) then listEntriesByCard
+ * per card (`FROM entry WHERE card_id = $1`), the same cross-feature-read
+ * fix daily-sync.ts's buildUserSnapshot already used. The fake below routes
+ * both steps instead of the old single `FROM entry` query.
  */
 function fakeDb(): { db: Db; query: ReturnType<typeof vi.fn> } {
   const query = vi.fn(async (text: string, params?: unknown[]) => {
@@ -27,9 +37,26 @@ function fakeDb(): { db: Db; query: ReturnType<typeof vi.fn> } {
     if (upper.startsWith('SELECT ID FROM APP_USER')) {
       return { rows: [{ id: USER_BROKEN }, { id: USER_OK }] };
     }
-    if (upper.startsWith('SELECT') && text.includes('FROM entry')) {
-      const userId = params?.[0];
-      if (userId === USER_BROKEN) {
+    if (upper.includes('FROM CARD WHERE OWNER_USER_ID')) {
+      const ownerUserId = params?.[0];
+      const cardId = ownerUserId === USER_BROKEN ? CARD_BROKEN : CARD_OK;
+      return {
+        rows: [
+          {
+            id: cardId,
+            owner_user_id: ownerUserId,
+            name: 'картка',
+            description: null,
+            status: 'active',
+            created_at: NOW,
+            updated_at: NOW,
+          },
+        ],
+      };
+    }
+    if (upper.includes('FROM ENTRY WHERE CARD_ID')) {
+      const cardId = params?.[0];
+      if (cardId === CARD_BROKEN) {
         throw new Error('connection terminated unexpectedly');
       }
       return { rows: [] }; // empty activity is valid (generate-report.test.ts)
