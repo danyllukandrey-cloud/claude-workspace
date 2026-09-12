@@ -8,10 +8,11 @@
 // cross-feature use-case).
 //
 // Contract (contracts/openapi.yaml, confirmProposal -- POST
-// /proposals/{proposalId}/confirm):
+// /proposals/{proposalId}/confirm, БЕЗ тіла запиту):
 // - AC-02: активна пропозиція -> записує подію в картку через life-area-card's
 //   createEntry (ЦІЛКОМ делегується, agent сам НІКОЛИ не пише в entry/metric_block,
-//   plan/app/CLAUDE.md app -> cards) і переводить agent_proposal у 'confirmed'.
+//   plan/app/CLAUDE.md app -> cards) і переводить agent_proposal у 'confirmed'
+//   атомарним SQL-переходом (`confirmActiveProposal`, WHERE status = 'active').
 // - AC-03/409 (`agent.proposal_not_active`): пропозиція існує, але вже не
 //   активна (`confirmed`/`dropped`) -- відхиляємо, нічого не пишемо ні в
 //   entry, ні в саму пропозицію (домен-інваріант "мовчазного запису не буває",
@@ -21,6 +22,18 @@
 // - 404 (`agent.proposal_not_found`): пропозиції немає серед пропозицій ЦЬОГО
 //   користувача -- той самий код і для "не існує", і для "чужа" (AC-06
 //   non-disclosure, той самий патерн, що life-area-card's create-entry.ts).
+//
+// Review 2026-09-12 (три знахідки, виправлені разом, той самий файл):
+// 1. data-model.md event_type enum вимагає `proposal_confirmed` при кожному
+//    успішному підтвердженні -- перевіряється нижче поруч зі створенням entry.
+// 2. Double-confirm race: попередня версія читала статус, перевіряла в
+//    пам'яті, і лише ПОТІМ писала 'confirmed' без предиката на рівні SQL --
+//    два одночасні confirm могли обидва пройти перевірку і обидва викликати
+//    createEntry. Окремий describe нижче симулює це через послідовність
+//    відповідей мокнутого `db.query`.
+// 3. Контракт не визначає жодного тіла запиту -- recordedAt/sourceDeviceId
+//    більше не приймаються ззовні; confirm.ts сам підставляє момент виклику
+//    (перевіряється нижче через `expect.any(Number)` у межах [before, after]).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AppError } from '../../shared/errors';
@@ -57,18 +70,32 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe('confirmProposal -- AC-02: активна пропозиція записує подію і стає confirmed', () => {
-  it('delegates to life-area-card\'s createEntry and marks the proposal confirmed', async () => {
+describe('confirmProposal -- AC-02: активна пропозиція записує подію, атомарно стає confirmed, і лишає аудит-слід', () => {
+  it("delegates to life-area-card's createEntry, flips the proposal to confirmed via the SQL-level guard, and logs a proposal_confirmed audit event", async () => {
     const query = vi
       .fn()
-      .mockResolvedValueOnce({ rows: [proposalRow({ status: 'active' })] }) // fetch by id (updateProposal, no fields)
-      .mockResolvedValueOnce({ rows: [proposalRow({ status: 'confirmed' })] }); // UPDATE ... status = 'confirmed'
+      .mockResolvedValueOnce({ rows: [proposalRow({ status: 'active' })] }) // 1: read by id (updateProposal, empty patch)
+      .mockResolvedValueOnce({ rows: [proposalRow({ status: 'confirmed' })] }) // 2: confirmActiveProposal (guarded UPDATE)
+      .mockResolvedValueOnce({ rows: [{ id: 'audit-1' }] }); // 3: insertAuditEvent
     const db: Db = { query };
     (createEntry as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'entry-1', status: 'confirmed' });
 
-    const result = await confirmProposal(db, { userId: USER_ID, proposalId: PROPOSAL_ID, recordedAt: 1_000 });
+    const before = Date.now();
+    const result = await confirmProposal(db, { userId: USER_ID, proposalId: PROPOSAL_ID });
+    const after = Date.now();
 
     expect(result.status).toBe('confirmed');
+    expect(query).toHaveBeenCalledTimes(3);
+
+    // Finding 2: атомарний перехід статусу -- SQL сам несе предикат
+    // `status = 'active'`, не лише перевірку в пам'яті.
+    expect(query.mock.calls[1][0]).toMatch(/UPDATE agent_proposal/);
+    expect(query.mock.calls[1][0]).toMatch(/status = 'active'/);
+    expect(query.mock.calls[1][1]).toEqual([PROPOSAL_ID, USER_ID]);
+
+    // Finding 3: контракт (openapi.yaml) не приймає жодного тіла --
+    // sourceDeviceId завжди null, recordedAt -- момент виклику, не клієнтське
+    // значення (симетрично entry-handlers.ts createEntry).
     expect(createEntry).toHaveBeenCalledTimes(1);
     expect(createEntry).toHaveBeenCalledWith(db, {
       ownerUserId: USER_ID,
@@ -77,35 +104,55 @@ describe('confirmProposal -- AC-02: активна пропозиція запи
       amount: 5,
       rawText: 'пробіг 5 км',
       sourceDeviceId: null,
-      recordedAt: 1_000,
+      recordedAt: expect.any(Number),
     });
+    const recordedAt = (createEntry as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1].recordedAt;
+    expect(recordedAt).toBeGreaterThanOrEqual(before);
+    expect(recordedAt).toBeLessThanOrEqual(after);
 
-    // Записуємо подію ДО того, як позначаємо пропозицію confirmed (DoD:
-    // "records the entry ... and marks it confirmed" -- саме в цьому порядку).
-    expect(query).toHaveBeenCalledTimes(2);
-    expect(query.mock.calls[1][0]).toMatch(/UPDATE agent_proposal/);
-    expect(query.mock.calls[1][1]).toEqual(expect.arrayContaining(['confirmed']));
+    // Finding 1: data-model.md event_type enum -- proposal_confirmed
+    // записується поруч, симетрично handle-message.ts
+    // (proposal_created/updated/dropped).
+    expect(query.mock.calls[2][0]).toMatch(/INSERT INTO agent_audit_event/);
+    expect(query.mock.calls[2][1]).toEqual(
+      expect.arrayContaining(['proposal_confirmed', 'proposal', PROPOSAL_ID])
+    );
   });
+});
 
-  it('passes sourceDeviceId through to createEntry when provided', async () => {
+describe('confirmProposal -- double-confirm race (Review 2026-09-12, Finding 2)', () => {
+  it('rejects the losing concurrent confirm with 409 agent.proposal_not_active and never calls createEntry for it', async () => {
     const query = vi
       .fn()
+      // Перший (виграшний) confirm: читання бачить 'active', guarded UPDATE
+      // справді зачіпає рядок, аудит-подія пишеться.
       .mockResolvedValueOnce({ rows: [proposalRow({ status: 'active' })] })
-      .mockResolvedValueOnce({ rows: [proposalRow({ status: 'confirmed' })] });
+      .mockResolvedValueOnce({ rows: [proposalRow({ status: 'confirmed' })] })
+      .mockResolvedValueOnce({ rows: [{ id: 'audit-1' }] })
+      // Другий (програшний) confirm: його ВЛАСНЕ читання теж застає 'active'
+      // -- симулюємо, що обидва запити стартували майже одночасно, до того,
+      // як перший встиг записати -- але коли доходить до ЙОГО guarded UPDATE,
+      // рядок у "базі" вже 'confirmed' (перший устиг раніше), тож ця UPDATE
+      // не зачіпає жодного рядка.
+      .mockResolvedValueOnce({ rows: [proposalRow({ status: 'active' })] })
+      .mockResolvedValueOnce({ rows: [] });
     const db: Db = { query };
     (createEntry as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'entry-1', status: 'confirmed' });
 
-    await confirmProposal(db, {
-      userId: USER_ID,
-      proposalId: PROPOSAL_ID,
-      recordedAt: 1_000,
-      sourceDeviceId: 'device-a',
+    const first = await confirmProposal(db, { userId: USER_ID, proposalId: PROPOSAL_ID });
+    expect(first.status).toBe('confirmed');
+
+    await expect(confirmProposal(db, { userId: USER_ID, proposalId: PROPOSAL_ID })).rejects.toMatchObject({
+      code: 'agent.proposal_not_active',
+      httpStatus: 409,
     });
 
-    expect(createEntry).toHaveBeenCalledWith(
-      db,
-      expect.objectContaining({ sourceDeviceId: 'device-a' })
-    );
+    // Уся суть виправлення: лише ВИГРАШНИЙ confirm доходить до createEntry --
+    // програшний відхиляється SQL-предикатом (`confirmActiveProposal`'s
+    // `AND status = 'active'`) РАНІШЕ, ніж встигає записати другий запис у
+    // картку для тієї самої пропозиції.
+    expect(createEntry).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(5);
   });
 });
 
