@@ -14,7 +14,7 @@
 | T7 | Create activity_report table | migration | TBD | S | T1 | done |
 | T8 | Domain: proposal lifecycle model | domain | TBD | M | — | done |
 | T9 | Domain: imperative rule model + guard-check enforcement | domain | TBD | M | — | done |
-| T10 | Domain: hybrid memory model | domain | TBD | M | — | todo |
+| T10 | Domain: hybrid memory model | domain | TBD | M | — | done |
 | T11 | Domain (agent-worker): activity-report model | domain | TBD | S | — | todo |
 | T12 | Infra: Claude API client | infra | TBD | M | — | todo |
 | T13 | Infra: Postgres repo | infra | TBD | L | T2, T3, T4, T5, T6 | todo |
