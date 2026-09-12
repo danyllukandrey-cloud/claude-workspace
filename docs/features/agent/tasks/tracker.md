@@ -25,7 +25,7 @@
 | T18 | App: ask-agent orchestration | app | TBD | M | T9, T12 | done |
 | T19 | App (agent-worker): generate-report use-case | app | TBD | M | T11, T15 | todo |
 | T20 | Ports: GET/POST /messages handlers | ports | TBD | M | T16 | todo |
-| T21 | Ports: proposal confirm handlers | ports | TBD | S | T17 | todo |
+| T21 | Ports: proposal confirm handlers | ports | TBD | S | T17 | done |
 | T22 | Ports: GET/POST /rules handlers | ports | TBD | S | T9, T13 | done |
 | T23 | Ports: GET /reports handler | ports | TBD | S | T13 | done |
 | T24 | Ports: GET /onboarding handler | ports | TBD | S | T13 | done |
