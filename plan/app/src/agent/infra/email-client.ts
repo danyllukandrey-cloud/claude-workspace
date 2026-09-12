@@ -29,6 +29,16 @@ export interface EmailDeliveryConfirmation {
  */
 export type EmailTransport = (email: OutboundEmail) => Promise<{ messageId: string }>;
 
+// Security fix (code review): transport-помилка (SMTP/OAuth) раніше йшла в
+// AppError.message сирою -- реальний текст такої помилки рутинно містить URL
+// запиту, токени чи деталі акаунта, а middleware помилок відлунює
+// AppError.message назад у тілі HTTP-відповіді (спільна межа з клієнтом, не
+// службовий лог). Тому нижче єдине СТАТИЧНЕ повідомлення, той самий підхід,
+// що вже в `agent/infra/claude-client.ts` (`'Claude API недоступний'` замість
+// тексту мережевої помилки) -- сирий `error`/`error.message` більше нікуди не
+// потрапляє.
+const SEND_FAILED_MESSAGE = 'Не вдалося надіслати лист';
+
 /**
  * Надсилає лист через інжектований transport (AC-20/AC-20b: звіт розробнику
  * про технічну помилку -- агентом виявлену чи переказану користувачем).
@@ -43,12 +53,8 @@ export async function sendEmail(transport: EmailTransport, email: OutboundEmail)
   let providerResult: { messageId: string };
   try {
     providerResult = await transport(email);
-  } catch (error) {
-    throw new AppError('email.send_failed', toMessage(error), 502);
+  } catch {
+    throw new AppError('email.send_failed', SEND_FAILED_MESSAGE, 502);
   }
   return { messageId: providerResult.messageId, acceptedAt: new Date() };
-}
-
-function toMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Не вдалося надіслати лист -- провайдер відхилив запит';
 }

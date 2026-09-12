@@ -43,6 +43,30 @@ describe('sendEmail', () => {
     expect((caught as AppError).httpStatus).toBe(502);
   });
 
+  // Security fix: a real SMTP/OAuth transport error routinely embeds request
+  // URLs, tokens or account details. The error middleware echoes AppError.message
+  // back verbatim in the HTTP response body (spec.md AC-20/AC-20b context), so
+  // that message must be a fixed, sanitized string -- never the transport's raw text.
+  it('не пропускає сирий текст помилки транспорту (URL/токени/деталі акаунта) у AppError.message', async () => {
+    const failingTransport: EmailTransport = async () => {
+      throw new Error('SMTP 535 authentication failed for user=dev@example.com token=abc123 at smtp://mail.example.test:587');
+    };
+
+    let caught: unknown;
+    try {
+      await sendEmail(failingTransport, email);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(AppError);
+    const message = (caught as AppError).message;
+    expect(message).not.toMatch(/token=abc123/);
+    expect(message).not.toMatch(/dev@example\.com/);
+    expect(message).not.toMatch(/smtp:\/\//);
+    expect(message.length).toBeGreaterThan(0);
+  });
+
   // Той самий контракт, коли заглушка відхиляє не-Error значенням (напр. рядок) --
   // AppError.message не має ламатись на цьому, а лишається зрозумілим дефолтом.
   it('дає зрозумілий дефолтний message, коли заглушка відхиляє не-Error значенням', async () => {
