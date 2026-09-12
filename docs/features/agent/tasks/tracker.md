@@ -43,7 +43,7 @@
 | T36 | Domain: developer-report classification | domain | TBD | S | — | done |
 | T37 | Infra: outbound email client | infra | TBD | M | — | done |
 | T38 | Infra (agent-worker): external resource writer | infra | TBD | M | — | done |
-| T39 | App: deleteAccount use-case | app | TBD | M | T34, T13 | todo |
+| T39 | App: deleteAccount use-case | app | TBD | M | T34, T13 | done |
 | T40 | App: sync-resource CRUD use-cases | app | TBD | S | T35, T13 | todo |
 | T41 | App (agent-worker): daily-sync use-case | app | TBD | M | T35, T38 | todo |
 | T42 | App: developer-report use-case | app | TBD | S | T36, T37 | todo |
