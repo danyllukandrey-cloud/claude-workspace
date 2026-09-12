@@ -22,6 +22,7 @@ import { createCard as createCardUseCase } from '../app/create-card';
 import { getCardWithProgress } from '../app/get-card';
 import type { CallClaude } from '../app/get-card';
 import { updateCard as updateCardUseCase } from '../app/update-card';
+import type { RecordCardRenameEvent } from '../app/update-card';
 import { archiveCard as archiveCardUseCase } from '../app/archive-card';
 import type { CloseStructurePositionForCard } from '../app/archive-card';
 import { restoreCard as restoreCardUseCase } from '../app/restore-card';
@@ -177,8 +178,19 @@ export interface UpdateCardBody {
  * use-case (undefined != "скинути на null", `description: null` -- явне
  * очищення). 404 card.not_found і 422 card.description_required кидає
  * use-case/домен самі -- пропускаємо як є.
+ *
+ * recordRenameEvent (D-103/D-115) -- опційна ін'єкція, той самий підхід, що
+ * archiveCard/closeStructurePosition: без неї (поки composition root не
+ * підключив) use-case просто не пише подію в Літопис Структури. Порт лише
+ * прокидає параметр далі, сам нічого про Структуру не знає (ADR-0004).
  */
-export async function updateCard(db: Db, ownerUserId: string, cardId: string, body: UpdateCardBody): Promise<CardDto> {
+export async function updateCard(
+  db: Db,
+  ownerUserId: string,
+  cardId: string,
+  body: UpdateCardBody,
+  recordRenameEvent?: RecordCardRenameEvent
+): Promise<CardDto> {
   const input: { ownerUserId: string; cardId: string; name?: string; description?: string | null; markFilled?: boolean } = {
     ownerUserId,
     cardId,
@@ -193,7 +205,7 @@ export async function updateCard(db: Db, ownerUserId: string, cardId: string, bo
     input.markFilled = body.markFilled;
   }
 
-  const record = await updateCardUseCase(db, input);
+  const record = await updateCardUseCase(db, input, recordRenameEvent);
   return toCardDto(record);
 }
 

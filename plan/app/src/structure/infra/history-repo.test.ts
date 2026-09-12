@@ -16,7 +16,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import type { Db } from './postgres-repo';
-import { insertHistoryEvent, findHistoryEventsAsOf } from './history-repo';
+import { insertHistoryEvent, findHistoryEventsAsOf, recordCardRenameEvent } from './history-repo';
 
 function rawHistoryEventRow(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -106,5 +106,57 @@ describe('findHistoryEventsAsOf -- AC-07 (gap trend over time reads the history 
     await expect(
       findHistoryEventsAsOf(db, 'structure-1', new Date('2020-01-01T00:00:00Z'))
     ).resolves.toEqual([]);
+  });
+});
+
+describe('recordCardRenameEvent -- AC-15/D-115 (rename wired via life-area-card update-card, ISS-105)', () => {
+  function rawStructureRow(overrides: Partial<Record<string, unknown>> = {}) {
+    return {
+      id: 'structure-1',
+      owner_user_id: 'owner-1',
+      declaration: null,
+      layout_mode: null,
+      logic_variant: null,
+      created_at: new Date('2026-01-01T00:00:00Z'),
+      updated_at: new Date('2026-01-01T00:00:00Z'),
+      ...overrides,
+    };
+  }
+
+  /** Маршрутизує за текстом SQL -- той самий підхід, що update-card.test.ts's fakeDb. */
+  function fakeDb(opts: { structure: ReturnType<typeof rawStructureRow> | null }): Db {
+    const query = vi.fn(async (text: string, _params?: unknown[]) => {
+      if (text.includes('FROM structure WHERE owner_user_id')) {
+        return { rows: opts.structure ? [opts.structure] : [] };
+      }
+      if (text.includes('INSERT INTO structure_history_event')) {
+        return { rows: [rawHistoryEventRow({ event_type: 'renamed', detail: 'Тіло і розум' })] };
+      }
+      throw new Error(`Непередбачений запит у тесті: ${text}`);
+    });
+    return { query: query as unknown as Db['query'] };
+  }
+
+  it("looks up the owner's structure and writes a 'renamed' event with the new name as detail", async () => {
+    const db = fakeDb({ structure: rawStructureRow() });
+
+    await recordCardRenameEvent(db, 'owner-1', 'card-1', 'Тіло і розум');
+
+    const calls = (db.query as ReturnType<typeof vi.fn>).mock.calls as [string, unknown[]][];
+    const insertCall = calls.find(([text]) => text.includes('INSERT INTO structure_history_event'));
+    expect(insertCall).toBeDefined();
+    const [, params] = insertCall as [string, unknown[]];
+    expect(params).toEqual([expect.any(String), 'structure-1', 'card-1', 'renamed', 'Тіло і розум']);
+  });
+
+  // Власник без Структури ще немає (перший вхід, D-102/ports/structure-handlers.ts
+  // лениво її провіснить) -- той самий "поки не підключено" патерн, що
+  // closeActiveLayoutPositionForCard: тихо нічого не пишемо, не помилка.
+  it('does nothing when the owner has no structure yet -- not an error', async () => {
+    const db = fakeDb({ structure: null });
+
+    await expect(recordCardRenameEvent(db, 'owner-1', 'card-1', 'Тіло і розум')).resolves.toBeUndefined();
+    const calls = (db.query as ReturnType<typeof vi.fn>).mock.calls as [string, unknown[]][];
+    expect(calls.some(([text]) => text.includes('INSERT INTO structure_history_event'))).toBe(false);
   });
 });

@@ -138,4 +138,60 @@ describe('updateCard', () => {
       AppError
     );
   });
+
+  // AC-15/D-103/D-115 (закриває ISS-105): справжнє перейменування (нова назва
+  // відрізняється від поточної) викликає інжектований recordRenameEvent з
+  // (db, ownerUserId, cardId, нова назва) -- той самий шаблон, що
+  // archive-card.ts's closeStructurePosition.
+  it('calls recordRenameEvent with the new name when the name actually changes', async () => {
+    const db = fakeDb({
+      current: cardRow({ name: 'Здоровʼя' }),
+      updated: cardRow({ name: 'Тіло і розум' }),
+    });
+    const recordRenameEvent = vi.fn().mockResolvedValue(undefined);
+
+    await updateCard(db, { ownerUserId: OWNER, cardId: CARD_ID, name: 'Тіло і розум' }, recordRenameEvent);
+
+    expect(recordRenameEvent).toHaveBeenCalledTimes(1);
+    expect(recordRenameEvent).toHaveBeenCalledWith(db, OWNER, CARD_ID, 'Тіло і розум');
+  });
+
+  // Той самий рядок, що вже збережений -- не перейменування, подія не пишеться.
+  it('does not call recordRenameEvent when the passed name matches the current name', async () => {
+    const db = fakeDb({
+      current: cardRow({ name: 'Здоровʼя' }),
+      updated: cardRow({ name: 'Здоровʼя' }),
+    });
+    const recordRenameEvent = vi.fn().mockResolvedValue(undefined);
+
+    await updateCard(db, { ownerUserId: OWNER, cardId: CARD_ID, name: 'Здоровʼя' }, recordRenameEvent);
+
+    expect(recordRenameEvent).not.toHaveBeenCalled();
+  });
+
+  // markFilled-лише виклик (поле `name` взагалі не передане) -- не перейменування.
+  it('does not call recordRenameEvent when `name` is not part of the call', async () => {
+    const db = fakeDb({
+      current: cardRow({ description: 'Хочу бути активнішим' }),
+      updated: cardRow({ description: 'Хочу бути активнішим' }),
+    });
+    const recordRenameEvent = vi.fn().mockResolvedValue(undefined);
+
+    await updateCard(db, { ownerUserId: OWNER, cardId: CARD_ID, markFilled: true }, recordRenameEvent);
+
+    expect(recordRenameEvent).not.toHaveBeenCalled();
+  });
+
+  // Без переданого recordRenameEvent (composition root ще не підключив
+  // структуру, чи тест) -- use-case просто не робить цей крок, не падає.
+  it('does not fail when recordRenameEvent is not provided, even on a real rename', async () => {
+    const db = fakeDb({
+      current: cardRow({ name: 'Здоровʼя' }),
+      updated: cardRow({ name: 'Тіло і розум' }),
+    });
+
+    await expect(
+      updateCard(db, { ownerUserId: OWNER, cardId: CARD_ID, name: 'Тіло і розум' })
+    ).resolves.toMatchObject({ name: 'Тіло і розум' });
+  });
 });

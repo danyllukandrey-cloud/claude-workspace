@@ -36,6 +36,7 @@ import {
   insertLayoutPosition,
   listActiveLayoutPositionsByOwner,
 } from '../src/structure/infra/postgres-repo';
+import { recordCardRenameEvent } from '../src/structure/infra/history-repo';
 import { defaultPositionForNewCard } from '../src/structure/domain/layout';
 // Review 2026-09-11 (MUST-FIX 1): порти Структури існували й були покриті
 // юніт-тестами, але composition root їх НЕ монтував -- кожен шлях
@@ -276,8 +277,12 @@ export function createApp(deps: AppDeps): express.Express {
       // markFilled:true, updateCard пише і сам патч, і insertLifecycleEvent
       // ('filled') -- без транзакції збій другого запису лишав би Опис уже
       // збереженим, попри те, що подія "заповнена" ніколи не записалась.
+      //
+      // D-103/D-115 (ISS-105): recordCardRenameEvent реально переданий --
+      // ЄДИНЕ місце, де life-area-card і structure зустрічаються (ADR-0004),
+      // той самий приклад, що closeActiveLayoutPositionForCard для DELETE.
       const card = await deps.withTransaction((txDb) =>
-        cardHandlers.updateCard(txDb, ownerUserId(req), param(req, 'cardId'), req.body)
+        cardHandlers.updateCard(txDb, ownerUserId(req), param(req, 'cardId'), req.body, recordCardRenameEvent)
       );
       res.status(200).json(card);
     })

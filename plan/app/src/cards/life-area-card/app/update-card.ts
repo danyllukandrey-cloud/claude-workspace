@@ -19,6 +19,14 @@
 // їхній null на AppError('card.not_found', ..., 404), як і задекларовано в
 // shared/errors/index.ts (ADR-0006 §Обґрунтування: "app-шар кидає той самий
 // AppError('card.not_found', 404)").
+//
+// Синхронізація з Літописом Структури (AC-15, D-103/D-115, закриває ISS-105):
+// перейменування картки -- та сама подія 'renamed', той самий DI-шаблон, що
+// archive-card.ts's closeStructurePosition. life-area-card НЕ імпортує нічого
+// з structure/ напряму (правило залежностей, ADR-0004) -- можливість
+// інжектується ззовні. Без переданого recordRenameEvent (наприклад, у тестах
+// чи поки composition root не готовий) use-case просто не робить цей крок --
+// не помилка, лише "Структура поки не підключена".
 
 import { markFilled } from '../domain/card';
 import type { Card } from '../domain/card';
@@ -37,6 +45,9 @@ export interface UpdateCardInput {
   markFilled?: boolean;
 }
 
+/** Сигнатура збігається з structure/infra/history-repo.ts recordCardRenameEvent. */
+export type RecordCardRenameEvent = (db: Db, ownerUserId: string, cardId: string, newName: string) => Promise<void>;
+
 /**
  * Часткове оновлення картки: name/description незалежно одне від одного,
  * і опційний перехід у "filled" (AC-03).
@@ -46,7 +57,11 @@ export interface UpdateCardInput {
  * в базу (domain/card.ts markFilled кидає CardValidationError раніше, ніж ми
  * встигаємо викликати repo.updateCard).
  */
-export async function updateCard(db: Db, input: UpdateCardInput): Promise<CardRecord> {
+export async function updateCard(
+  db: Db,
+  input: UpdateCardInput,
+  recordRenameEvent?: RecordCardRenameEvent
+): Promise<CardRecord> {
   const current = await findCardById(db, input.ownerUserId, input.cardId);
   if (!current) {
     throw new AppError('card.not_found', 'Картку не знайдено', 404);
@@ -87,6 +102,14 @@ export async function updateCard(db: Db, input: UpdateCardInput): Promise<CardRe
 
   if (input.markFilled) {
     await insertLifecycleEvent(db, { id: crypto.randomUUID(), cardId: input.cardId, transition: 'filled' });
+  }
+
+  // AC-15/D-115: лише СПРАВЖНЄ перейменування (нова назва відрізняється від
+  // поточної) пише подію в Літопис Структури -- виклик з тим самим іменем чи
+  // без поля `name` взагалі (наприклад, markFilled-лише виклик) не рахується
+  // перейменуванням.
+  if (input.name !== undefined && input.name !== current.name && recordRenameEvent) {
+    await recordRenameEvent(db, input.ownerUserId, input.cardId, input.name);
   }
 
   return updated;

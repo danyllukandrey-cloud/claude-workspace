@@ -4,8 +4,10 @@
 // й закриття картки AC-12). Same DI (`Db`) і стиль (RETURNING на write,
 // camelCase-мапінг на межі), що й ./postgres-repo.ts.
 
+import { randomUUID } from 'node:crypto';
 import type { QueryResultRow } from 'pg';
 import type { Db } from './postgres-repo';
+import { findStructureByOwner } from './postgres-repo';
 
 export type HistoryEventType = 'renamed' | 'moved' | 'closed';
 
@@ -70,4 +72,41 @@ export async function findHistoryEventsAsOf(db: Db, structureId: string, asOf: D
     [structureId, asOf]
   );
   return rows.map(toHistoryEventRecord);
+}
+
+/**
+ * Пише подію 'renamed' у Літопис Структури (AC-15, D-115, закриває ISS-105) --
+ * той самий механізм, що moved (structure/app/move-card.ts) і closed
+ * (structure/app/close-card.ts), лише виклик приходить ЗЗОВНІ, з
+ * life-area-card's updateCard (D-103's DI-шаблон: life-area-card НЕ імпортує
+ * нічого з structure/ напряму, ADR-0004 -- composition root інжектує цю
+ * функцію як опційний колаборатор, сигнатура нижче узгоджена з
+ * life-area-card/app/update-card.ts's RecordCardRenameEvent).
+ *
+ * Структура ідентифікується через ownerUserId, не через уже наявну позицію
+ * картки в розкладці -- перейменування пишеться в Літопис незалежно від того,
+ * чи картку взагалі колись розкладали (на відміну від moved/closed, які
+ * завжди мають активну позицію за визначенням дії). Власника без Структури
+ * ще немає (перший вхід, вона провіситься лениво на першому GET /structure,
+ * ports/structure-handlers.ts) -- тоді тихо нічого не пишемо, той самий
+ * "поки не підключено" патерн, що closeActiveLayoutPositionForCard.
+ */
+export async function recordCardRenameEvent(
+  db: Db,
+  ownerUserId: string,
+  cardId: string,
+  newName: string
+): Promise<void> {
+  const structure = await findStructureByOwner(db, ownerUserId);
+  if (!structure) {
+    return;
+  }
+
+  await insertHistoryEvent(db, {
+    id: randomUUID(),
+    structureId: structure.id,
+    cardId,
+    eventType: 'renamed',
+    detail: newName,
+  });
 }
