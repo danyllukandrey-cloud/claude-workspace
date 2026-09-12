@@ -55,16 +55,27 @@ describe('writeExternalResource -- AC-18b access error', () => {
     if (!result.ok) {
       expect(result.code).toBe('unreachable');
       expect(result.message.length).toBeGreaterThan(0);
+      // Security fix: the raw transport error text (which routinely embeds
+      // request URLs/tokens/account details) must never surface -- only a
+      // fixed, sanitized, per-category message.
+      expect(result.message).not.toMatch(/ECONNREFUSED/);
     }
 
     const [sql, params] = query.mock.calls[0];
     expect(sql).toMatch(/status/);
     expect(sql).toMatch(/last_error/);
     expect(params).toContain(RESOURCE.id);
+    // The value written into sync_resource.last_error (rendered verbatim in
+    // the AccountScreen Banner) must be the sanitized message, never the raw
+    // provider error text.
+    expect(params[0]).toBe(result.ok ? undefined : result.message);
+    expect(params[0]).not.toMatch(/ECONNREFUSED/);
   });
 
   it('a revoked/lost access resource (HTTP 403) surfaces as a typed "access_revoked" error -- never throws', async () => {
-    const deniedError = Object.assign(new Error('Google API: permission denied'), { status: 403 });
+    const deniedError = Object.assign(new Error('Google API: permission denied for user@example.com token=abc123'), {
+      status: 403,
+    });
     const writeToResource = vi.fn().mockRejectedValue(deniedError);
     const query = vi.fn().mockResolvedValue({ rows: [] });
     const db: Db = { query };
@@ -74,11 +85,18 @@ describe('writeExternalResource -- AC-18b access error', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.code).toBe('access_revoked');
+      expect(result.message).not.toMatch(/token=abc123/);
+      expect(result.message).not.toMatch(/user@example\.com/);
     }
+
+    const [, params] = query.mock.calls[0];
+    expect(params[0]).not.toMatch(/token=abc123/);
   });
 
   it('an unexpected HTTP failure (e.g. 500) surfaces as a typed "unknown" error -- never throws', async () => {
-    const serverError = Object.assign(new Error('Google API: internal error'), { status: 500 });
+    const serverError = Object.assign(new Error('Google API: internal error at https://docs.googleapis.com/secret-path'), {
+      status: 500,
+    });
     const writeToResource = vi.fn().mockRejectedValue(serverError);
     const query = vi.fn().mockResolvedValue({ rows: [] });
     const db: Db = { query };
@@ -88,6 +106,7 @@ describe('writeExternalResource -- AC-18b access error', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.code).toBe('unknown');
+      expect(result.message).not.toMatch(/secret-path/);
     }
   });
 

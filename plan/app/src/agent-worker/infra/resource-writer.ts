@@ -102,18 +102,27 @@ export async function writeExternalResource(
  * відсутність статусу означає мережевий збій (DNS, timeout, connection
  * refused) -- ресурс просто недоступний; будь-який інший статус -- невідома
  * помилка на боці провайдера, не привід мовчки все ж вважати запис успішним.
+ *
+ * Security fix (code review): раніше сюди потрапляв сирий `err.message` від
+ * стороннього клієнта -- OAuth/HTTP-помилка провайдера рутинно містить URL
+ * запиту, токени чи деталі акаунта. Це значення далі пишеться у
+ * `sync_resource.last_error` і рендериться в банері на AccountScreen (SCR-04)
+ * -- видиме користувачу поле, не службовий лог. Тому нижче лише СТАТИЧНЕ
+ * повідомлення на категорію, той самий підхід, що вже в
+ * `agent/infra/claude-client.ts` (`'Claude API недоступний'` замість тексту
+ * мережевої помилки) -- сире `err`/`err.message` не потрапляє в жодне з
+ * повернених значень.
  */
 function classifyWriteError(err: unknown): { code: ResourceWriteErrorCode; message: string } {
-  const message = err instanceof Error ? err.message : String(err);
   const status = hasHttpStatus(err) ? err.status : undefined;
 
   if (status === 401 || status === 403 || status === 404) {
-    return { code: 'access_revoked', message };
+    return { code: 'access_revoked', message: 'Доступ до ресурсу відкликано або ресурс видалено' };
   }
   if (status !== undefined) {
-    return { code: 'unknown', message };
+    return { code: 'unknown', message: 'Не вдалося записати у зовнішній ресурс' };
   }
-  return { code: 'unreachable', message };
+  return { code: 'unreachable', message: 'Ресурс тимчасово недоступний' };
 }
 
 function hasHttpStatus(err: unknown): err is { status: number } {
