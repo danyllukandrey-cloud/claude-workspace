@@ -7,7 +7,7 @@ acs: ["AC-11"]
 files_hint: ["plan/app/src/agent/ui/ReportsScreen.tsx"]
 owner: "TBD"
 estimate: "M"
-status: "todo"
+status: "done"
 ---
 
 # T28 — UI: SCR-03 Звіти активності screen

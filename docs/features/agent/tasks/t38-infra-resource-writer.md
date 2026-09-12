@@ -7,7 +7,7 @@ acs: ["AC-18", "AC-18b"]
 files_hint: ["plan/app/src/agent-worker/infra/resource-writer.ts"]
 owner: "TBD"
 estimate: "M"
-status: "todo"
+status: "done"
 ---
 
 # T38 — Infra (agent-worker): external resource writer
@@ -22,6 +22,6 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Integration test проти заглушки: успішний запис оновлює `last_synced_at`
-- [ ] Integration test проти заглушки: недоступний/відкликаний ресурс повертає типізовану помилку, не кидає необроблений виняток
-- [ ] lint + vet clean
+- [x] Integration test проти заглушки: успішний запис оновлює `last_synced_at`
+- [x] Integration test проти заглушки: недоступний/відкликаний ресурс повертає типізовану помилку, не кидає необроблений виняток
+- [x] lint + vet clean

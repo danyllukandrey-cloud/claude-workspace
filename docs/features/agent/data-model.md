@@ -203,8 +203,8 @@ erDiagram
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
 | `id` | UUID | PK, app-generated | |
-| `user_id` | UUID | NOT NULL, FK → `app_user(id)` ON DELETE CASCADE | |
-| `event_type` | TEXT | NOT NULL, CHECK (`event_type` IN ('proposal_created','proposal_updated','proposal_confirmed','proposal_dropped','guard_passed','guard_failed','memory_fact_edited','memory_fact_deleted','account_deleted','resource_sync_failed')) | §8 Crosscutting Events — за зразком `card_lifecycle_event`, але окрема таблиця (інші сутності). `account_deleted`/`resource_sync_failed` додано 2026-08-29 (AC-17/AC-18b, D-89) — `account_deleted` пишеться **до** видалення `app_user` (інакше сам аудит-рядок каскадно зникне) |
+| `user_id` | UUID | NULL, FK → `app_user(id)` ON DELETE SET NULL | **Змінено 2026-09-12 (review):** був `NOT NULL`/`ON DELETE CASCADE` — при видаленні акаунта `CASCADE` стирав щойно записаний `account_deleted`-рядок У ТІЙ САМІЙ транзакції, тож заявлений порядок "аудит до видалення" ніколи не досягав мети (той самий клас, що вже вирішено для `developer_report.user_id`: "аудит-слід має пережити подію, яку він фіксує") |
+| `event_type` | TEXT | NOT NULL, CHECK (`event_type` IN ('proposal_created','proposal_updated','proposal_confirmed','proposal_dropped','guard_passed','guard_failed','memory_fact_edited','memory_fact_deleted','account_deleted','resource_sync_failed')) | §8 Crosscutting Events — за зразком `card_lifecycle_event`, але окрема таблиця (інші сутності). `account_deleted`/`resource_sync_failed` додано 2026-08-29 (AC-17/AC-18b, D-89) |
 | `subject_type` | TEXT | NOT NULL, CHECK (`subject_type` IN ('proposal','guard','memory_fact','account','sync_resource')) | `account`/`sync_resource` додано 2026-08-29 (D-89) для нових `event_type` |
 | `subject_id` | UUID | NULL | поліморфне посилання (на `agent_proposal.id` або `long_term_memory_fact.id`) — **без DB-рівня FK навмисно**, дві можливі цілі; цілісність на рівні коду `<!-- TBD: перевірка коректності subject_id — домен-рівень, не DB -->` |
 | `detail` | TEXT | NULL | вільний текст (наприклад, яке правило порушено/дотримано) |
@@ -212,7 +212,7 @@ erDiagram
 
 **Aggregate root:** root (append-only лог, ніколи не редагується/видаляється).
 **Access patterns:** аудит-слід користувача хронологічно (QG-1 §10 SAD — перевірка «немає запису без відповідної події підтвердження») → індекс на `(user_id, occurred_at DESC)`; пошук за предметом → індекс на `(subject_type, subject_id)`.
-**Constraints:** FK → `app_user(id)`; CHECK на `event_type`/`subject_type`.
+**Constraints:** FK → `app_user(id)` ON DELETE SET NULL; CHECK на `event_type`/`subject_type`.
 
 ### `activity_report`
 

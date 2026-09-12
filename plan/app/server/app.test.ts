@@ -806,3 +806,529 @@ describe('composition root -- POST /api/v1/cards дає новій картці 
     }
   });
 });
+
+// --- Агент (фіча `agent`, T29) ----------------------------------------------
+//
+// Той самий урок і той самий "пінячий" рівень, що описка Структури вище
+// (MUST-FIX 1): ports/*.ts для агента були написані й покриті юніт-тестами,
+// але composition root мусить РЕАЛЬНО їх монтувати -- ці тести самоперевірку
+// проходять через справжній HTTP + справжній auth-middleware для КОЖНОГО з 9
+// шляхів контракту (contracts/openapi.yaml), не вибірково.
+
+const PROPOSAL_ROW = {
+  id: 'proposal-1',
+  user_id: 'user-42',
+  card_id: 'card-1',
+  metric_block_id: 'block-1',
+  status: 'active',
+  source_type: 'text',
+  raw_input: 'пробіг 5 км',
+  proposed_amount: '5',
+  proposed_summary: 'Спорт: 5 км',
+  created_at: new Date('2026-01-01T00:00:00Z'),
+  updated_at: new Date('2026-01-01T00:00:00Z'),
+};
+
+const RULE_ROW = {
+  id: 'rule-1',
+  user_id: 'user-42',
+  scope_card_id: null,
+  category: 'reminder',
+  rule_text: null,
+  created_at: new Date('2026-01-01T00:00:00Z'),
+  updated_at: new Date('2026-01-01T00:00:00Z'),
+};
+
+const REPORT_ROW = {
+  id: 'report-1',
+  period_type: 'weekly',
+  period_start: new Date('2026-01-01T00:00:00Z'),
+  period_end: new Date('2026-01-07T00:00:00Z'),
+  content: 'Підсумок тижня',
+  status: 'generated',
+  generated_at: new Date('2026-01-08T00:00:00Z'),
+};
+
+const SYNC_RESOURCE_ROW = {
+  id: 'resource-1',
+  user_id: 'user-42',
+  url: 'https://docs.google.com/document/d/abc',
+  status: 'active',
+  last_synced_at: null,
+  last_error: null,
+  created_at: new Date('2026-01-01T00:00:00Z'),
+};
+
+const CHAT_MESSAGE_ROW = {
+  id: 'message-1',
+  user_id: 'user-42',
+  role: 'agent',
+  content: 'Привіт!',
+  session_date: '2026-01-01',
+  created_at: new Date('2026-01-01T00:00:00Z'),
+};
+
+/**
+ * Підроблена база для маршрутів агента -- той самий "маршрутизувати за
+ * текстом SQL" стиль, що structureDb вище. Мокається лише межа `db.query`;
+ * use-case'и й порти виконуються справжні.
+ */
+function agentDb(
+  opts: {
+    activeProposal?: typeof PROPOSAL_ROW | null;
+    rules?: (typeof RULE_ROW)[];
+    reports?: (typeof REPORT_ROW)[];
+    syncResources?: (typeof SYNC_RESOURCE_ROW)[];
+    hasAnyChatMessage?: boolean;
+    activeCards?: unknown[];
+  } = {}
+) {
+  return vi.fn(async (text: string) => {
+    const sql = text.trim().toUpperCase();
+
+    if (text.includes('chat_message')) {
+      if (sql.startsWith('SELECT COUNT')) return { rows: [{ count: '0' }] }; // rate limit
+      // AC-13 race fix (2026-09-12): getOnboardingStatus's insertWelcomeMessageIfFirst
+      // is now ONE atomic `INSERT ... SELECT ... WHERE NOT EXISTS` query -- no
+      // longer a separate hasAnyChatMessage SELECT. `hasAnyChatMessage: true` here
+      // simulates "already onboarded" (the WHERE NOT EXISTS finds a row -> 0 rows back).
+      if (sql.includes('WHERE NOT EXISTS')) {
+        return { rows: opts.hasAnyChatMessage ? [] : [CHAT_MESSAGE_ROW] };
+      }
+      if (sql.startsWith('INSERT')) return { rows: [CHAT_MESSAGE_ROW] };
+      return { rows: [] }; // listMessagesForSession / findAllMessagesByUser
+    }
+    if (text.includes('agent_proposal')) {
+      if (sql.startsWith('INSERT')) return { rows: [PROPOSAL_ROW] };
+      return { rows: opts.activeProposal === null ? [] : [opts.activeProposal ?? PROPOSAL_ROW] };
+    }
+    if (text.includes('imperative_rule')) {
+      if (sql.startsWith('INSERT')) return { rows: [RULE_ROW] };
+      return { rows: opts.rules ?? [] };
+    }
+    if (text.includes('activity_report')) {
+      return { rows: opts.reports ?? [] };
+    }
+    if (text.includes('sync_resource')) {
+      if (sql.startsWith('INSERT')) return { rows: [SYNC_RESOURCE_ROW] };
+      if (sql.startsWith('DELETE')) return { rows: [SYNC_RESOURCE_ROW] };
+      return { rows: opts.syncResources ?? [] };
+    }
+    if (text.includes('agent_audit_event')) {
+      return { rows: [{ id: 'audit-1', user_id: 'user-42', event_type: 'account_deleted', subject_type: 'account', subject_id: null, detail: null, occurred_at: new Date() }] };
+    }
+    if (text.includes('DELETE FROM app_user')) {
+      return { rows: [] };
+    }
+    // life-area-card's listCards (handleMessage's AC-05 card catalog) -- own table, own tests elsewhere.
+    if (text.includes('FROM card')) {
+      return { rows: opts.activeCards ?? [] };
+    }
+
+    throw new Error(`Непередбачений запит у тесті (agentDb): ${text}`);
+  });
+}
+
+describe('composition root -- маршрути агента змонтовані (T29, contracts/openapi.yaml)', () => {
+  // Self-check (уникнути МУST-FIX 1 знову): КОЖЕН з 9 шляхів контракту,
+  // кожен зареєстрований метод -- 401 без токена доводить "змонтовано і
+  // всередині auth-межі", не 404 "не існує".
+  const AGENT_ROUTES: Array<{ method: 'GET' | 'POST' | 'DELETE'; path: string }> = [
+    { method: 'GET', path: '/api/v1/messages' },
+    { method: 'POST', path: '/api/v1/messages' },
+    { method: 'GET', path: '/api/v1/proposals/active' },
+    { method: 'POST', path: '/api/v1/proposals/proposal-1/confirm' },
+    { method: 'GET', path: '/api/v1/rules' },
+    { method: 'POST', path: '/api/v1/rules' },
+    { method: 'GET', path: '/api/v1/reports' },
+    { method: 'GET', path: '/api/v1/onboarding' },
+    { method: 'DELETE', path: '/api/v1/account' },
+    { method: 'GET', path: '/api/v1/sync-resources' },
+    { method: 'POST', path: '/api/v1/sync-resources' },
+    { method: 'DELETE', path: '/api/v1/sync-resources/resource-1' },
+  ];
+
+  it.each(AGENT_ROUTES)('$method $path without a token is 401 (mounted, not 404)', async ({ method, path }) => {
+    const query = agentDb();
+    const verifyJwt = vi.fn();
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}${path}`, { method });
+      expect(res.status).toBe(401);
+      expect(await res.json()).toMatchObject(ERROR_SHAPE);
+      expect(verifyJwt).not.toHaveBeenCalled();
+    } finally {
+      server.close();
+    }
+  });
+
+  it('GET /api/v1/onboarding creates the one-time welcome chat_message for a brand-new user (AC-13)', async () => {
+    const query = agentDb({ hasAnyChatMessage: false });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/onboarding`, { headers: AUTHED });
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(body).toMatchObject({ welcomeShown: true, message: { id: 'message-1', role: 'agent' } });
+    } finally {
+      server.close();
+    }
+  });
+
+  it('GET /api/v1/rules returns the owner’s global rules (200)', async () => {
+    const query = agentDb({ rules: [RULE_ROW] });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/rules`, { headers: AUTHED });
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(body.items).toEqual([expect.objectContaining({ id: 'rule-1', category: 'reminder' })]);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('POST /api/v1/rules creates a rule (201)', async () => {
+    const query = agentDb({ rules: [] });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/rules`, {
+        method: 'POST',
+        headers: AUTHED_JSON,
+        body: JSON.stringify({ category: 'reminder', ruleText: null, scopeCardId: null }),
+      });
+      const body = await res.json();
+
+      expect(res.status).toBe(201);
+      expect(body).toMatchObject({ id: 'rule-1', category: 'reminder' });
+    } finally {
+      server.close();
+    }
+  });
+
+  it('GET /api/v1/reports returns the owner’s activity reports (200)', async () => {
+    const query = agentDb({ reports: [REPORT_ROW] });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/reports`, { headers: AUTHED });
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(body.items).toEqual([expect.objectContaining({ id: 'report-1', periodType: 'weekly' })]);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('GET /api/v1/proposals/active returns null when there is no active proposal (200)', async () => {
+    const query = agentDb({ activeProposal: null });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/proposals/active`, { headers: AUTHED });
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(body).toEqual({ proposal: null });
+    } finally {
+      server.close();
+    }
+  });
+
+  it('POST /api/v1/proposals/{id}/confirm on a nonexistent/foreign proposal is the contract 404 (AC-06 non-disclosure), inside one transaction', async () => {
+    const query = agentDb({ activeProposal: null });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { deps, transactions } = countedTransactionDeps({ query }, verifyJwt);
+    const { server, baseUrl } = await startServer(deps);
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/proposals/does-not-exist/confirm`, {
+        method: 'POST',
+        headers: AUTHED_JSON,
+        body: JSON.stringify({}),
+      });
+
+      expect(res.status).toBe(404);
+      expect(await res.json()).toMatchObject({ code: 'agent.proposal_not_found' });
+      // Мультизапис через межу фіч (life-area-card's createEntry + власний
+      // updateProposal) -- withTransaction обгортає ВЕСЬ виклик, навіть коли
+      // він падає ДО першого запису (той самий інваріант, що Cards/Structure
+      // вище: якщо колись з'явиться другий запис, він не лишиться сиротою).
+      expect(transactions).toHaveLength(1);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('POST /api/v1/messages without deps.askClaude fails closed with 503 agent.llm_unavailable, not a raw crash', async () => {
+    const query = agentDb();
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/messages`, {
+        method: 'POST',
+        headers: AUTHED_JSON,
+        body: JSON.stringify({ content: 'пробіг 5 км' }),
+      });
+
+      expect(res.status).toBe(503);
+      expect(await res.json()).toMatchObject({ code: 'agent.llm_unavailable' });
+    } finally {
+      server.close();
+    }
+  });
+
+  it('POST /api/v1/messages with deps.askClaude wired reaches Claude and returns a MessageTurn (201)', async () => {
+    const query = agentDb({ activeProposal: null, activeCards: [] });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const askClaude = vi.fn().mockResolvedValue({ ok: true, value: JSON.stringify({ outcome: 'clarification', reply: 'Уточни, будь ласка' }) });
+    const { server, baseUrl } = await startServer({ ...noopDeps({ query }, verifyJwt), askClaude });
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/messages`, {
+        method: 'POST',
+        headers: AUTHED_JSON,
+        body: JSON.stringify({ content: 'пробіг 5 км' }),
+      });
+      const body = await res.json();
+
+      expect(res.status).toBe(201);
+      expect(body).toEqual({ reply: 'Уточни, будь ласка', proposal: null });
+      expect(askClaude).toHaveBeenCalledTimes(1);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('GET /api/v1/sync-resources returns the owner’s resources (200)', async () => {
+    const query = agentDb({ syncResources: [SYNC_RESOURCE_ROW] });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/sync-resources`, { headers: AUTHED });
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(body).toEqual([expect.objectContaining({ id: 'resource-1', url: SYNC_RESOURCE_ROW.url })]);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('POST /api/v1/sync-resources adds a resource (201)', async () => {
+    const query = agentDb();
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/sync-resources`, {
+        method: 'POST',
+        headers: AUTHED_JSON,
+        body: JSON.stringify({ url: SYNC_RESOURCE_ROW.url }),
+      });
+      const body = await res.json();
+
+      expect(res.status).toBe(201);
+      expect(body).toMatchObject({ id: 'resource-1' });
+    } finally {
+      server.close();
+    }
+  });
+
+  it('DELETE /api/v1/sync-resources/{id} removes a resource (204)', async () => {
+    const query = agentDb();
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/sync-resources/resource-1`, { method: 'DELETE', headers: AUTHED });
+      expect(res.status).toBe(204);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('DELETE /api/v1/account without confirmed:true is the contract 400 (AC-17b defense-in-depth), no db write reaches app_user', async () => {
+    const query = agentDb();
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { deps, transactions } = countedTransactionDeps({ query }, verifyJwt);
+    const { server, baseUrl } = await startServer(deps);
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/account`, { method: 'DELETE', headers: AUTHED_JSON, body: JSON.stringify({}) });
+
+      expect(res.status).toBe(400);
+      expect(query.mock.calls.some(([text]: [string]) => text.includes('DELETE FROM app_user'))).toBe(false);
+      expect(transactions).toHaveLength(1);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('DELETE /api/v1/account with confirmed:true deletes the account (204), audit-then-delete inside one transaction (D-89)', async () => {
+    const query = agentDb();
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { deps, transactions } = countedTransactionDeps({ query }, verifyJwt);
+    const { server, baseUrl } = await startServer(deps);
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/account`, {
+        method: 'DELETE',
+        headers: AUTHED_JSON,
+        body: JSON.stringify({ confirmed: true }),
+      });
+
+      expect(res.status).toBe(204);
+      expect(transactions).toHaveLength(1);
+      // D-89: audit-рядок пишеться ДО DELETE app_user -- зворотний порядок
+      // втратив би слід видалення (FK CASCADE знищила б щойно вставлений рядок).
+      const auditIndex = query.mock.calls.findIndex(([text]: [string]) => text.includes('agent_audit_event'));
+      const deleteIndex = query.mock.calls.findIndex(([text]: [string]) => text.includes('DELETE FROM app_user'));
+      expect(auditIndex).toBeGreaterThanOrEqual(0);
+      expect(deleteIndex).toBeGreaterThan(auditIndex);
+    } finally {
+      server.close();
+    }
+  });
+});
+
+// AC-20 (US-14, spec.md "агент сам виявив технічну помилку чи збій") -- review
+// finding: reportAgentDetectedError (domain, T36) + fileAgentDetectedErrorReport
+// (app, T42) existed fully tested but had ZERO callers anywhere, so AC-20 could
+// never fire in production. No sad.md flow names the exact trigger point
+// (flagged as under-specified) -- the generic/non-AppError branch of the
+// error-middleware (server/app.ts) is the most defensible, narrow reading:
+// a genuine unexpected bug reaching that branch now best-effort files an
+// agent-detected developer report, WITHOUT ever changing the client-visible
+// response (filing is a side effect, not part of the response contract).
+describe('AC-20: generic error-middleware branch best-effort files an agent-detected developer report', () => {
+  it('files fileAgentDetectedErrorReport when an unexpected error reaches the generic branch, without changing the 500 response', async () => {
+    const boom = new Error('кешований драйвер БД впав -- справжній непередбачений баг');
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes('FROM card')) throw boom;
+      if (sql.includes('INSERT INTO developer_report')) {
+        return {
+          rows: [
+            {
+              id: 'report-1',
+              user_id: null,
+              trigger_type: 'agent_detected',
+              description: boom.message,
+              delivery_status: 'sent',
+              sent_at: new Date('2026-09-12T00:00:00Z'),
+            },
+          ],
+        };
+      }
+      throw new Error(`Непередбачений запит у тесті (AC-20): ${sql}`);
+    });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const emailTransport = vi.fn().mockResolvedValue({ messageId: 'msg-1' });
+    const developerEmail = 'dev@example.com';
+    const { server, baseUrl } = await startServer({
+      ...noopDeps({ query }, verifyJwt),
+      emailTransport,
+      developerEmail,
+    });
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/cards/card-1`, { headers: AUTHED });
+      const body = await res.json();
+
+      // (a) клієнт і далі отримує ОРИГІНАЛЬНУ 500-відповідь -- filing звіту не
+      // частина контракту відповіді.
+      expect(res.status).toBe(500);
+      expect(body).toEqual({ code: 'internal.error', message: 'Internal server error' });
+
+      // (b) fileAgentDetectedErrorReport реально викликаний (fire-and-forget,
+      // тому чекаємо, поки мікрозадачі долетять, а не перевіряємо синхронно).
+      await vi.waitFor(() => {
+        expect(emailTransport).toHaveBeenCalledTimes(1);
+      });
+      expect(emailTransport.mock.calls[0][0]).toEqual(
+        expect.objectContaining({ to: developerEmail, body: expect.stringContaining(boom.message) })
+      );
+      const insertCall = query.mock.calls.find(([sql]: [string]) => sql.includes('INSERT INTO developer_report'));
+      expect(insertCall).toBeDefined();
+      // AC-20: службова дія без участі користувача -- ownerUserId НЕ
+      // читається в error-middleware (не гарантовано доступний саме тут).
+      expect(insertCall![1]).toEqual(expect.arrayContaining([null]));
+    } finally {
+      server.close();
+    }
+  });
+
+  it('a failure inside fileAgentDetectedErrorReport itself never changes the client response or crashes the server', async () => {
+    const boom = new Error('справжній непередбачений баг');
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes('FROM card')) throw boom;
+      if (sql.includes('INSERT INTO developer_report')) throw new Error('developer_report insert теж впав');
+      throw new Error(`Непередбачений запит у тесті (AC-20): ${sql}`);
+    });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const emailTransport = vi.fn().mockResolvedValue({ messageId: 'msg-1' });
+    const { server, baseUrl } = await startServer({
+      ...noopDeps({ query }, verifyJwt),
+      emailTransport,
+      developerEmail: 'dev@example.com',
+    });
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/cards/card-1`, { headers: AUTHED });
+      const body = await res.json();
+
+      // (c) filing сам провалився (INSERT кинув) -- клієнт і далі бачить ТУ Ж
+      // саму 500-відповідь, не 502/іншу помилку email.send_failed зсередини.
+      expect(res.status).toBe(500);
+      expect(body).toEqual({ code: 'internal.error', message: 'Internal server error' });
+
+      await vi.waitFor(() => {
+        const insertAttempted = query.mock.calls.some(([sql]: [string]) => sql.includes('INSERT INTO developer_report'));
+        expect(insertAttempted).toBe(true);
+      });
+      // INSERT провалився ДО sendEmail -- transport ніколи не викликаний.
+      expect(emailTransport).not.toHaveBeenCalled();
+
+      // Сервер і далі відповідає (не впав некерованим unhandled rejection).
+      const res2 = await fetch(`${baseUrl}/api/v1/cards/card-1`, { headers: AUTHED });
+      expect(res2.status).toBe(500);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('does nothing when emailTransport/developerEmail are not wired (existing behavior unchanged)', async () => {
+    const boom = new Error('непередбачений баг без DI-звіту');
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes('FROM card')) throw boom;
+      throw new Error(`Непередбачений запит у тесті (AC-20): ${sql}`);
+    });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/cards/card-1`, { headers: AUTHED });
+      const body = await res.json();
+
+      expect(res.status).toBe(500);
+      expect(body).toEqual({ code: 'internal.error', message: 'Internal server error' });
+      expect(query.mock.calls.some(([sql]: [string]) => sql.includes('INSERT INTO developer_report'))).toBe(false);
+    } finally {
+      server.close();
+    }
+  });
+});

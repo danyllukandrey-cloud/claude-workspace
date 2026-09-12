@@ -9,6 +9,11 @@ import { OAuth2Client } from 'google-auth-library';
 import { createApp, type GoogleIdTokenPayload, type JwtPayload } from './app';
 import { createDb } from './db';
 import { assertJwtSigningKeyStrength } from './jwt-config';
+// T29 -- agent's own Claude client (../src/agent/infra/claude-client.ts, T12) --
+// threaded the same optional-DI way as life-area-card's `callClaude` below,
+// but a distinct factory/shape (app.ts's AppDeps.askClaude docblock explains why).
+import { createClaudeClient } from '../src/agent/infra/claude-client';
+import type { EmailTransport } from '../src/agent/infra/email-client';
 
 const PORT = Number(process.env.PORT ?? 3000);
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -91,8 +96,41 @@ async function callClaude(prompt: string): Promise<string> {
   return text.trim();
 }
 
+// T29 -- agent's own Claude client (AC-01, sad.md Critical flow 1): optional,
+// same reasoning as life-area-card's `callClaude` above (ANTHROPIC_API_KEY
+// may be absent in a given environment) -- when absent, POST /api/v1/messages
+// fails closed with 503 `agent.llm_unavailable` at the route (server/app.ts),
+// never a raw crash. Distinct factory from `callClaude` above on purpose --
+// see AppDeps.askClaude's docblock in app.ts for why the two aren't merged.
+const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+const askClaude = anthropicApiKey ? createClaudeClient({ apiKey: anthropicApiKey }) : undefined;
+
+// T29 -- developer-report.ts's (T42, AC-20/AC-20b) email dependency. OPEN GAP
+// (see AppDeps.emailTransport's docblock in app.ts): no contract endpoint
+// calls this yet, and no email provider has been chosen (infra/email-client.ts's
+// own comment: "SMTP чи transactional email API — конкретний постачальник ще
+// не обраний") -- inventing a real HTTP call to an unchosen provider here
+// would be exactly the kind of silent decision plan/app/CLAUDE.md and
+// docs/DECISIONS.md's "одне рішення — одне місце" rule warn against. This
+// stub keeps the DI shape ready (fails loudly and specifically if ever
+// invoked) without pretending a provider has been picked.
+const emailTransport: EmailTransport = async () => {
+  throw new Error('Email-провайдер ще не обраний (developer-report.ts, T37/T42) -- SMTP/API інтеграція не підключена');
+};
+const developerEmail = process.env.DEVELOPER_EMAIL ?? '';
+
 const db = createDb();
-const app = createApp({ db, withTransaction: db.withTransaction, verifyGoogleIdToken, signJwt, verifyJwt, callClaude });
+const app = createApp({
+  db,
+  withTransaction: db.withTransaction,
+  verifyGoogleIdToken,
+  signJwt,
+  verifyJwt,
+  callClaude,
+  askClaude,
+  emailTransport,
+  developerEmail,
+});
 
 app.listen(PORT, () => {
   // eslint-disable-next-line no-console -- немає власного логера (one-person MVP, ADR-0006).

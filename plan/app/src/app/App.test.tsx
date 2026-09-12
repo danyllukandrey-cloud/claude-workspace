@@ -27,6 +27,14 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { App } from './App';
 import type { DeckGridItem, EntryViewModel } from '../cards/life-area-card';
+import type {
+  AccountScreenResource,
+  ChatMessage,
+  ChatProposal,
+  ReportViewModel,
+  RuleSettingsScreenRule,
+  RuleSettingsScreenTargetCard,
+} from '../agent';
 import { AppError } from '../shared/errors';
 
 const FIXED_NOW = () => new Date('2026-09-06T12:00:00.000Z');
@@ -98,6 +106,23 @@ function baseProps() {
     // що loadLayout/onMoveCard вище.
     loadCloseCardOptions: vi.fn().mockResolvedValue({ metricBlocks: [], targetCards: [] }),
     onCloseCard: vi.fn().mockResolvedValue(undefined),
+    // T29 (агент, D-25 "єдиний канал прямого вводу"): Чат стає дефолтним
+    // напрямком (DoD T29) -- baseProps резолвить ці три одразу (не pending
+    // Promise), щоб ChatScreen не залишав жоден тест підвислим на Spinner,
+    // коли тест сам не про Чат.
+    loadChatHistory: vi.fn().mockResolvedValue([] as ChatMessage[]),
+    loadChatOnboarding: vi.fn().mockResolvedValue({ welcomeShown: true, message: null }),
+    loadActiveChatProposal: vi.fn().mockResolvedValue(null as ChatProposal | null),
+    sendChatMessage: vi.fn(),
+    confirmChatProposal: vi.fn(),
+    loadRuleTargetCards: vi.fn().mockResolvedValue([] as RuleSettingsScreenTargetCard[]),
+    loadRules: vi.fn().mockResolvedValue([] as RuleSettingsScreenRule[]),
+    onSaveRule: vi.fn(),
+    loadReports: vi.fn().mockResolvedValue([] as ReportViewModel[]),
+    loadSyncResources: vi.fn().mockResolvedValue([] as AccountScreenResource[]),
+    onAddSyncResource: vi.fn(),
+    onRemoveSyncResource: vi.fn(),
+    onDeleteAccount: vi.fn(),
   };
 }
 
@@ -136,7 +161,7 @@ test('з протермінованим токеном (expiresAt у минул�
   expect(props.loadCards).not.toHaveBeenCalled();
 });
 
-test('з валідним (не протермінованим) токеном рендерить DeckScreen, не LoginScreen', () => {
+test('з валідним (не протермінованим) токеном рендерить нав-меню застосунку (не LoginScreen)', async () => {
   const props = baseProps();
   props.readStoredSession.mockReturnValue({
     token: 'valid.jwt.token',
@@ -145,8 +170,11 @@ test('з валідним (не протермінованим) токеном �
 
   render(<App {...props} />);
 
-  expect(props.loadCards).toHaveBeenCalledTimes(1);
+  // T29: дефолтний напрямок -- Чат, не Картки, тож loadCards НЕ викликається
+  // одразу при вході -- лише коли користувач сам відкриє "Картки".
   expect(props.renderGoogleButton).not.toHaveBeenCalled();
+  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
+  expect(props.loadCards).toHaveBeenCalledTimes(1);
 });
 
 test('успішний обмін credential у LoginScreen пише сесію в сховище і перемикає рендер на DeckScreen (ADR-0006, крок 3)', async () => {
@@ -171,13 +199,17 @@ test('успішний обмін credential у LoginScreen пише сесію 
   capturedOnCredential?.('fake-google-id-token');
 
   // Після успішного обміну -- сесія (token+expiresAt, той самий формат, що
-  // читає readStoredSession) пишеться в сховище, і екран перемикається.
-  await screen.findByRole('status'); // Spinner DeckScreen -- loadCards ще не резолвнувся (pending Promise з baseProps).
+  // читає readStoredSession) пишеться в сховище, і екран перемикається (T29:
+  // на нав-меню з дефолтним напрямком Чат, не одразу DeckScreen).
+  expect(await screen.findByRole('heading', { name: 'Чат' })).toBeTruthy();
 
   expect(props.writeStoredSession).toHaveBeenCalledWith({
     token: sessionResult.token,
     expiresAt: sessionResult.expiresAt,
   });
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
+  await screen.findByRole('status'); // Spinner DeckScreen -- loadCards ще не резолвнувся (pending Promise з baseProps).
   expect(props.loadCards).toHaveBeenCalledTimes(1);
 });
 
@@ -193,6 +225,8 @@ test('ISS-55: клік "+ Створити картку" в Колоді пер�
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
 
   render(<App {...props} />);
+  // T29: дефолтний напрямок -- Чат, тож спершу переходимо на Картки.
+  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
   const createButton = await screen.findByRole('button', { name: '+ Створити картку' });
   fireEvent.click(createButton);
@@ -209,6 +243,7 @@ test('ISS-55: успішне створення картки викликає in
   props.createCard.mockResolvedValue(undefined);
 
   render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
   const createButton = await screen.findByRole('button', { name: '+ Створити картку' });
   fireEvent.click(createButton);
@@ -239,6 +274,7 @@ test('ISS-55 stage 2: клік на тайл картки в Колоді від
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
 
   render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
   fireEvent.click(await screen.findByRole('button', { name: 'Спорт' }));
 
@@ -268,6 +304,7 @@ test('review-followup: onSessionExpired передається в DeckScreen р�
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
 
   const { rerender } = render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
   await screen.findByText('Спорт');
   expect(props.loadCards).toHaveBeenCalledTimes(1);
@@ -283,6 +320,7 @@ test('T52: loadCard передається в CardDetailScreen референц�
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
 
   const { rerender } = render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
   fireEvent.click(await screen.findByRole('button', { name: 'Спорт' }));
   await screen.findByRole('heading', { name: 'Спорт' });
@@ -302,6 +340,7 @@ test('ISS-55 stage 2: кнопка "← Назад" у деталях картк
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
 
   render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
   fireEvent.click(await screen.findByRole('button', { name: 'Спорт' }));
   await screen.findByRole('heading', { name: 'Спорт' });
@@ -318,6 +357,7 @@ test('ISS-55 stage 2: перейменування картки в деталя�
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
 
   render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
   fireEvent.click(await screen.findByRole('button', { name: 'Спорт' }));
   fireEvent.click(await screen.findByRole('heading', { name: 'Спорт' }));
@@ -347,6 +387,7 @@ test('C11/AC-12: клік "виправити" в історії записів 
   });
 
   render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
   fireEvent.click(await screen.findByRole('button', { name: 'Спорт' }));
   fireEvent.click(await screen.findByRole('button', { name: /перегорнути/ }));
@@ -373,6 +414,7 @@ test('ISS-55 stage 3: клік "Архів" у Колоді перемикає �
   props.loadArchivedCards.mockResolvedValue([{ id: 'card-2', name: 'Читання' }]);
 
   render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
   const archiveButton = await screen.findByRole('button', { name: 'Архів' });
   fireEvent.click(archiveButton);
@@ -390,6 +432,7 @@ test('ISS-55 stage 3: кнопка "← Назад" в Архіві поверт
   props.loadArchivedCards.mockResolvedValue([]);
 
   render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
   fireEvent.click(await screen.findByRole('button', { name: 'Архів' }));
   await screen.findByText('Архів порожній');
@@ -408,6 +451,7 @@ test('ISS-55 stage 3: розархівування картки в Архіві 
   props.loadArchivedCards.mockResolvedValue([{ id: 'card-2', name: 'Читання' }]);
 
   render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
   fireEvent.click(await screen.findByRole('button', { name: 'Архів' }));
   fireEvent.click(await screen.findByText('Читання'));
@@ -426,6 +470,7 @@ test('ISS-56: архівування картки в деталях виклик
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
 
   render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
   fireEvent.click(await screen.findByRole('button', { name: 'Спорт' }));
   await screen.findByRole('heading', { name: 'Спорт' });
@@ -455,6 +500,7 @@ test('ISS-60: створення блоку-метрики в деталях к�
   props.loadBack.mockResolvedValue({ metricBlocks: [], aggregateProgress: null, entries: [] });
 
   render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
   fireEvent.click(await screen.findByRole('button', { name: 'Спорт' }));
   fireEvent.click(await screen.findByRole('button', { name: /перегорнути/ }));
@@ -486,6 +532,7 @@ test('D-110: тимчасова кнопка "+" на блоці-метриці 
   });
 
   render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
   fireEvent.click(await screen.findByRole('button', { name: 'Спорт' }));
   fireEvent.click(await screen.findByRole('button', { name: /перегорнути/ }));
@@ -503,6 +550,7 @@ test('ISS-58: клік "Вийти" в Колоді стирає сесію і �
   props.loadCards.mockResolvedValue([]);
 
   render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
   fireEvent.click(await screen.findByRole('button', { name: 'Вийти' }));
 
@@ -522,6 +570,7 @@ test('C14/AC-04: 401 (AppError, httpStatus 401) з loadCards стирає сес
   props.loadCards.mockRejectedValue(new AppError('auth.invalid_token', 'Сесія протермінована', 401));
 
   render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
   await waitFor(() => expect(props.clearStoredSession).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(props.renderGoogleButton).toHaveBeenCalledTimes(1));
@@ -545,8 +594,10 @@ test('T24: після входу видно нижнє нав-меню з 4 пу
   props.loadCards.mockResolvedValue([]);
 
   render(<App {...props} />);
+  // T29: дефолтний напрямок тепер Чат (D-25), не Картки -- перевіряємо DeckScreen явним переходом.
+  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
-  await screen.findByText('Тут ще немає жодної картки'); // дефолтний напрямок "Картки" -- DeckScreen уже на екрані
+  await screen.findByText('Тут ще немає жодної картки');
 
   expect(await screen.findByRole('button', { name: 'Декларація' })).toBeTruthy();
   expect(await screen.findByRole('button', { name: 'Схема' })).toBeTruthy();
@@ -559,7 +610,6 @@ test('T24: клік "Декларація" в нав-меню перемикає
   props.loadCards.mockResolvedValue([]);
 
   render(<App {...props} />);
-  await screen.findByText('Тут ще немає жодної картки');
 
   fireEvent.click(await screen.findByRole('button', { name: 'Декларація' }));
 
@@ -579,7 +629,6 @@ test('AC-12 (review-fix 2026-09-11): на Схемі з loadCloseCardOptions/onC
   });
 
   render(<App {...props} />);
-  await screen.findByText('Тут ще немає жодної картки');
 
   fireEvent.click(await screen.findByRole('button', { name: 'Схема' }));
 
@@ -593,7 +642,6 @@ test('T24: клік "Схема" в нав-меню перемикає екра�
   props.loadCards.mockResolvedValue([]);
 
   render(<App {...props} />);
-  await screen.findByText('Тут ще немає жодної картки');
 
   fireEvent.click(await screen.findByRole('button', { name: 'Схема' }));
 
@@ -607,7 +655,6 @@ test('T24: клік "Літопис-Аналітика" в нав-меню пе�
   props.loadCards.mockResolvedValue([]);
 
   render(<App {...props} />);
-  await screen.findByText('Тут ще немає жодної картки');
 
   fireEvent.click(await screen.findByRole('button', { name: 'Літопис-Аналітика' }));
 
@@ -621,6 +668,8 @@ test('T24: клік "Картки" повертає на DeckScreen, під-на
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
 
   render(<App {...props} />);
+  // T29: дефолтний напрямок тепер Чат -- відкриваємо Картки явно першим кроком.
+  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
   await screen.findByText('Спорт');
 
   // Переходимо на інший напрямок і повертаємось -- "Картки" має відновити ту саму DeckScreen-навігацію.
@@ -633,4 +682,94 @@ test('T24: клік "Картки" повертає на DeckScreen, під-на
   // Під-навігація "Картки" (create) все ще досяжна під тим самим нав-меню.
   fireEvent.click(await screen.findByRole('button', { name: '+ Створити картку' }));
   expect(await screen.findByRole('heading', { name: 'Нова картка' })).toBeTruthy();
+});
+
+// T29 (агент, D-25 "агент -- єдиний канал прямого вводу продукту ПЛАН",
+// tasks.json DoD: "App boots with Чат as the default screen plus nav entries
+// for Налаштування правил / Звіти активності / Обліковий запис і дані"):
+// той самий self-check дух, що review 2026-09-11 MUST-FIX 4/5 для Структури
+// -- ці тести пінять РЕАЛЬНУ досяжність з App, не лише факт, що компонент
+// написаний і протестований ізольовано (agent/ui/*.test.tsx).
+
+test('T29: після входу дефолтний екран -- Чат (не Картки), і всі 4 нових пункти меню видно одразу', async () => {
+  const props = validSessionProps();
+
+  render(<App {...props} />);
+
+  expect(await screen.findByRole('heading', { name: 'Чат' })).toBeTruthy();
+  expect(props.loadChatHistory).toHaveBeenCalledTimes(1);
+  expect(props.loadCards).not.toHaveBeenCalled();
+
+  expect(await screen.findByRole('button', { name: 'Чат' })).toBeTruthy();
+  expect(await screen.findByRole('button', { name: 'Налаштування правил' })).toBeTruthy();
+  expect(await screen.findByRole('button', { name: 'Звіти активності' })).toBeTruthy();
+  expect(await screen.findByRole('button', { name: 'Обліковий запис і дані' })).toBeTruthy();
+});
+
+test('T29: клік "Налаштування правил" перемикає екран на RuleSettingsScreen (loadRules/loadRuleTargetCards)', async () => {
+  const props = validSessionProps();
+  props.loadRuleTargetCards.mockResolvedValue([{ cardId: 'card-1', cardTitle: 'Спорт' }]);
+  props.loadRules.mockResolvedValue([
+    { id: 'rule-1', scopeCardId: null, category: 'reminder', ruleText: null },
+  ]);
+
+  render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Налаштування правил' }));
+
+  expect(await screen.findByRole('heading', { name: 'Налаштування правил' })).toBeTruthy();
+  await waitFor(() => expect(props.loadRules).toHaveBeenCalledWith(null));
+  await waitFor(() => expect(props.loadRuleTargetCards).toHaveBeenCalledTimes(1));
+
+  // AC-12 card-override: targetCards завантажені асинхронно -- перевизначення
+  // для конкретної картки має бачити щойно завантажену "Спорт" в <select>.
+  fireEvent.click(screen.getByLabelText('Перевизначити для конкретної картки'));
+  expect(await screen.findByRole('option', { name: 'Спорт' })).toBeTruthy();
+});
+
+test('T29: клік "Звіти активності" перемикає екран на ReportsScreen (loadReports)', async () => {
+  const props = validSessionProps();
+  props.loadReports.mockResolvedValue([{ id: 'report-1', periodLabel: 'Тижневий, 01.09–07.09', summary: 'Підсумок тижня', status: 'generated' }]);
+
+  render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Звіти активності' }));
+
+  expect(await screen.findByRole('heading', { name: 'Звіти активності' })).toBeTruthy();
+  expect(await screen.findByText('Підсумок тижня')).toBeTruthy();
+  expect(props.loadReports).toHaveBeenCalledTimes(1);
+});
+
+test('T29: клік "Обліковий запис і дані" перемикає екран на AccountScreen (loadSyncResources) і онDeleted завершує сесію', async () => {
+  const props = validSessionProps();
+  props.loadSyncResources.mockResolvedValue([]);
+  props.onDeleteAccount.mockResolvedValue(undefined);
+
+  render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Обліковий запис і дані' }));
+
+  expect(await screen.findByRole('heading', { name: 'Обліковий запис і дані' })).toBeTruthy();
+  expect(props.loadSyncResources).toHaveBeenCalledTimes(1);
+
+  // AC-17: видалення акаунта завершує сесію -- App повертається на LoginScreen
+  // (той самий onDeleted -> endSession, що кнопка "Вийти" в Колоді вже використовує).
+  fireEvent.click(screen.getByRole('button', { name: 'Видалити акаунт і всі дані' }));
+  fireEvent.change(screen.getByLabelText(/Слово підтвердження/), { target: { value: 'ВИДАЛИТИ' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Видалити' }));
+
+  expect(props.onDeleteAccount).toHaveBeenCalledWith(true);
+  await waitFor(() => expect(props.clearStoredSession).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(props.renderGoogleButton).toHaveBeenCalledTimes(1));
+});
+
+test('T29: надсилання повідомлення в Чаті викликає injected sendChatMessage і показує репліку агента', async () => {
+  const props = validSessionProps();
+  props.sendChatMessage.mockResolvedValue({ reply: 'Записав: пробіг 5 км', proposal: null });
+
+  render(<App {...props} />);
+  await screen.findByRole('heading', { name: 'Чат' });
+
+  fireEvent.change(screen.getByLabelText('Повідомлення'), { target: { value: 'пробіг 5 км' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Надіслати' }));
+
+  expect(props.sendChatMessage).toHaveBeenCalledWith({ content: 'пробіг 5 км', attachment: null });
+  expect(await screen.findByText('Записав: пробіг 5 км')).toBeTruthy();
 });

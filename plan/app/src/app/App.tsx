@@ -5,7 +5,7 @@
 // writeStoredSession/now -- ін'єктовані, компонент не знає, що це
 // localStorage['plan.jwt'] і Date.now() (composition root -- main.tsx).
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ArchiveScreen, CardDetailScreen, CreateCardForm, DeckScreen } from '../cards/life-area-card';
 import type { CardBackData, CardFaceData, DeckGridItem, EntryViewModel, MetricBlockFormValues } from '../cards/life-area-card';
 import { AnalyticsScreen, DeclarationScreen, LayoutBoard } from '../structure';
@@ -18,6 +18,22 @@ import type {
   LayoutMode,
   LogicVariant,
 } from '../structure';
+// T29 -- реєстрація агента в app-shell (D-25 "агент -- єдиний канал прямого
+// вводу продукту ПЛАН"). Імпортується ЛИШЕ через ../agent's index.ts
+// (правило залежностей, plan/app/CLAUDE.md) -- ніколи напряму з agent/ui/.
+import { AccountScreen, ChatScreen, ReportsScreen, RuleSettingsScreen } from '../agent';
+import type {
+  AccountScreenResource,
+  ChatMessage,
+  ChatProposal,
+  ComposerSendInput,
+  OnboardingResult,
+  ReportViewModel,
+  RuleSettingsScreenRule,
+  RuleSettingsScreenSaveInput,
+  RuleSettingsScreenTargetCard,
+  SendMessageResult,
+} from '../agent';
 import { Button } from '../shared/ui';
 import { LoginScreen } from './LoginScreen';
 import type { SessionResult } from './LoginScreen';
@@ -89,15 +105,46 @@ export interface AppProps {
   loadCloseCardOptions?: (cardId: string) => Promise<LayoutBoardCloseCardOptions>;
   /** AC-12 -- POST /api/v1/structure/layout/{cardId}/close (LayoutBoard.onCloseCard). */
   onCloseCard?: (input: { cardId: string; metricTransfers: CloseCardMetricTransferInput[] }) => Promise<void>;
+
+  // --- Агент (T29, contracts/openapi.yaml) -------------------------------
+  /** GET /api/v1/messages (ChatScreen.loadHistory). */
+  loadChatHistory: () => Promise<ChatMessage[]>;
+  /** GET /api/v1/onboarding (ChatScreen.loadOnboarding, AC-13). */
+  loadChatOnboarding: () => Promise<OnboardingResult>;
+  /** GET /api/v1/proposals/active (ChatScreen.loadActiveProposal). */
+  loadActiveChatProposal: () => Promise<ChatProposal | null>;
+  /** POST /api/v1/messages (ChatScreen.sendMessage, AC-01/AC-10/AC-19). */
+  sendChatMessage: (input: ComposerSendInput) => Promise<SendMessageResult>;
+  /** POST /api/v1/proposals/{id}/confirm (ChatScreen.confirmProposal, AC-02). */
+  confirmChatProposal: (proposalId: string) => Promise<void>;
+  /** GET /api/v1/cards, звужений до {cardId,cardTitle} (RuleSettingsScreen.targetCards, AC-12). */
+  loadRuleTargetCards: () => Promise<RuleSettingsScreenTargetCard[]>;
+  /** GET /api/v1/rules (RuleSettingsScreen.loadRules, AC-08). */
+  loadRules: (scopeCardId: string | null) => Promise<RuleSettingsScreenRule[]>;
+  /** POST /api/v1/rules (RuleSettingsScreen.onSave, AC-07/AC-08/AC-12/AC-14). */
+  onSaveRule: (input: RuleSettingsScreenSaveInput) => Promise<RuleSettingsScreenRule>;
+  /** GET /api/v1/reports (ReportsScreen.loadReports, AC-11). */
+  loadReports: () => Promise<ReportViewModel[]>;
+  /** GET /api/v1/sync-resources (AccountScreen.loadResources, AC-18). */
+  loadSyncResources: () => Promise<AccountScreenResource[]>;
+  /** POST /api/v1/sync-resources (AccountScreen.onAddResource, AC-18). */
+  onAddSyncResource: (url: string) => Promise<AccountScreenResource>;
+  /** DELETE /api/v1/sync-resources/{id} (AccountScreen.onRemoveResource). */
+  onRemoveSyncResource: (resourceId: string) => Promise<void>;
+  /** DELETE /api/v1/account (AccountScreen.onDeleteAccount, AC-17/AC-17b). */
+  onDeleteAccount: (confirmed: boolean) => Promise<void>;
 }
 
 type Screen = { screen: 'deck' } | { screen: 'create' } | { screen: 'detail'; cardId: string } | { screen: 'archive' };
 
-// T24 (sad.md §5 "Навігація (чотири напрямки)"): постійне нижнє нав-меню,
-// незалежне від Screen (Screen лишається під-навігацією "Картки" --
-// deck/create/detail/archive, той самий стан переживає перехід на інший
-// напрямок і назад -- тест "клік Картки повертає на DeckScreen").
-type Direction = 'cards' | 'declaration' | 'layout' | 'analytics';
+// T24 (sad.md §5 "Навігація (чотири напрямки)") + T29 (агент, D-25 "єдиний
+// канал прямого вводу"): постійне нижнє нав-меню, незалежне від Screen
+// (Screen лишається під-навігацією "Картки" -- deck/create/detail/archive,
+// той самий стан переживає перехід на інший напрямок і назад -- тест "клік
+// Картки повертає на DeckScreen"). Чотири нові напрямки -- Чат/Налаштування
+// правил/Звіти активності/Обліковий запис і дані -- один екран кожен, без
+// власної під-навігації (на відміну від "cards").
+type Direction = 'cards' | 'declaration' | 'layout' | 'analytics' | 'agent-chat' | 'agent-rules' | 'agent-reports' | 'agent-account';
 
 function isSessionValid(session: StoredSession | null, now: () => Date): boolean {
   if (!session) return false;
@@ -131,10 +178,44 @@ export function App({
   loadAnalytics,
   loadCloseCardOptions,
   onCloseCard,
+  loadChatHistory,
+  loadChatOnboarding,
+  loadActiveChatProposal,
+  sendChatMessage,
+  confirmChatProposal,
+  loadRuleTargetCards,
+  loadRules,
+  onSaveRule,
+  loadReports,
+  loadSyncResources,
+  onAddSyncResource,
+  onRemoveSyncResource,
+  onDeleteAccount,
 }: AppProps): JSX.Element {
   const [session, setSession] = useState<StoredSession | null>(() => readStoredSession());
   const [screen, setScreen] = useState<Screen>({ screen: 'deck' });
-  const [direction, setDirection] = useState<Direction>('cards');
+  // T29 DoD ("App boots with Чат as the default screen") -- D-25 "агент --
+  // єдиний канал прямого вводу продукту ПЛАН": Чат замінює Картки як перший
+  // екран, що бачить щойно увійшовший користувач. Картки й решта напрямків
+  // лишаються рівноправно досяжні з нав-меню нижче, лише більше не дефолтні.
+  const [direction, setDirection] = useState<Direction>('agent-chat');
+  const [ruleTargetCards, setRuleTargetCards] = useState<RuleSettingsScreenTargetCard[]>([]);
+
+  // AC-12 (RuleSettingsScreen card-override): картки завантажуються лише
+  // коли користувач реально відкрив цей напрямок, не одразу при вході (той
+  // самий "лінивий" підхід, що LayoutBoard.loadCloseCardOptions -- жодного
+  // зайвого GET /cards, поки правила ніхто не налаштовує).
+  useEffect(() => {
+    if (direction !== 'agent-rules') return;
+    let cancelled = false;
+    loadRuleTargetCards().then((cards) => {
+      if (!cancelled) setRuleTargetCards(cards);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [direction]);
 
   // Review 2026-09-07 E (T52): "loadCard/loadBack порушують задокументований
   // контракт референційної стабільності" (той самий контракт, що
@@ -176,6 +257,31 @@ export function App({
           />
         )}
         {direction === 'analytics' && <AnalyticsScreen loadAnalytics={loadAnalytics} />}
+
+        {direction === 'agent-chat' && (
+          <ChatScreen
+            loadHistory={loadChatHistory}
+            loadOnboarding={loadChatOnboarding}
+            loadActiveProposal={loadActiveChatProposal}
+            sendMessage={sendChatMessage}
+            confirmProposal={confirmChatProposal}
+          />
+        )}
+        {direction === 'agent-rules' && (
+          <RuleSettingsScreen targetCards={ruleTargetCards} loadRules={loadRules} onSave={onSaveRule} />
+        )}
+        {direction === 'agent-reports' && <ReportsScreen loadReports={loadReports} />}
+        {direction === 'agent-account' && (
+          <AccountScreen
+            loadResources={loadSyncResources}
+            onAddResource={onAddSyncResource}
+            onRemoveResource={onRemoveSyncResource}
+            onDeleteAccount={onDeleteAccount}
+            // AC-17: акаунт видалено -> сесія завершена, повернення на екран
+            // входу -- той самий endSession, що кнопка "Вийти" вже використовує.
+            onDeleted={endSession}
+          />
+        )}
 
         {direction === 'cards' && screen.screen === 'create' && (
           <CreateCardForm
@@ -230,6 +336,10 @@ export function App({
             create/detail/archive -- лише перемикає direction, Screen
             лишається як був (тест "клік Картки повертає на DeckScreen"). */}
         <nav>
+          <Button label="Чат" onClick={() => setDirection('agent-chat')} />
+          <Button label="Налаштування правил" onClick={() => setDirection('agent-rules')} />
+          <Button label="Звіти активності" onClick={() => setDirection('agent-reports')} />
+          <Button label="Обліковий запис і дані" onClick={() => setDirection('agent-account')} />
           <Button label="Декларація" onClick={() => setDirection('declaration')} />
           <Button label="Схема" onClick={() => setDirection('layout')} />
           <Button label="Літопис-Аналітика" onClick={() => setDirection('analytics')} />

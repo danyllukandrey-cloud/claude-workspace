@@ -105,13 +105,25 @@ paths:
         "401":
           $ref: "#/components/responses/Error"
         "422":
-          description: вкладення нерозпізнане, нечитабельне або непідтримуваного типу (AC-10b)
+          description: |
+            `agent.attachment_unrecognized` — вкладення нерозпізнане, нечитабельне або
+            непідтримуваного типу (AC-10b); або `agent.message_empty` — ні `content`, ні
+            `attachment` не передано (обидва null/відсутні) — відхиляється до звернення
+            до Claude, не як оманливий 503 `agent.llm_unavailable` (Review 2026-09-12)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
-              example:
-                code: "agent.attachment_unrecognized"
-                message: "Couldn't read this attachment — try describing it in text instead"
+              examples:
+                attachmentUnrecognized:
+                  summary: вкладення нерозпізнане/нечитабельне/непідтримуване
+                  value:
+                    code: "agent.attachment_unrecognized"
+                    message: "Couldn't read this attachment — try describing it in text instead"
+                messageEmpty:
+                  summary: ні тексту, ні вкладення не передано
+                  value:
+                    code: "agent.message_empty"
+                    message: "A message needs text, an attachment, or both"
         "429":
           description: перевищено ліміт частоти повідомлень (§8 SAD Rate limiting, 60/год)
           content:

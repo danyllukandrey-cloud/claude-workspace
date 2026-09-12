@@ -45,6 +45,25 @@ import { defaultPositionForNewCard } from '../src/structure/domain/layout';
 import * as structureHandlers from '../src/structure/ports/structure-handlers';
 import * as layoutHandlers from '../src/structure/ports/layout-handlers';
 import { LayoutValidationError } from '../src/structure/domain/layout';
+// T29 -- порти фічі `agent` (contracts/openapi.yaml). Той самий урок, що
+// MUST-FIX 1 вище: написані й покриті тестами порти лишаються 404, якщо їх
+// тут ніхто не монтує -- server/app.test.ts нижче пінить КОЖЕН із 9 шляхів.
+import * as chatHandlers from '../src/agent/ports/chat-handler';
+import * as proposalHandlers from '../src/agent/ports/proposal-handler';
+import * as rulesHandlers from '../src/agent/ports/rules-handler';
+import * as reportsHandlers from '../src/agent/ports/reports-handler';
+import * as onboardingHandlers from '../src/agent/ports/onboarding-handler';
+import * as accountHandlers from '../src/agent/ports/account-handler';
+import * as syncResourceHandlers from '../src/agent/ports/sync-resource-handler';
+import type { AskClaude } from '../src/agent/infra/claude-client';
+import type { EmailTransport } from '../src/agent/infra/email-client';
+// AC-20 wiring (review finding, docs/features/agent/spec.md AC-20): the
+// generic/unexpected-error branch of the error-middleware below is the only
+// defensible trigger point for `fileAgentDetectedErrorReport` -- no sad.md
+// flow names one (already flagged as an under-specified integration point in
+// AppDeps.emailTransport's docblock above). Narrow interpretation, not a
+// product decision: flagged in the PR/handoff for a human to confirm.
+import { fileAgentDetectedErrorReport } from '../src/agent/app/developer-report';
 
 /** Мінімум, потрібний verifyGoogleIdToken -- google-auth-library повертає значно більше полів. */
 export interface GoogleIdTokenPayload {
@@ -91,6 +110,45 @@ export interface AppDeps {
    * (claude-client.ts саме тепер це гарантує), не 500.
    */
   callClaude?: CallClaude;
+  /**
+   * T29 -- agent's OWN Claude client (../src/agent/infra/claude-client.ts's
+   * `askClaude`, T12) -- threaded the SAME optional-DI way as `callClaude`
+   * above (server/index.ts constructs it, createApp never does), but a
+   * DIFFERENT shape: `AskClaude` returns `ClaudeResult<string>` (domain-
+   * sentinel, never throws for an expected failure), while `CallClaude`
+   * above is life-area-card's own bare `(prompt) => Promise<string>`. The
+   * two are NOT interchangeable -- chat-handler.ts's createMessage requires
+   * exactly this shape (../src/agent/app/ask-agent.ts/handle-message.ts).
+   * Optional in the type (so server/app.test.ts's noopDeps keeps compiling
+   * without it) but operationally required for POST /messages to succeed --
+   * missing it fails closed with 503 `agent.llm_unavailable` at the route
+   * below, not a raw TypeError.
+   */
+  askClaude?: AskClaude;
+  /**
+   * T29 -- developer-report.ts's (T42) outbound email dependency (AC-20/
+   * AC-20b), wired the same optional-DI way as callClaude/askClaude above.
+   * OPEN INTEGRATION GAP (review finding, fixed narrowly, still not fully
+   * decided): contracts/openapi.yaml has NO endpoint for AC-20/AC-20b --
+   * spec.md describes AC-20 as an internal, non-HTTP service action ("агент
+   * сам виявив технічну помилку... без участі користувача, службова дія"),
+   * and no sad.md flow names where it should trigger. The error-middleware
+   * below now calls `fileAgentDetectedErrorReport` best-effort when it is
+   * present (generic/non-AppError branch only) -- the most defensible, narrow
+   * reading available, NOT a confirmed product decision; flagged for a human
+   * to confirm AC-20's real trigger point. AC-20b (user-initiated) still has
+   * no caller anywhere -- unaffected by this fix.
+   */
+  emailTransport?: EmailTransport;
+  /**
+   * T29 -- developer's notification email address (AC-20/AC-20b) -- never
+   * read from process.env inside src/ (plan/app/CLAUDE.md dependency rule);
+   * composition root (server/index.ts) supplies it. See `emailTransport`
+   * above -- used by the generic error-middleware branch (AC-20) AND, since
+   * review 2026-09-13's gap fix, threaded into POST /api/v1/messages's
+   * `chatHandlers.createMessage` call below (AC-20b, chat-initiated).
+   */
+  developerEmail?: string;
 }
 
 /** req розширюється ownerUserId (з JWT sub) -- кладе authMiddleware, читають хендлери-обгортки нижче. */
@@ -158,7 +216,13 @@ async function upsertAppUser(db: Db, googleSub: string, email: string): Promise<
 
 export function createApp(deps: AppDeps): express.Express {
   const app = express();
-  app.use(express.json());
+  // Review 2026-09-12: агент приймає вкладення (фото/документ) як base64 у
+  // JSON-тілі (main.tsx FileReader -> base64), не multipart -- дефолтний
+  // ліміт express.json() (~100kb) відхиляв би будь-яке реальне фото/PDF ще
+  // до того, як agent.attachment_unrecognized встиг би спрацювати, і
+  // помилка виглядала б як generic request.invalid_body, не контрактна
+  // 422. 10mb -- запас під base64-роздування (~33%) навіть великого фото.
+  app.use(express.json({ limit: '10mb' }));
   // Review 2026-09-07 (backend hardening, T50, "Express 5 req.body===undefined"):
   // express.json() лишає req.body undefined, коли Content-Type не збігається
   // (чи взагалі відсутній) -- не {}, як можна було б очікати. Кожен обробник
@@ -467,6 +531,185 @@ export function createApp(deps: AppDeps): express.Express {
     })
   );
 
+  // --- Agent -----------------------------------------------------------
+  //
+  // T29 -- маршрути фічі `agent` (contracts/openapi.yaml, усі 9 шляхів:
+  // messages GET+POST, proposals/active GET, proposals/{id}/confirm POST,
+  // rules GET+POST, reports GET, onboarding GET, account DELETE,
+  // sync-resources GET+POST, sync-resources/{id} DELETE). Той самий
+  // транспортний шаблон, що секції Cards/Structure вище: asyncHandler +
+  // ownerUserId(req) + param(req, ...), жодного SQL і жодної логіки тут --
+  // усе вже реалізовано в ../src/agent/ports/*.ts. Bearer-auth-middleware
+  // стоїть ВИЩЕ, тож жоден із цих маршрутів не є винятком D-109 (лише
+  // /api/v1/session ним є).
+
+  app.get(
+    '/api/v1/messages',
+    asyncHandler(async (req, res) => {
+      const { after, before, limit } = req.query as { after?: string; before?: string; limit?: string };
+      const page = await chatHandlers.listMessages(deps.db, ownerUserId(req), {
+        after,
+        before,
+        limit: limit !== undefined ? Number(limit) : undefined,
+      });
+      res.status(200).json(page);
+    })
+  );
+
+  app.post(
+    '/api/v1/messages',
+    asyncHandler(async (req, res) => {
+      // ВІДКРИТЕ ПИТАННЯ (флаговане в ../src/agent/ports/chat-handler.ts і
+      // ../src/agent/infra/claude-client.ts): контракт документує це тіло
+      // як `multipart/form-data` (MessageCreate.attachment: binary), але в
+      // репозиторії ще НЕМАЄ жодного multipart-парсера (multer/busboy) --
+      // додавання нової продакшн-залежності заради одного маршруту НЕ
+      // вирішується мовчки цим wiring-проходом (це власне рішення, гідне
+      // DECISIONS.md, не побічний ефект T29). Натомість цей маршрут приймає
+      // JSON-тіло, де `attachment` УЖЕ у формі ClaudeAttachment
+      // (mediaType+base64Data) -- РІВНО та сама форма, що createMessage/
+      // askClaude вже очікують (жодного додаткового мапінгу немає); клієнт
+      // (src/app/main.tsx) сам конвертує File у base64 перед відправкою.
+      // Реальний binary/multipart upload лишається майбутнім проходом --
+      // позначено тут явно, не мовчки підмінено.
+      if (!deps.askClaude) {
+        throw new AppError('agent.llm_unavailable', 'Агент тимчасово недоступний — Claude-клієнт не підключено', 503);
+      }
+      // AC-20b (review 2026-09-13 gap fix): emailTransport/developerEmail
+      // threaded through the same optional way as everywhere else -- absent
+      // in an environment that hasn't configured outbound email, createMessage
+      // simply never attempts to forward a problem to the developer.
+      const turn = await chatHandlers.createMessage(deps.db, deps.askClaude, ownerUserId(req), req.body, {
+        transport: deps.emailTransport,
+        developerEmail: deps.developerEmail,
+      });
+      res.status(201).json(turn);
+    })
+  );
+
+  app.get(
+    '/api/v1/proposals/active',
+    asyncHandler(async (req, res) => {
+      const result = await proposalHandlers.getActiveProposal(deps.db, ownerUserId(req));
+      res.status(200).json(result);
+    })
+  );
+
+  app.post(
+    '/api/v1/proposals/:proposalId/confirm',
+    asyncHandler(async (req, res) => {
+      // Мультизапис через межу фіч: life-area-card's createEntry (agent/
+      // app/confirm.ts делегує ЦІЛКОМ) + agent's власний updateProposal
+      // status='confirmed' -- той самий ризик "напівзробленого стану", що
+      // createCard/archiveCard вище вже закрили withTransaction: без неї
+      // збій другого запису лишив би запис у картці вже вставленим, а
+      // пропозицію -- досі 'active' (ризик повторного запису при retry).
+      //
+      // Review 2026-09-12: жодного тіла запиту тут немає (openapi.yaml,
+      // confirmProposal не визначає requestBody) -- `req.body` свідомо не
+      // передається далі, симетрично life-area-card's entry-handlers.ts
+      // createEntry.
+      const proposal = await deps.withTransaction((txDb) =>
+        proposalHandlers.confirmProposal(txDb, ownerUserId(req), param(req, 'proposalId'))
+      );
+      res.status(200).json(proposal);
+    })
+  );
+
+  app.get(
+    '/api/v1/rules',
+    asyncHandler(async (req, res) => {
+      const { scopeCardId, after, limit } = req.query as { scopeCardId?: string; after?: string; limit?: string };
+      const page = await rulesHandlers.listRules(deps.db, ownerUserId(req), {
+        scopeCardId: scopeCardId ?? null,
+        after,
+        limit: limit !== undefined ? Number(limit) : undefined,
+      });
+      res.status(200).json(page);
+    })
+  );
+
+  app.post(
+    '/api/v1/rules',
+    asyncHandler(async (req, res) => {
+      const rule = await rulesHandlers.createRule(deps.db, ownerUserId(req), req.body);
+      res.status(201).json(rule);
+    })
+  );
+
+  app.get(
+    '/api/v1/reports',
+    asyncHandler(async (req, res) => {
+      const { periodType, after, limit } = req.query as {
+        periodType?: 'weekly' | 'monthly' | 'quarterly';
+        after?: string;
+        limit?: string;
+      };
+      const page = await reportsHandlers.listReports(deps.db, ownerUserId(req), {
+        periodType,
+        after,
+        limit: limit !== undefined ? Number(limit) : undefined,
+      });
+      res.status(200).json(page);
+    })
+  );
+
+  app.get(
+    '/api/v1/onboarding',
+    asyncHandler(async (req, res) => {
+      const status = await onboardingHandlers.getOnboardingStatus(deps.db, ownerUserId(req));
+      res.status(200).json(status);
+    })
+  );
+
+  app.delete(
+    '/api/v1/account',
+    asyncHandler(async (req, res) => {
+      // ВІДКРИТЕ ПИТАННЯ (флаговане в ../src/agent/ports/account-handler.ts,
+      // T43): контракт не описує тіло запиту й не називає, звідки
+      // транспорт бере `confirmed` (AC-17b) -- цей wiring-прохід читає його
+      // з JSON-тіла DELETE-запиту (express.json() парсить тіло незалежно
+      // від методу; глобальний `req.body === undefined -> {}` мідлвар вище
+      // покриває запит зовсім без тіла). Не задокументовано окремо в
+      // openapi.yaml -- лишається предметом звірки з людиною, як і сам
+      // порт коментує.
+      //
+      // withTransaction -- той самий ризик "напівзробленого стану", що
+      // proposals/confirm вище: audit-рядок (AC-17) і сам DELETE app_user
+      // (delete-account.ts) -- два послідовних запити, D-89 вимагає порядок
+      // audit-ПОТІМ-delete саме тому, що FK CASCADE знищив би аудит-рядок,
+      // якби порядок був зворотним; withTransaction гарантує, що збій
+      // другого не лишає осиротілий audit без фактичного видалення акаунта.
+      const { confirmed } = req.body as { confirmed?: boolean };
+      await deps.withTransaction((txDb) => accountHandlers.deleteAccount(txDb, ownerUserId(req), confirmed === true));
+      res.status(204).end();
+    })
+  );
+
+  app.get(
+    '/api/v1/sync-resources',
+    asyncHandler(async (req, res) => {
+      const resources = await syncResourceHandlers.listSyncResources(deps.db, ownerUserId(req));
+      res.status(200).json(resources);
+    })
+  );
+
+  app.post(
+    '/api/v1/sync-resources',
+    asyncHandler(async (req, res) => {
+      const resource = await syncResourceHandlers.createSyncResource(deps.db, ownerUserId(req), req.body);
+      res.status(201).json(resource);
+    })
+  );
+
+  app.delete(
+    '/api/v1/sync-resources/:resourceId',
+    asyncHandler(async (req, res) => {
+      await syncResourceHandlers.deleteSyncResource(deps.db, ownerUserId(req), param(req, 'resourceId'));
+      res.status(204).end();
+    })
+  );
+
   // Error-middleware -- ЄДИНЕ місце, де AppError мапиться в конверт контракту
   // (ADR-0006 §Обґрунтування, "Envelope помилки народжується в одному місці").
   // 4 параметри обов'язкові -- Express розпізнає error-handler саме за арністю.
@@ -517,6 +760,31 @@ export function createApp(deps: AppDeps): express.Express {
     }
     // eslint-disable-next-line no-console -- немає власного логера (one-person MVP, ADR-0006).
     console.error(err);
+    // AC-20 (US-14, "агент сам виявив технічну помилку чи збій") -- цей
+    // catch-all і є та точка: справжня, непередбачена помилка (не звичайний
+    // очікуваний доменний код 4xx/5xx на кшталт agent.llm_unavailable вище).
+    // Best-effort, fire-and-forget: клієнт мусить отримати ЦЮ Ж саму 500-
+    // відповідь незалежно від того, чи вдалось зафайлити звіт -- filing
+    // ніколи не є частиною контракту відповіді (звідси .catch(() => {}),
+    // а не await/throw). ownerUserId НЕ передається -- ця точка не
+    // гарантовано має користувача (запит міг впасти ще до Bearer-auth-
+    // middleware, напр. у POST /api/v1/session), тож "без userId" тут
+    // безпечніший, а не менш правильний варіант, ніж читання req.ownerUserId.
+    // Best-effort лише коли DI-залежності реально підключені (composition
+    // root, server/index.ts) -- у юніт-тестах/раннix середовищах без
+    // emailTransport/developerEmail генерик-гілка й далі поводиться так, як
+    // до цього фіксу.
+    if (deps.emailTransport && deps.developerEmail) {
+      const errorSummary = err instanceof Error && err.message ? err.message : 'Unexpected server error';
+      fileAgentDetectedErrorReport(
+        { db: deps.db, transport: deps.emailTransport, developerEmail: deps.developerEmail },
+        { errorSummary }
+      ).catch(() => {
+        // Навмисно проковтнуто (review finding fix): збій самого filing
+        // (БД, email-провайдер) НЕ повинен ані змінити вже надіслану
+        // клієнту відповідь, ані впасти некерованим unhandled rejection.
+      });
+    }
     res.status(500).json({ code: 'internal.error', message: 'Internal server error' });
   });
 
