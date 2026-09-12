@@ -6,6 +6,10 @@ import {
   isCardOverride,
   rulesInSameScope,
   findConflictingRule,
+  computeEffectiveRules,
+  defaultRuleShadowPredicate,
+  ruleDirectiveText,
+  CATEGORY_DIRECTIVES,
 } from './rules';
 import type { ImperativeRule } from './rules';
 
@@ -202,5 +206,98 @@ describe('findConflictingRule (AC-14: scope-isolated conflict check, ADR-0004)',
     );
 
     expect(conflict).toBeNull();
+  });
+});
+
+describe('ruleDirectiveText (AC-08 fix: category rule must reach the model as a real directive)', () => {
+  it("returns the rule's own free text when set", () => {
+    const freeTextRule = rule({ ruleText: 'не радь, якщо не питаю', category: null });
+    expect(ruleDirectiveText(freeTextRule)).toBe('не радь, якщо не питаю');
+  });
+
+  it('falls back to the category directive when ruleText is null -- never a bare slug', () => {
+    const categoryRule = rule({ ruleText: null, category: 'reminder' });
+    expect(ruleDirectiveText(categoryRule)).toBe(CATEGORY_DIRECTIVES.reminder);
+    expect(ruleDirectiveText(categoryRule)).not.toBe('reminder');
+  });
+
+  it('prefers the free text over the category directive when both are set (CHECK is OR, not XOR)', () => {
+    const bothRule = rule({ ruleText: 'уточнюй одиниці виміру', category: 'data' });
+    expect(ruleDirectiveText(bothRule)).toBe('уточнюй одиниці виміру');
+  });
+});
+
+describe('computeEffectiveRules (AC-12 fix, review finding: precedence inversion)', () => {
+  // spec.md AC-12: "перевизначення картки свідомо переважає глобальне
+  // правило... це очікуваний намір користувача, а не суперечність". The
+  // global rule an override shadows must be excluded from the effective
+  // set entirely, not merely reordered alongside it.
+  it('drops a global rule shadowed by a same-category card override', () => {
+    const globalRule = rule({ id: 'global-reminder', scopeCardId: null, category: 'reminder', ruleText: null });
+    const cardOverride = rule({
+      id: 'override-reminder',
+      scopeCardId: 'card-1',
+      category: 'reminder',
+      ruleText: 'на цій картці не нагадуй',
+    });
+
+    const effective = computeEffectiveRules([globalRule, cardOverride]);
+
+    expect(effective.map((r) => r.id)).toEqual(['override-reminder']);
+  });
+
+  it('keeps a global rule that no override shadows (different category)', () => {
+    const globalRule = rule({ id: 'global-data', scopeCardId: null, category: 'data', ruleText: null });
+    const cardOverride = rule({ id: 'override-reminder', scopeCardId: 'card-1', category: 'reminder', ruleText: null });
+
+    const effective = computeEffectiveRules([globalRule, cardOverride]);
+
+    expect(effective.map((r) => r.id).sort()).toEqual(['global-data', 'override-reminder']);
+  });
+
+  it('keeps every rule unchanged when there is no card override at all', () => {
+    const rules = [
+      rule({ id: 'global-1', scopeCardId: null, ruleText: 'не радь, якщо не питаю' }),
+      rule({ id: 'global-2', scopeCardId: null, ruleText: 'нагадуй щодня' }),
+    ];
+
+    expect(computeEffectiveRules(rules).map((r) => r.id).sort()).toEqual(['global-1', 'global-2']);
+  });
+
+  it('accepts a custom isShadowing predicate (DI, same convention as isConflicting/isViolating)', () => {
+    const globalRule = rule({ id: 'global-free', scopeCardId: null, ruleText: 'не радь, якщо не питаю' });
+    const cardOverride = rule({ id: 'override-free', scopeCardId: 'card-1', ruleText: 'радь щодня' });
+    const sameTopicOpposite = (override: Pick<ImperativeRule, 'category' | 'ruleText'>, global: ImperativeRule) =>
+      override.ruleText === 'радь щодня' && global.ruleText === 'не радь, якщо не питаю';
+
+    const effective = computeEffectiveRules([globalRule, cardOverride], sameTopicOpposite);
+
+    expect(effective.map((r) => r.id)).toEqual(['override-free']);
+  });
+});
+
+describe('defaultRuleShadowPredicate (AC-12 default topic match)', () => {
+  it('matches on exact category equality', () => {
+    const override = { category: 'reminder' as const, ruleText: null };
+    const global = rule({ category: 'reminder', ruleText: null });
+    expect(defaultRuleShadowPredicate(override, global)).toBe(true);
+  });
+
+  it('matches on exact free-text equality (trimmed, case-insensitive)', () => {
+    const override = { category: null, ruleText: '  Не Радь, Якщо Не Питаю  ' };
+    const global = rule({ category: null, ruleText: 'не радь, якщо не питаю' });
+    expect(defaultRuleShadowPredicate(override, global)).toBe(true);
+  });
+
+  it('does not match two unrelated free-text rules', () => {
+    const override = { category: null, ruleText: 'радь щодня' };
+    const global = rule({ category: null, ruleText: 'не радь, якщо не питаю' });
+    expect(defaultRuleShadowPredicate(override, global)).toBe(false);
+  });
+
+  it('does not match different categories', () => {
+    const override = { category: 'reminder' as const, ruleText: null };
+    const global = rule({ category: 'data', ruleText: null });
+    expect(defaultRuleShadowPredicate(override, global)).toBe(false);
   });
 });

@@ -38,7 +38,8 @@
 import type { AskClaude, AskClaudeInput, ClaudeAttachment, ClaudeError } from '../infra/claude-client';
 import { runGuardCheck, defaultRuleViolationCheck } from '../domain/guard';
 import type { GuardResult, RuleViolationCheck } from '../domain/guard';
-import type { ImperativeRule } from '../domain/rules';
+import { computeEffectiveRules, defaultRuleShadowPredicate, ruleDirectiveText } from '../domain/rules';
+import type { ImperativeRule, RuleShadowPredicate } from '../domain/rules';
 import { AppError } from '../../shared/errors';
 
 export interface AskAgentInput {
@@ -67,6 +68,14 @@ export interface AskAgentInput {
    * покриває.
    */
   isViolating?: RuleViolationCheck;
+  /**
+   * AC-12 fix (review finding: precedence inversion) -- DI-гачок визначення
+   * "той самий топік" між card-override і глобальним правилом, яке воно
+   * перевизначає (`computeEffectiveRules`, domain/rules.ts). Дефолт
+   * `defaultRuleShadowPredicate` (точний збіг категорії або вільного тексту)
+   * -- той самий підхід DI, що й `isViolating`/`isConflicting` (T9 Neutral).
+   */
+  isShadowing?: RuleShadowPredicate;
 }
 
 export interface AskAgentResult {
@@ -91,14 +100,23 @@ export interface AskAgentResult {
  */
 export async function askAgent(askClaude: AskClaude, input: AskAgentInput): Promise<AskAgentResult> {
   const isViolating = input.isViolating ?? defaultRuleViolationCheck;
-  const systemPrompt = buildSystemPrompt(input.baseSystemPrompt, input.activeRules);
+  // AC-12 fix (review finding: precedence inversion) -- `input.activeRules`
+  // -- це плаский список глобальні+card-override, ЩЕ не вирішений щодо
+  // пріоритету (докладніше -- поле `activeRules` вище). Раніше і промпт, і
+  // guard читали цей плаский список напряму, тож перевизначення картки НЕ
+  // рятувало від провалу guard на глобальному правилі, яке воно свідомо
+  // перевизначає (AC-12). `computeEffectiveRules` рахує ЄДИНИЙ раз тут --
+  // до промпту й до ОБОХ guard-перевірок нижче (першої й повторної), щоб
+  // обидві бачили той самий узгоджений набір.
+  const effectiveRules = computeEffectiveRules(input.activeRules, input.isShadowing ?? defaultRuleShadowPredicate);
+  const systemPrompt = buildSystemPrompt(input.baseSystemPrompt, effectiveRules);
 
   const draft = await callClaudeOrThrow(askClaude, {
     systemPrompt,
     text: input.text,
     attachment: input.attachment ?? null,
   });
-  const guard = runGuardCheck(draft, input.activeRules, isViolating);
+  const guard = runGuardCheck(draft, effectiveRules, isViolating);
 
   if (guard.passed) {
     return { reply: draft, guard, retried: false };
@@ -113,7 +131,7 @@ export async function askAgent(askClaude: AskClaude, input: AskAgentInput): Prom
     text: input.text,
     attachment: input.attachment ?? null,
   });
-  const retryGuard = runGuardCheck(retryDraft, input.activeRules, isViolating);
+  const retryGuard = runGuardCheck(retryDraft, effectiveRules, isViolating);
 
   return { reply: retryDraft, guard: retryGuard, retried: true };
 }
@@ -130,7 +148,13 @@ function buildSystemPrompt(baseSystemPrompt: string | undefined, activeRules: Im
     return base;
   }
 
-  const rulesText = activeRules.map((rule) => `- ${rule.ruleText ?? rule.category}`).join('\n');
+  // AC-08 fix (review finding): раніше тут був голий `rule.ruleText ??
+  // rule.category` -- для категорійного правила (D-27, без власного
+  // `ruleText`) це друкувало голий enum-слаг ("reminder", "owner_impact")
+  // замість інструкції людською мовою. `ruleDirectiveText` (domain/rules.ts)
+  // -- єдине джерело правди для "що з цього правила показати", те саме,
+  // яким тепер користується і guard (domain/guard.ts) для `reason`.
+  const rulesText = activeRules.map((rule) => `- ${ruleDirectiveText(rule)}`).join('\n');
   const rulesBlock = `Активні правила користувача (дотримуйся їх у КОЖНІЙ відповіді, AC-07/AC-12):\n${rulesText}`;
 
   return base.length > 0 ? `${base}\n\n${rulesBlock}` : rulesBlock;
