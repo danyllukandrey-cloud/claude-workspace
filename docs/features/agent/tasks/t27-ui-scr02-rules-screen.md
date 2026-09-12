@@ -7,7 +7,7 @@ acs: ["AC-07", "AC-08", "AC-12", "AC-14"]
 files_hint: ["plan/app/src/agent/ui/RuleSettingsScreen.tsx"]
 owner: "TBD"
 estimate: "M"
-status: "todo"
+status: "done"
 ---
 
 # T27 — UI: SCR-02 Налаштування правил screen
@@ -22,9 +22,9 @@ status: "todo"
 
 ## Definition of Done
 
-- [ ] Component test: усі 7 станів зі `screens.md` SCR-02 рендеряться за відповідним триггером
-- [ ] Component test: перемикання на `card-scope` показує `CardPicker`, приховує його у глобальному режимі
-- [ ] lint + vet clean
+- [x] Component test: усі 7 станів зі `screens.md` SCR-02 рендеряться за відповідним триггером
+- [x] Component test: перемикання на `card-scope` показує `CardPicker`, приховує його у глобальному режимі
+- [x] lint + vet clean
 
 ## Notes
 

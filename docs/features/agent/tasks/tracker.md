@@ -31,7 +31,7 @@
 | T24 | Ports: GET /onboarding handler | ports | TBD | S | T13 | done |
 | T25 | UI: SCR-01 chat components | ui | TBD | M | — | done |
 | T26 | UI: SCR-01 Чат screen | ui | TBD | L | T25, T20, T21, T24 | todo |
-| T27 | UI: SCR-02 Налаштування правил screen | ui | TBD | M | T22 | todo |
+| T27 | UI: SCR-02 Налаштування правил screen | ui | TBD | M | T22 | done |
 | T28 | UI: SCR-03 Звіти активності screen | ui | TBD | M | T23 | todo |
 | T29 | Wiring: register agent module | wiring | TBD | S | T14, T26, T27, T28, T45, T47 | todo |
 | T30 | Tests: cross-cutting integration | tests | TBD | M | T29 | todo |
