@@ -187,14 +187,30 @@ function toLayoutPositionRecord(row: RawLayoutPositionRow): LayoutPositionRecord
 
 const LAYOUT_POSITION_COLUMNS = 'id, structure_id, card_id, cell_index, status, position_updated_at, created_at';
 
+/**
+ * ISS-101/D-117: щойно авто-розкладена позиція (нова картка, ще жодного разу
+ * НЕ переміщена користувачем) навмисно отримує свідомо старий `position_updated_at`
+ * замість дефолту `now()` колонки. Причина -- `resolvePositionConflict`
+ * (domain/layout.ts, ADR-0002) порівнює час БД (цей запис) з часом клієнта
+ * (перше ж перетягування) напряму, без толерантності: будь-яка розбіжність
+ * годинників клієнт/сервер (виміряно ~54мс проти dev Neon) робила щойно
+ * створену позицію "новішою" за перше реальне переміщення користувача --
+ * переміщення тихо ігнорувалось, без помилки (move-card.integration.test.ts).
+ * Сентинел-час 1970 гарантує, що ПЕРШЕ реальне переміщення завжди виграє,
+ * незалежно від розбіжності годинників -- саму функцію resolvePositionConflict
+ * і реальний конфлікт двох пристроїв (ADR-0002) це не чіпає: там обидва боки
+ * порівняння вже мають "справжні", недавні часові мітки.
+ */
+const NEVER_MOVED_SENTINEL = new Date(0);
+
 export async function insertLayoutPosition(
   db: Db,
   input: { id: string; structureId: string; cardId: string; cellIndex: number }
 ): Promise<LayoutPositionRecord> {
   const { rows } = await db.query<RawLayoutPositionRow>(
-    `INSERT INTO structure_layout_position (id, structure_id, card_id, cell_index)
-     VALUES ($1, $2, $3, $4) RETURNING ${LAYOUT_POSITION_COLUMNS}`,
-    [input.id, input.structureId, input.cardId, input.cellIndex]
+    `INSERT INTO structure_layout_position (id, structure_id, card_id, cell_index, position_updated_at)
+     VALUES ($1, $2, $3, $4, $5) RETURNING ${LAYOUT_POSITION_COLUMNS}`,
+    [input.id, input.structureId, input.cardId, input.cellIndex, NEVER_MOVED_SENTINEL]
   );
   return toLayoutPositionRecord(rows[0]);
 }
