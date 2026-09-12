@@ -41,7 +41,7 @@
 | T34 | Domain: account deletion orchestration | domain | TBD | S | — | done |
 | T35 | Domain: resource-sync scheduling model | domain | TBD | S | — | done |
 | T36 | Domain: developer-report classification | domain | TBD | S | — | done |
-| T37 | Infra: outbound email client | infra | TBD | M | — | todo |
+| T37 | Infra: outbound email client | infra | TBD | M | — | done |
 | T38 | Infra (agent-worker): external resource writer | infra | TBD | M | — | todo |
 | T39 | App: deleteAccount use-case | app | TBD | M | T34, T13 | todo |
 | T40 | App: sync-resource CRUD use-cases | app | TBD | S | T35, T13 | todo |
