@@ -28,7 +28,7 @@
 | T21 | Ports: proposal confirm handlers | ports | TBD | S | T17 | todo |
 | T22 | Ports: GET/POST /rules handlers | ports | TBD | S | T9, T13 | done |
 | T23 | Ports: GET /reports handler | ports | TBD | S | T13 | done |
-| T24 | Ports: GET /onboarding handler | ports | TBD | S | T13 | todo |
+| T24 | Ports: GET /onboarding handler | ports | TBD | S | T13 | done |
 | T25 | UI: SCR-01 chat components | ui | TBD | M | — | done |
 | T26 | UI: SCR-01 Чат screen | ui | TBD | L | T25, T20, T21, T24 | todo |
 | T27 | UI: SCR-02 Налаштування правил screen | ui | TBD | M | T22 | todo |
