@@ -163,9 +163,24 @@ describe('insertLayoutPosition + listActiveLayoutPositionsByOwner -- AC-08/AC-09
     // Owner scoping happens via a join back to structure.owner_user_id --
     // the query text must mention owner_user_id even though the column lives
     // on `structure`, not `structure_layout_position` (data-model.md).
-    const [sql, params] = listQuery.mock.calls[0];
-    expect(sql).toMatch(/owner_user_id/);
-    expect(params).toEqual(['owner-1']);
+    const [listSql, listParams] = listQuery.mock.calls[0];
+    expect(listSql).toMatch(/owner_user_id/);
+    expect(listParams).toEqual(['owner-1']);
+  });
+
+  // ISS-101/D-117: авто-розкладена позиція (нова картка) пишеться зі свідомо
+  // старим position_updated_at (епоха, 1970), не з дефолту now() колонки --
+  // інакше перше ж реальне переміщення користувача могло тихо програти через
+  // розбіжність годинників клієнт/БД (виміряно ~54мс проти dev Neon).
+  it('writes a sentinel (epoch) position_updated_at instead of relying on the column default now()', async () => {
+    const insertQuery = vi.fn().mockResolvedValue({ rows: [rawLayoutPositionRow()] });
+    const db: Db = { query: insertQuery };
+
+    await insertLayoutPosition(db, { id: 'position-1', structureId: 'structure-1', cardId: 'card-1', cellIndex: 3 });
+
+    const [sql, params] = insertQuery.mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/position_updated_at/);
+    expect(params).toEqual(['position-1', 'structure-1', 'card-1', 3, new Date(0)]);
   });
 
   it('a card with no active position at all is simply absent from the list -- AC-09 places no forced placeholder row', async () => {
