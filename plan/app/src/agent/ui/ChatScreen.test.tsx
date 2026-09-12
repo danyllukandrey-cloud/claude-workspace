@@ -5,7 +5,7 @@
 
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-import { ChatScreen } from './ChatScreen';
+import { ChatScreen, CONFIRMED_HINT_TEXT } from './ChatScreen';
 import type { ChatMessage, ChatProposal } from './chat/types';
 
 function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
@@ -132,6 +132,48 @@ describe('ChatScreen -- confirmed (AC-02)', () => {
     await waitFor(() => expect(props.confirmProposal).toHaveBeenCalledWith('proposal-1'));
     expect(screen.queryByRole('button', { name: 'Підтвердити' })).not.toBeTruthy();
     expect(screen.getByText(/записано ✓ Спорт: 5 км/)).toBeTruthy();
+  });
+});
+
+describe('ChatScreen -- confirmed-hint (AC-16/AC-16b, T47)', () => {
+  it('shows the static hint right after a completed action (AC-02 confirm) and lets ✕ dismiss it', async () => {
+    const props = baseProps({
+      loadActiveProposal: vi.fn().mockResolvedValue(proposal()),
+      confirmProposal: vi.fn().mockResolvedValue(undefined),
+    });
+
+    render(<ChatScreen {...props} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Підтвердити' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Підтвердити' }));
+
+    await waitFor(() => expect(screen.getByText(CONFIRMED_HINT_TEXT)).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Закрити підказку' }));
+    expect(screen.queryByText(CONFIRMED_HINT_TEXT)).not.toBeTruthy();
+  });
+
+  it('dismisses the hint when the Composer input receives focus (AC-16b, second dismissal path)', async () => {
+    const props = baseProps({
+      loadActiveProposal: vi.fn().mockResolvedValue(proposal()),
+      confirmProposal: vi.fn().mockResolvedValue(undefined),
+    });
+
+    render(<ChatScreen {...props} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Підтвердити' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Підтвердити' }));
+    await waitFor(() => expect(screen.getByText(CONFIRMED_HINT_TEXT)).toBeTruthy());
+
+    fireEvent.focus(screen.getByLabelText('Повідомлення'));
+
+    expect(screen.queryByText(CONFIRMED_HINT_TEXT)).not.toBeTruthy();
+  });
+
+  it('does not show the hint before any action has completed (default state)', async () => {
+    const props = baseProps();
+    render(<ChatScreen {...props} />);
+    await waitFor(() => expect(props.loadHistory).toHaveBeenCalled());
+
+    expect(screen.queryByText(CONFIRMED_HINT_TEXT)).not.toBeTruthy();
   });
 });
 

@@ -21,6 +21,13 @@
 // структурою екрана) -- відповідно немає окремої гілки нижче, лише той факт,
 // що ProposalCard не рендериться, коли activeProposal === null.
 //
+// confirmed-hint (AC-16/AC-16b, T47) -- дисмісибл-підказка над Composer
+// одразу після завершеної дії (AC-16 приклад: підтвердження запису, AC-02).
+// Статичний текст інтерфейсу, НЕ репліка агента (AC-16 explicitly, D-43) --
+// HintBubble (T47) рендериться тут, ChatScreen сам вирішує коли showHint
+// true/false, бо саме тут відомо про "завершену дію" (confirmProposal) і
+// про фокус Composer (AC-16b, друга причина дисмісу).
+//
 // "confirmed" (AC-02) -- MessageTurn/ProposalConfirm (T20/T21) не повертають
 // нове chat_message з текстом підтвердження (лише оновлений Proposal) --
 // той підпис "Агент: записано ✓ ..." (screens.md wireframe) синтезується
@@ -40,7 +47,13 @@ import { MessageList } from './chat/MessageList';
 import { ProposalCard } from './chat/ProposalCard';
 import { Composer } from './chat/Composer';
 import type { ComposerSendInput } from './chat/Composer';
+import { HintBubble } from './chat/HintBubble';
 import type { ChatMessage, ChatProposal } from './chat/types';
+
+// AC-16: точний текст статичної підказки -- один рядок джерела правди,
+// однаковий і для рендеру, і для тесту.
+export const CONFIRMED_HINT_TEXT =
+  'Звертайся до Агента щоразу, коли маєш запитання чи не розумієш наступний крок';
 
 export interface SendMessageResult {
   /** Текст відповіді агента (MessageTurn.reply, contracts/openapi.yaml) -- НЕ повний ChatMessage, лише рядок. */
@@ -105,6 +118,7 @@ export function ChatScreen({
   const [banner, setBanner] = useState<BannerState | null>(null);
   const [sending, setSending] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [showHint, setShowHint] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -184,6 +198,8 @@ export function ChatScreen({
           createdAt: new Date().toISOString(),
         };
         setMessages((prev) => [...prev, confirmationMessage]);
+        // AC-16: підказка з'являється одразу після завершеної дії.
+        setShowHint(true);
       })
       .catch((error: unknown) => {
         const message = isAppErrorShape(error) ? error.message : error instanceof Error ? error.message : SEND_FAILURE_MESSAGE;
@@ -213,7 +229,14 @@ export function ChatScreen({
         />
       )}
 
-      <Composer onSend={handleSend} disabled={sending} />
+      {showHint && <HintBubble text={CONFIRMED_HINT_TEXT} onDismiss={() => setShowHint(false)} />}
+
+      {/* AC-16b: друга причина дисмісу -- фокус на Composer. onFocus у React
+          бубблиться (делегування через focusin), тож фокус на внутрішньому
+          input-і Composer (T25, не редагується цим файлом) спливає сюди. */}
+      <div onFocus={() => setShowHint(false)}>
+        <Composer onSend={handleSend} disabled={sending} />
+      </div>
 
       {banner !== null && <Banner variant={banner.variant} text={banner.text} />}
     </div>
