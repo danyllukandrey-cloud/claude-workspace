@@ -22,7 +22,7 @@
 | T15 | Infra (agent-worker): schedule + report persistence | infra | TBD | M | T7, T13 | done |
 | T16 | App: handle-message use-case | app | TBD | L | T8, T10, T13, T18 | todo |
 | T17 | App: confirm use-case | app | TBD | S | T8, T13 | done |
-| T18 | App: ask-agent orchestration | app | TBD | M | T9, T12 | todo |
+| T18 | App: ask-agent orchestration | app | TBD | M | T9, T12 | done |
 | T19 | App (agent-worker): generate-report use-case | app | TBD | M | T11, T15 | todo |
 | T20 | Ports: GET/POST /messages handlers | ports | TBD | M | T16 | todo |
 | T21 | Ports: proposal confirm handlers | ports | TBD | S | T17 | todo |
