@@ -2,6 +2,7 @@
 #   fields + constraints  ← data-model.md (structure, structure_layout_position)
 #   error responses       ← sad.md §6 sequence alt-branches
 #   endpoint list + shape ← spec.md §4 user stories / §5 acceptance criteria
+# prose-only touch-up 2026-09-11 for D-113, re-run --reconcile for a full regenerate later
 openapi: 3.1.0
 
 info:
@@ -133,12 +134,10 @@ paths:
       tags: [Layout]
       summary: Реконструювати розкладку на попередню дату (для тренду розриву, AC-07)
       description: |
-        Читає з окремого сервісу літопису (ADR-0004, D-67) останню позицію кожної картки з
-        `occurred_at <= asOf` — тобто "якою була розкладка на цю дату". Використовується Потоком 9
+        Читає останню позицію кожної картки з `structure_history_event` — тієї самої бази
+        мінімального бекенда, що й `structure`/`structure_layout_position` (D-113) — з
+        `occurred_at <= asOf`, тобто "якою була розкладка на цю дату". Використовується Потоком 9
         (`sad.md §6`), щоб порахувати, чи розрив зростає, чи меншає з часом.
-
-        **Відкрите питання (sad.md §11):** поведінка, коли сервіс літопису недоступний, ще не
-        вирішена (блокувати запит чи повертати часткові дані) — цей контракт її не визначає.
       operationId: getLayoutHistoryAsOf
       parameters:
         - in: query
@@ -218,7 +217,7 @@ paths:
       summary: Закрити напрямок (AC-12)
       description: |
         Закриває позицію картки `cardId` в розкладці (м'який статус `closed`, ніколи фізичне
-        видалення — D-66) і пише подію `closed` у сервіс літопису з часовою міткою (AC-15).
+        видалення — D-66) і пише подію `closed` у `structure_history_event` з часовою міткою (AC-15).
         Опційно переносить перелічені метрики картки в інші існуючі картки перед закриттям
         (AC-12, D-65) — сам перенос виконує доменна логіка `life-area-card`
         (`life-area-card` API US-13/AC-14/AC-15, поза цим контрактом).
@@ -261,6 +260,17 @@ paths:
               example:
                 code: "structure.metric_transfer_target_invalid"
                 message: "targetCardId does not exist or is not yours"
+        "409":
+          description: |
+            колізія назви+одиниці метрики на цільовій картці перенесення (`newLabel` не задано) —
+            той самий код, що `life-area-card`'s `POST /cards/{cardId}/metric-blocks/transfer`
+            (внутрішній виклик того ж use-case, не окрема операція цього контракту; review 2026-09-11).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "metric_block.name_collision"
+                message: "У картці-призначенні вже є блок із такою назвою й одиницею"
 
 components:
   securitySchemes:
@@ -329,9 +339,12 @@ components:
       properties:
         cardId: { type: string, format: uuid }
         cellIndex:
-          type: integer
+          type: [integer, "null"]
           minimum: 0
-          description: номер клітинки у фіксованій нумерованій схемі (sad.md §5.2, "запас вільних клітинок")
+          description: |
+            номер клітинки у фіксованій нумерованій схемі (sad.md §5.2, "запас вільних клітинок").
+            `null` — картка ще нікуди не розкладена ("трей нерозкладених", міграція 06,
+            data-model.md — AC-11b/AC-16b/AC-17). `minimum` стосується лише не-null значення.
         status:
           type: string
           enum: [active, closed]

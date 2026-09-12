@@ -1,5 +1,5 @@
 -- structure: drop structure_history_event
--- Staged migration — NOT live. Target DB: history service store.
+-- Staged migration — NOT live.
 
 DROP INDEX IF EXISTS idx_history_structure_time;
 DROP INDEX IF EXISTS idx_history_card_time;

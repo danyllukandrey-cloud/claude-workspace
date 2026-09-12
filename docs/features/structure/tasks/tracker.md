@@ -7,32 +7,35 @@
 |---|---|---|---|---|---|---|
 | T1 | Create structure table (backend DB) | migration | TBD | S | — | done |
 | T2 | Create structure_layout_position table (backend DB) | migration | TBD | S | T1 | done |
-| T3 | Create structure_history_event table (history-service DB) | migration | TBD | S | — | todo |
-| T4 | Domain: declaration + layout core models | domain | TBD | M | — | todo |
-| T5 | Domain: layout position conflict + last-write-wins resolution | domain | TBD | M | — | todo |
-| T6 | Domain: aggregate progress calculation | domain | TBD | M | — | todo |
-| T7 | Domain: gap + trend calculation | domain | TBD | M | — | todo |
-| T8 | Domain: local history cache model | domain | TBD | S | — | todo |
-| T9 | Infra: backend repository for structure + layout positions | infra | TBD | M | T1, T2, T27 | todo |
-| T10 | Infra: history service client (write + asOf read) | infra | TBD | M | T3 | todo |
-| T11 | App: updateStructure use-case | app | TBD | M | T4, T9 | todo |
-| T12 | App: moveCard use-case | app | TBD | M | T4, T5, T9, T10 | todo |
-| T13 | App: closeCard use-case | app | TBD | M | T5, T9, T10 | todo |
-| T14 | App: getAnalytics use-case | app | TBD | L | T6, T7, T9, T10 | todo |
-| T15 | Ports: GET/PATCH /structure handlers | ports | TBD | S | T11 | todo |
-| T16 | Ports: GET /structure/layout + /structure/layout/history handlers | ports | TBD | S | T9, T14 | todo |
-| T17 | Ports: PUT /structure/layout/{cardId} handler | ports | TBD | S | T12 | todo |
-| T18 | Ports: POST /structure/layout/{cardId}/close handler | ports | TBD | S | T13 | todo |
-| T19 | UI: shared primitives (Spinner, Banner, ConfirmDialog, EmptyState) | ui | TBD | M | — | todo |
-| T20 | UI: SCR-01 Декларація screen | ui | TBD | M | T19, T15 | todo |
-| T21 | UI: SCR-02 Схема screen | ui | TBD | L | T19, T16, T17 | todo |
-| T22 | UI: SCR-03 Літопис-Аналітика screen | ui | TBD | M | T19, T16 | todo |
-| T23 | UI: SCR-04 Закрити напрямок dialog | ui | TBD | M | T19, T18 | todo |
-| T24 | Wiring: register Структура module in app-shell | wiring | TBD | S | T20, T21, T22, T23 | todo |
-| T25 | Tests: cross-cutting integration (AC-05 + offline sync) | tests | TBD | M | T24 | todo |
+| T3 | Create structure_history_event table (backend DB) | migration | TBD | S | T1 | done |
+| T4 | Domain: declaration + layout core models | domain | TBD | M | — | done |
+| T5 | Domain: layout position conflict + last-write-wins resolution | domain | TBD | M | — | done |
+| T6 | Domain: aggregate progress calculation | domain | TBD | M | — | done |
+| T7 | Domain: gap + trend calculation | domain | TBD | M | — | done |
+| T8 | Domain: local history cache model | domain | TBD | S | — | done |
+| T9 | Infra: backend repository for structure + layout positions | infra | TBD | M | T1, T2, T27 | done |
+| T10 | Infra: history repository (write + asOf read) | infra | TBD | M | T3 | done |
+| T11 | App: updateStructure use-case | app | TBD | M | T4, T9 | done |
+| T12 | App: moveCard use-case | app | TBD | M | T4, T5, T9, T10 | done |
+| T13 | App: closeCard use-case | app | TBD | M | T5, T9, T10 | done |
+| T14 | App: getAnalytics use-case | app | TBD | L | T6, T7, T9, T10 | done |
+| T15 | Ports: GET/PATCH /structure handlers | ports | TBD | S | T11 | done |
+| T16 | Ports: GET /structure/layout + /structure/layout/history handlers | ports | TBD | S | T9, T14 | done |
+| T17 | Ports: PUT /structure/layout/{cardId} handler | ports | TBD | S | T12 | done |
+| T18 | Ports: POST /structure/layout/{cardId}/close handler | ports | TBD | S | T13 | done |
+| T19 | UI: shared primitives (Spinner, Banner, ConfirmDialog, EmptyState) | ui | TBD | M | — | done |
+| T20 | UI: SCR-01 Декларація screen | ui | TBD | M | T19, T15 | done |
+| T21 | UI: SCR-02 Схема screen | ui | TBD | L | T19, T16, T17 | done |
+| T22 | UI: SCR-03 Літопис-Аналітика screen | ui | TBD | M | T19, T16 | done |
+| T23 | UI: SCR-04 Закрити напрямок dialog | ui | TBD | M | T19, T18 | done |
+| T24 | Wiring: register Структура module in app-shell | wiring | TBD | S | T20, T21, T22, T23 | done |
+| T25 | Tests: cross-cutting integration (AC-05 + offline sync) | tests | TBD | M | T24 | done |
 | T26 | Migration: add owner_user_id FK | migration | TBD | S | T1 | done |
-| T27 | Migration: add logic_variant column | migration | TBD | S | T1 | todo |
+| T27 | Migration: add logic_variant column | migration | TBD | S | T1 | done |
+| T28 | Cross-cutting: wire card rename into Structure-history 'renamed' event | app | TBD | S | T10, T14 | done |
 
-**Total:** 27 tasks — 11 S + 14 M + 2 L. Доповнено 2026-08-29 (T26, D-89) — крос-фічева FK-міграція для каскадного видалення акаунта. Доповнено 2026-08-30 (T27, [D-83](../../../DECISIONS.md#d-83), закриває [ISS-7](../../../ISSUES.md)) — три підвиди варіанта «за логікою» дійшли до схеми БД. Орієнтовно 1.5–2 «спринти» в термінах size-matrix (M), але в реальному часі значно довше через темп проєкту (~8-12 год/тиждень, уточнено 2026-08-29 — стара оцінка 1-2 год/тиждень застаріла, [D-87](../../../DECISIONS.md#d-87)).
+**Total:** 28 tasks — 11 S + 15 M + 2 L. Доповнено 2026-08-29 (T26, D-89) — крос-фічева FK-міграція для каскадного видалення акаунта. Доповнено 2026-08-30 (T27, [D-83](../../../DECISIONS.md#d-83), закриває [ISS-7](../../../ISSUES.md)) — три підвиди варіанта «за логікою» дійшли до схеми БД. Орієнтовно 1.5–2 «спринти» в термінах size-matrix (M), але в реальному часі значно довше через темп проєкту (~8-12 год/тиждень, уточнено 2026-08-29 — стара оцінка 1-2 год/тиждень застаріла, [D-87](../../../DECISIONS.md#d-87)).
+
+**T28 додано 2026-09-12** ([D-115](../../../DECISIONS.md#d-115), закриває [ISS-105](../../../ISSUES.md)) — рев'ю 2026-09-11 знайшло дірку: AC-15 обіцяв подію 'renamed' у Літописі, місце в схемі й типи були, виклику не було. Юніт-тести зелені (мокнутий `Db`); реальний round-trip проти Neon не перевірений цією сесією через відсутність доступу до БД в пісочниці — перевірити `npm run test:integration` наступного разу.
 
 **T1/T2/T26 закриті 2026-09-05 ПОЗАЧЕРГОВО** ([D-103](../../../DECISIONS.md#d-103)) — не з власної черги хвиль `structure` (яка ще не стартувала), а тому що `life-area-card`'s T15 (archiveCard) потребував реальної `structure_layout_position` для [ISS-26](../../../ISSUES.md)/D-69. Решта задач (T3-T25, T27) і далі `todo` — 3/27 done не означає, що `implement structure` розпочато.

@@ -4,11 +4,11 @@
 
 ## Goal
 
-Реалізувати Структуру — декларацію картини світу, розкладку карток і зведену аналітику з чесним розривом (spec.md §2). Дві бази (основний бекенд + окремий сервіс літопису, ADR-0004), 6 API-ендпоінтів, 4 екрани.
+Реалізувати Структуру — декларацію картини світу, розкладку карток і зведену аналітику з чесним розривом (spec.md §2). Одна база (спільний мінімальний бекенд, [D-113](../../../DECISIONS.md#d-113)), 6 API-ендпоінтів, 4 екрани.
 
 ## Scope
 
-- **In:** доменна логіка (декларація/розкладка/агрегат/розрив-тренд/літопис), інфраструктура для двох баз, use-case шар, HTTP-ендпоінти, 4 UI-екрани, wiring в app-shell.
+- **In:** доменна логіка (декларація/розкладка/агрегат/розрив-тренд/літопис), інфраструктура для однієї спільної бази (backend-репозиторії), use-case шар, HTTP-ендпоінти, 4 UI-екрани, wiring в app-shell.
 - **Out (spec.md §3):** поля самої картки (`life-area-card`), поведінка агента, екран перегляду сирого літопису, повноцінний інструмент об'єднання карток.
 
 ## Task map
@@ -16,7 +16,7 @@
 ```mermaid
 flowchart LR
     T1[T1 migration: structure] --> T2[T2 migration: layout_position]
-    T3[T3 migration: history_event]
+    T1 --> T3[T3 migration: history_event]
 
     T4[T4 domain: declaration+layout]
     T5[T5 domain: conflict+LWW]
@@ -86,14 +86,14 @@ See [tracker.md](./tracker.md) for status. Machine contract: [tasks.json](../tas
 |---|---|---|---|---|
 | T1 | Create structure table (backend DB) | migration | — | migration 01 applies/reverts cleanly |
 | T2 | Create structure_layout_position table (backend DB) | migration | T1 | migration 02 applies/reverts, partial unique index live |
-| T3 | Create structure_history_event table (history-service DB) | migration | — | migration applies/reverts in history-service DB |
+| T3 | Create structure_history_event table (backend DB) | migration | T1 | migration applies/reverts in the shared backend DB |
 | T4 | Domain: declaration + layout core models | domain | — | unit tests for AC-09/10/11/11b |
 | T5 | Domain: layout position conflict + last-write-wins resolution | domain | — | unit tests for AC-02/08/12 |
 | T6 | Domain: aggregate progress calculation | domain | — | unit tests for AC-01/04/13 |
 | T7 | Domain: gap + trend calculation | domain | — | unit tests for AC-06/06b/07 |
 | T8 | Domain: local history cache model | domain | — | unit tests for AC-15 local queue |
 | T9 | Infra: backend repository for structure + layout positions | infra | T1, T2 | scoped reads/writes, owner isolation tested |
-| T10 | Infra: history service client (write + asOf read) | infra | T3 | write+asOf round-trip tested |
+| T10 | Infra: history repository (write + asOf read) | infra | T3 | write+asOf round-trip tested |
 | T11 | App: updateStructure use-case | app | T4, T9 | PATCH + AC-11b reset side-effect tested |
 | T12 | App: moveCard use-case | app | T4, T5, T9, T10 | move + collision + LWW + history event tested |
 | T13 | App: closeCard use-case | app | T5, T9, T10 | close + history event tested |
@@ -117,5 +117,5 @@ See [tracker.md](./tracker.md) for status. Machine contract: [tasks.json](../tas
 - **ADR-0001 (recompute client-side):** T6/T7/T14 ніколи не кешують готове число агрегату/розриву на бекенді — лише сирі події.
 - **ADR-0002 (last-write-wins):** T5/T12 не вводять явний конфлікт-флаг — мовчазне прийняття пізнішого запису.
 - **D-66 (м'яке закриття):** T5/T13/T9 ніколи не виконують фізичний DELETE рядка позиції.
-- **`sad.md §11` відкрите питання:** T10/T12/T13 не вирішують поведінку при недоступності сервісу літопису — це поза обсягом цього tasks.json, лишається TBD (той самий стан, що в `api-sync-report.md`).
+- **`sad.md §11` (раніше відкрите питання):** «поведінка при недоступності сервісу літопису» знята — окремого сервісу, здатного стати недоступним незалежно від бекенда, більше нема ([D-113](../../../DECISIONS.md#d-113)); T10/T12/T13 працюють з літописом як зі звичайним репозиторієм у тій самій транзакції, що й решта бекенда.
 - **Спец. NFR (spec.md §6):** T21 (перетягування) ≤200ms, T22 (відкриття аналітики) ≤300ms — DoD кожної UI-задачі має клієнтський таймер-тест.

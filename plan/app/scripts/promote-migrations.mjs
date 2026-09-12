@@ -50,6 +50,15 @@ const TO_PROMOTE = [
   { slug: 'structure', staged: 'backend/01_create_structure', name: 'create-structure' },
   { slug: 'structure', staged: 'backend/02_create_structure_layout_position', name: 'create-structure-layout-position' },
   { slug: 'structure', staged: 'backend/03_add_owner_fk', name: 'add-structure-owner-fk' },
+  // T27 (AC-16, D-83/ISS-7): logic_variant підвид розкладки "за логікою".
+  { slug: 'structure', staged: 'backend/04_add_logic_variant', name: 'add-logic-variant' },
+  // T3 (AC-15): Літопис Структури — structure_history_event, реальні cross-feature FK
+  // (structure_id -> structure, card_id -> card), обидва ON DELETE CASCADE.
+  { slug: 'structure', staged: 'backend/05_create_structure_history_event', name: 'create-structure-history-event' },
+  // Review 2026-09-11 (AC-11b/AC-16b/AC-17): cell_index стає nullable -- без цього "картка
+  // без клітинки" після зміни режиму/підвиду розкладки фізично неможлива (колонка з 02
+  // була NOT NULL, а 02 уже промоучена -- правка йде наступною міграцією, ADR-0006).
+  { slug: 'structure', staged: 'backend/06_make_cell_index_nullable', name: 'make-cell-index-nullable' },
 ];
 
 function readReadme() {

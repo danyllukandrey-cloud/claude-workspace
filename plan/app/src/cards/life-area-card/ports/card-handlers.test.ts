@@ -351,6 +351,21 @@ describe('updateCard handler', () => {
     expect(missingError).toMatchObject({ code: 'card.not_found', httpStatus: 404 });
     expect(foreignError).toMatchObject({ code: 'card.not_found', httpStatus: 404 });
   });
+
+  // D-103/D-115 (ISS-105): recordRenameEvent -- опційна ін'єкція, той самий
+  // підхід, що closeStructurePosition в archiveCard. Порт лише прокидає її
+  // далі в use-case.
+  it('threads an optional recordRenameEvent callback through to the use-case', async () => {
+    const db = fakeUpdateCardDb({
+      current: cardRow({ name: 'Спорт' }),
+      updated: cardRow({ name: 'Біг' }),
+    });
+    const recordRenameEvent = vi.fn().mockResolvedValue(undefined);
+
+    await updateCard(db, OWNER, CARD_ID, { name: 'Біг' }, recordRenameEvent);
+
+    expect(recordRenameEvent).toHaveBeenCalledWith(db, OWNER, CARD_ID, 'Біг');
+  });
 });
 
 // --- archiveCard ---------------------------------------------------------------

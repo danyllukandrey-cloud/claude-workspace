@@ -2,17 +2,17 @@
 status: Draft
 owner: "Андрій Данилюк"
 reviewers: []
-updated_at: "2026-08-24"
+updated_at: "2026-09-11"
 feature_size: "M"
 ---
 
 # Data model — structure
 
-> **Дві окремі бази.** Основний бекенд (D-59) і сховище літопису Структури (ADR-0004, [D-67](../../DECISIONS.md#d-67)) — обидва PostgreSQL, але фізично окремі схеми/інстанси, без спільних FK між ними (D-67). Тому нижче — дві секції, кожна зі своєю ER-діаграмою.
+> **Одна база.** І `structure`/`structure_layout_position`, і Літопис (`structure_history_event`) живуть в одній і тій самій PostgreSQL-базі мінімального бекенда (D-24, D-59) — той самий процес, звичайні FK між таблицями. Раніше запланована окрема схема/інстанс для літопису (ADR-0004, D-67) скасована [D-113](../../DECISIONS.md#d-113): окремого деплой-юніту й окремої бази нема. Тому нижче — дві секції за темами (Структура/розкладка і Літопис), а не за різними базами, кожна зі своєю ER-діаграмою.
 >
 > PK-стратегія: UUID, генерується в app-шарі через `crypto.randomUUID()` ([architecture-map.md §Конвенції](../../architecture-map.md)) — той самий підхід, що й `life-area-card/data-model.md`. Аудит-колонки й видалення — той самий стиль: `created_at`/`updated_at` де є сенс, **ніколи фізичне видалення**, лише статус ([D-66](../../DECISIONS.md#d-66), той самий підхід, що вже застосований до `entry.status` у `life-area-card`).
 
-## База 1 — основний бекенд (PostgreSQL, D-59)
+## Структура і розкладка (PostgreSQL, D-59)
 
 ### ER diagram
 
@@ -68,7 +68,7 @@ erDiagram
 | `id` | UUID | PK, app-generated | |
 | `structure_id` | UUID | NOT NULL, FK → `structure(id)` ON DELETE CASCADE | індексовано нижче |
 | `card_id` | UUID | NOT NULL, FK → `card(id)` ON DELETE CASCADE | справжній cross-feature FK — таблиця `card` уже існує в тій самій базі (`life-area-card`) |
-| `cell_index` | INTEGER | NOT NULL | номер клітинки/позиції в межах фіксованої нумерованої схеми — той самий підхід і для вільного порядку, і для сітки «за логікою» ([sad.md §5.2](sad.md#5-building-block-view), «запас вільних клітинок») |
+| `cell_index` | INTEGER | NULL | номер клітинки/позиції в межах фіксованої нумерованої схеми — той самий підхід і для вільного порядку, і для сітки «за логікою» ([sad.md §5.2](sad.md#5-building-block-view), «запас вільних клітинок»). **NULL = картка без клітинки** — лежить у треї нерозкладених унизу екрана, користувач тягне її на вільну клітинку сам: саме так існують AC-11b/AC-16b (після зміни режиму чи підвиду кожна активна позиція втрачає клітинку) і AC-17 (відновлена з архіву картка клітинки не отримує). Той самий принцип «NULL = ще не обрано», що й у `layout_mode`. Колонка була `NOT NULL` (міграція 02) — рев'ю 2026-09-11 показало, що при цьому стан «без клітинки» фізично неможливий і app-шар писав замість нього реальний номер; виправлено окремою міграцією 06 (`06_make_cell_index_nullable`), бо 02 уже промоучена ([ADR-0006](../../adr/0006-backend-http-and-migration-tool.md)) |
 | `status` | TEXT | NOT NULL DEFAULT 'active', CHECK (`status` IN ('active','closed')) | [D-66](../../DECISIONS.md#d-66) — закриття напрямку (AC-12) позначає рядок, ніколи не видаляє фізично |
 | `position_updated_at` | timestamptz | NOT NULL DEFAULT now() | часова мітка для last-write-wins (ADR-0002) — та сама позиція, синхронізована з іншого пристрою, порівнюється за цим полем |
 | `created_at` | timestamptz | NOT NULL DEFAULT now() | |
@@ -76,8 +76,9 @@ erDiagram
 **Aggregate root:** `structure`.
 **Access patterns:** список активних позицій розкладки (екран Схема) → індекс на `structure_id`; блокування розміщення на зайняту клітинку (AC-02) → частковий унікальний індекс на `(structure_id, cell_index)` де `status = 'active'`; де зараз розташована конкретна картка → індекс на `card_id`.
 **Constraints:** UNIQUE на `(structure_id, card_id)` — одна позиція на картку; частковий UNIQUE на `(structure_id, cell_index)` WHERE `status = 'active'` — рівно одна активна картка в клітинці (AC-02, D-62 на рівні БД, не лише UI-перевірки); FK → `structure(id)`; FK → `card(id)`.
+Жодного CHECK-обмеження рівня БД на `cell_index IS NOT NULL` немає навмисно: «без клітинки» — легальний стан (див. колонку вище). Частковий UNIQUE це не ламає — у Postgres два NULL не вважаються рівними, тож будь-яка кількість активних позицій без клітинки в одній Структурі співіснує, а заборона «дві картки в одній клітинці» працює лише для реальних номерів.
 
-## Індекси (База 1)
+## Індекси (Структура і розкладка)
 
 | Index | Columns | Query it serves |
 |---|---|---|
@@ -86,7 +87,7 @@ erDiagram
 | `uq_layout_position_card` | `structure_layout_position(structure_id, card_id)` | одна позиція на картку; швидкий пошук поточної позиції картки (Потоки 2, 6) |
 | `idx_layout_position_card` | `structure_layout_position(card_id)` | зворотний пошук — де зараз ця картка (AC-05 крос-контекст, каскад при видаленні картки `life-area-card`) |
 
-## База 2 — сховище літопису Структури (окрема схема/інстанс PostgreSQL, ADR-0004 + D-67)
+## Літопис Структури (structure_history_event)
 
 ### ER diagram
 
@@ -102,7 +103,7 @@ erDiagram
     }
 ```
 
-`structure_id` і `card_id` тут — **логічні** посилання, не DB-рівня FK: сховище літопису фізично окрема база/інстанс (D-67), FK через межу бази неможливий. Цілісність підтримує застосунок (Backend передає вже перевірені ідентифікатори при записі події).
+`structure_id` і `card_id` тут — реальні DB-рівня FK (`ON DELETE CASCADE`) на `structure.id` і `card.id` — та сама база, той самий підхід, що вже використовує `structure_layout_position` (§Структура і розкладка).
 
 ### Entities
 
@@ -111,17 +112,17 @@ erDiagram
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
 | `id` | UUID | PK, app-generated | |
-| `structure_id` | UUID | NOT NULL | логічне посилання на `structure.id` з Бази 1, без DB FK (окрема база) |
-| `card_id` | UUID | NOT NULL | логічне посилання на `card.id` (`life-area-card`), без DB FK |
+| `structure_id` | UUID | NOT NULL | реальний FK на structure.id, ON DELETE CASCADE |
+| `card_id` | UUID | NOT NULL | реальний FK на card.id (life-area-card), ON DELETE CASCADE |
 | `event_type` | TEXT | NOT NULL, CHECK (`event_type` IN ('renamed','moved','closed')) | AC-12, AC-15 |
 | `detail` | TEXT | NULL | вільний опис деталі події (нова назва / новий `cell_index`) — `<!-- TBD: точна форма вирішується разом з майбутнім екраном перегляду літопису, поза v1 (spec.md §3 Non-goals) -->` |
 | `occurred_at` | timestamptz | NOT NULL DEFAULT now() | часова мітка події |
 
-**Aggregate root:** root (окрема база — власний, не підпорядкований `structure`).
+**Aggregate root:** root (незалежний журнал подій, не підпорядкований `structure` як частина того самого агрегату, але живе в тій самій базі).
 **Access patterns:** історія однієї картки за часом (майбутній екран перегляду + тренд AC-07) → індекс на `(card_id, occurred_at)`; «яка була розкладка Структури на дату X» (AC-07, D-67 — читання, якого раніше не було) → індекс на `(structure_id, occurred_at)`, запит бере останню подію `moved` кожної картки з `occurred_at <= X`.
 **Constraints:** CHECK на `event_type`.
 
-## Індекси (База 2)
+## Індекси (Літопис Структури)
 
 | Index | Columns | Query it serves |
 |---|---|---|
@@ -132,7 +133,7 @@ erDiagram
 
 - `buildStructure({ ownerUserId, declaration, layoutMode, logicVariant })` — Структура з дефолтним власником `user-<uuid>@example.test`; `logicVariant` — тільки коли `layoutMode: 'logic'` ([D-83](../../DECISIONS.md#d-83)).
 - `buildLayoutPosition({ structureId, cardId, cellIndex, status })` — позиція розкладки, за замовчуванням `status: 'active'`.
-- `buildStructureHistoryEvent({ structureId, cardId, eventType, detail })` — подія літопису (окрема база) для тестів AC-07/AC-12/AC-15.
+- `buildStructureHistoryEvent({ structureId, cardId, eventType, detail })` — подія літопису для тестів AC-07/AC-12/AC-15.
 
 ## Дрейф (drift)
 

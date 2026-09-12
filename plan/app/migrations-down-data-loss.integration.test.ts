@@ -122,3 +122,58 @@ describe('T51: card_lifecycle_event down migrations на непорожній б
     }
   });
 });
+
+// Рев'ю 2026-09-11 (WP2, "reverts cleanly" з DoD T3/T27 перевірялось лише для
+// up-боку): 06_make_cell_index_nullable.down повертає NOT NULL, а SET NOT NULL
+// звіряє кожен наявний рядок одразу. Після reset розкладки (AC-11b/AC-16b) у
+// таблиці рівно стільки NULL-рядків, скільки активних карток, тож down мусить
+// спершу заповнити їх РІЗНИМИ числами — однакова заглушка для всіх зламала б
+// частковий UNIQUE uq_layout_position_active_cell уже на другому рядку.
+// Зелене ЛИШЕ після `npm run migrate` (up мусить бути застосований).
+describe('06_make_cell_index_nullable down-migration на непорожній базі — проти реальної Neon', () => {
+  it('не падає, коли в таблиці є кілька активних позицій без клітинки, і заповнює їх різними значеннями', async () => {
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      await client.query('BEGIN');
+      const ownerId = crypto.randomUUID();
+      const structureId = crypto.randomUUID();
+      const cardOneId = crypto.randomUUID();
+      const cardTwoId = crypto.randomUUID();
+      await client.query('INSERT INTO app_user (id, google_sub, email) VALUES ($1, $2, $3)', [
+        ownerId,
+        `test-down-06-${ownerId}`,
+        'down-06@example.test',
+      ]);
+      await client.query('INSERT INTO structure (id, owner_user_id) VALUES ($1, $2)', [structureId, ownerId]);
+      await client.query('INSERT INTO card (id, owner_user_id, name) VALUES ($1, $2, $3)', [cardOneId, ownerId, 'down 06 one']);
+      await client.query('INSERT INTO card (id, owner_user_id, name) VALUES ($1, $2, $3)', [cardTwoId, ownerId, 'down 06 two']);
+      const positionOneId = crypto.randomUUID();
+      const positionTwoId = crypto.randomUUID();
+      await client.query(
+        'INSERT INTO structure_layout_position (id, structure_id, card_id, cell_index) VALUES ($1, $2, $3, NULL)',
+        [positionOneId, structureId, cardOneId]
+      );
+      await client.query(
+        'INSERT INTO structure_layout_position (id, structure_id, card_id, cell_index) VALUES ($1, $2, $3, NULL)',
+        [positionTwoId, structureId, cardTwoId]
+      );
+
+      const downSql = readDownMigration('1789151324598_make-cell-index-nullable.sql');
+      await expect(client.query(downSql)).resolves.not.toThrow();
+
+      const { rows } = await client.query<{ id: string; cell_index: number }>(
+        'SELECT id, cell_index FROM structure_layout_position WHERE structure_id = $1 ORDER BY cell_index',
+        [structureId]
+      );
+      // Задокументований data-loss (не помилка тесту): "немає клітинки" стає
+      // несправжнім номером — у старій схемі такого стану просто не існувало.
+      expect(rows.map((row) => row.cell_index)).toEqual([-2, -1]);
+      expect(new Set(rows.map((row) => row.cell_index)).size).toBe(2);
+      expect(rows.every((row) => row.cell_index !== null)).toBe(true);
+    } finally {
+      await client.query('ROLLBACK'); // DDL транзакційний у Postgres -- живу схему не зачіпаємо.
+      await client.end();
+    }
+  });
+});

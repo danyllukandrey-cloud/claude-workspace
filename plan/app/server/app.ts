@@ -30,7 +30,21 @@ import type { CallClaude } from '../src/cards/life-area-card/app/get-card';
 // тож D-69/D-103 у production не спрацьовував НІКОЛИ, попри те, що нижчий
 // рівень (archiveCard() викликаний напряму, migrations.integration.test.ts)
 // це підтверджував.
-import { closeActiveLayoutPositionForCard } from '../src/structure/infra/postgres-repo';
+import {
+  closeActiveLayoutPositionForCard,
+  findStructureByOwner,
+  insertLayoutPosition,
+  listActiveLayoutPositionsByOwner,
+} from '../src/structure/infra/postgres-repo';
+import { recordCardRenameEvent } from '../src/structure/infra/history-repo';
+import { defaultPositionForNewCard } from '../src/structure/domain/layout';
+// Review 2026-09-11 (MUST-FIX 1): порти Структури існували й були покриті
+// юніт-тестами, але composition root їх НЕ монтував -- кожен шлях
+// /api/v1/structure* віддавав 404, тож уся фіча була недосяжна з реального
+// застосунку. Той самий клас дефекту, що A2/B5 вище.
+import * as structureHandlers from '../src/structure/ports/structure-handlers';
+import * as layoutHandlers from '../src/structure/ports/layout-handlers';
+import { LayoutValidationError } from '../src/structure/domain/layout';
 
 /** Мінімум, потрібний verifyGoogleIdToken -- google-auth-library повертає значно більше полів. */
 export interface GoogleIdTokenPayload {
@@ -91,6 +105,43 @@ function asyncHandler(
   return (req, res, next) => {
     handler(req as AuthenticatedRequest, res).catch(next);
   };
+}
+
+/**
+ * AC-09 -- нова картка одразу отримує клітинку за замовчуванням (review
+ * 2026-09-11, MUST-FIX 6: `defaultPositionForNewCard` і `insertLayoutPosition`
+ * існували й були покриті тестами, але жоден рядок production-коду їх не
+ * викликав, тож нова картка не отримувала клітинки НІКОЛИ).
+ *
+ * Живе тут, у composition root -- ЄДИНОМУ місці, де life-area-card і structure
+ * зустрічаються (ADR-0004: life-area-card нічого не імпортує з structure/
+ * напряму), рівно як closeActiveLayoutPositionForCard для DELETE /cards/{id}.
+ *
+ * `db` приходить параметром і це ТОЙ САМИЙ db, у якому щойно вставилась сама
+ * картка -- тобто та сама транзакція (deps.withTransaction у маршруті нижче):
+ * збій тут відкочує й INSERT картки, інакше AC-09 виконано наполовину (картка
+ * є, клітинки немає). Помилка навмисно НЕ глушиться.
+ *
+ * Структури ще немає (перший вхід -- вона провісниться лениво на першому
+ * GET /structure, ports/structure-handlers.ts) -- тихо нічого не робимо: це не
+ * помилка, картка просто чекатиме в треї нерозкладених, щойно Структура
+ * з'явиться (AC-17 описує рівно такий стан "картка без клітинки").
+ */
+async function assignDefaultLayoutPosition(db: Db, ownerUserId: string, cardId: string): Promise<void> {
+  const structure = await findStructureByOwner(db, ownerUserId);
+  if (!structure) {
+    return;
+  }
+
+  const existing = await listActiveLayoutPositionsByOwner(db, ownerUserId);
+  const { cellIndex } = defaultPositionForNewCard(existing, structure.layoutMode);
+
+  await insertLayoutPosition(db, {
+    id: crypto.randomUUID(),
+    structureId: structure.id,
+    cardId,
+    cellIndex,
+  });
 }
 
 /** Апсертить app_user за googleSub/email -- той самий підхід, що postgres-repo.ts (SQL напряму, без ORM). */
@@ -187,7 +238,26 @@ export function createApp(deps: AppDeps): express.Express {
       // + insertLifecycleEvent('created') -- та сама атомарність, що DELETE/
       // transfer/POST-entries нижче вже мають (T40/T41); без транзакції збій
       // другого запису лишив би рядок card сиротою, без жодної події в Літописі.
-      const card = await deps.withTransaction((txDb) => cardHandlers.createCard(txDb, ownerUserId(req), req.body));
+      //
+      // Review 2026-09-11 (MUST-FIX 6, AC-09): третій крок того ж запису --
+      // клітинка за замовчуванням у розкладці Структури. Той самий txDb, тож
+      // усі три кроки або разом, або жоден.
+      //
+      // ЧОМУ ВИКЛИК ТУТ, А НЕ ЧЕРЕЗ ПОРТ: use-case app/create-card.ts уже
+      // приймає цей колаборатор третім, опційним параметром (дзеркально до
+      // archive-card.ts's closeStructurePosition), але порт
+      // ports/card-handlers.ts's createCard(db, ownerUserId, body) параметра
+      // під нього НЕ має -- на відміну від archiveCard, який його прокидає.
+      // Дописати порт -- правка файлу поза скоупом цього фіксу, тому ланцюг
+      // замкнено тут, у composition root: послідовність (картка -> подія ->
+      // позиція) і транзакція ті самі, спостережувана поведінка ідентична.
+      // ЩОЙНО порт отримає параметр -- виклик має переїхати туди, а цей рядок
+      // зникнути: два місця одночасно присвоять клітинку ДВІЧІ.
+      const card = await deps.withTransaction(async (txDb) => {
+        const created = await cardHandlers.createCard(txDb, ownerUserId(req), req.body);
+        await assignDefaultLayoutPosition(txDb, ownerUserId(req), created.id);
+        return created;
+      });
       res.status(201).json(card);
     })
   );
@@ -207,8 +277,12 @@ export function createApp(deps: AppDeps): express.Express {
       // markFilled:true, updateCard пише і сам патч, і insertLifecycleEvent
       // ('filled') -- без транзакції збій другого запису лишав би Опис уже
       // збереженим, попри те, що подія "заповнена" ніколи не записалась.
+      //
+      // D-103/D-115 (ISS-105): recordCardRenameEvent реально переданий --
+      // ЄДИНЕ місце, де life-area-card і structure зустрічаються (ADR-0004),
+      // той самий приклад, що closeActiveLayoutPositionForCard для DELETE.
       const card = await deps.withTransaction((txDb) =>
-        cardHandlers.updateCard(txDb, ownerUserId(req), param(req, 'cardId'), req.body)
+        cardHandlers.updateCard(txDb, ownerUserId(req), param(req, 'cardId'), req.body, recordCardRenameEvent)
       );
       res.status(200).json(card);
     })
@@ -309,6 +383,90 @@ export function createApp(deps: AppDeps): express.Express {
     })
   );
 
+  // --- Structure -----------------------------------------------------------
+  //
+  // Review 2026-09-11 (MUST-FIX 1): маршрути фічі `structure`
+  // (contracts/openapi.yaml: getMyStructure, updateMyStructure,
+  // listLayoutPositions, getLayoutHistoryAsOf, moveCard, closeCard). Той
+  // самий транспортний шаблон, що секція Cards вище: asyncHandler +
+  // ownerUserId(req) + param(req, ...), жодного SQL і жодної логіки тут.
+  // Bearer-auth-middleware стоїть ВИЩЕ, тож 401 із DoD T15/T16 покривається
+  // цими маршрутами автоматично, без окремого коду.
+
+  app.get(
+    '/api/v1/structure',
+    asyncHandler(async (req, res) => {
+      const structure = await structureHandlers.getStructure(deps.db, ownerUserId(req));
+      res.status(200).json(structure);
+    })
+  );
+
+  app.patch(
+    '/api/v1/structure',
+    asyncHandler(async (req, res) => {
+      // T11 DoD ("в одній транзакції"): PATCH -- мультизапис. UPDATE structure
+      // плюс, коли змінився режим чи підвид розкладки (AC-11b/AC-16b), N
+      // окремих UPDATE позицій скидання. Без транзакції збій посеред циклу
+      // лишив би режим уже новим, а частину карток -- у старих клітинках: той
+      // самий клас бага, що createCard/archiveCard вище вже закрили.
+      const structure = await deps.withTransaction((txDb) =>
+        structureHandlers.updateStructure(txDb, ownerUserId(req), req.body)
+      );
+      res.status(200).json(structure);
+    })
+  );
+
+  app.get(
+    '/api/v1/structure/layout',
+    asyncHandler(async (req, res) => {
+      const { after, limit } = req.query as { after?: string; limit?: string };
+      const page = await layoutHandlers.listLayoutPositions(deps.db, ownerUserId(req), {
+        after,
+        limit: limit !== undefined ? Number(limit) : undefined,
+      });
+      res.status(200).json(page);
+    })
+  );
+
+  // Перед /layout/:cardId навмисно -- 'history' інакше могло б виглядати як
+  // cardId (тут методи різні, тож конфлікту немає, але порядок лишаємо
+  // очевидним для наступної зміни).
+  app.get(
+    '/api/v1/structure/layout/history',
+    asyncHandler(async (req, res) => {
+      const { asOf } = req.query as { asOf?: string };
+      const page = await layoutHandlers.getLayoutHistoryAsOf(deps.db, ownerUserId(req), asOf);
+      res.status(200).json(page);
+    })
+  );
+
+  app.put(
+    '/api/v1/structure/layout/:cardId',
+    asyncHandler(async (req, res) => {
+      // Мультизапис: UPDATE позиції (cell_index/position_updated_at) + INSERT
+      // події 'moved' у Літопис (AC-15) -- разом або ніяк, інакше картка вже
+      // переїхала, а історія про це не знає (і тренд AC-07 рахується по
+      // неповному логу).
+      const position = await deps.withTransaction((txDb) =>
+        layoutHandlers.moveCardPosition(txDb, ownerUserId(req), param(req, 'cardId'), req.body)
+      );
+      res.status(200).json(position);
+    })
+  );
+
+  app.post(
+    '/api/v1/structure/layout/:cardId/close',
+    asyncHandler(async (req, res) => {
+      // Мультизапис: закриття позиції + подія 'closed' + опційні переноси
+      // метрик на інші картки (AC-12) -- усе в одній транзакції, той самий
+      // ризик "напівзакритого напрямку", що DELETE /cards/{id} вище.
+      const position = await deps.withTransaction((txDb) =>
+        layoutHandlers.closeCardPosition(txDb, ownerUserId(req), param(req, 'cardId'), req.body)
+      );
+      res.status(200).json(position);
+    })
+  );
+
   // Error-middleware -- ЄДИНЕ місце, де AppError мапиться в конверт контракту
   // (ADR-0006 §Обґрунтування, "Envelope помилки народжується в одному місці").
   // 4 параметри обов'язкові -- Express розпізнає error-handler саме за арністю.
@@ -325,6 +483,25 @@ export function createApp(deps: AppDeps): express.Express {
     // лише додаємо статус, як і для AppError вище.
     if (err instanceof CardValidationError || err instanceof ProgressValidationError) {
       res.status(422).json({ code: err.code, message: err.message });
+      return;
+    }
+    // Review 2026-09-11 (Частина 2): те саме для домену Структури --
+    // LayoutValidationError (src/structure/domain/layout.ts) теж навмисно НЕ
+    // AppError. До цього фіксу будь-яка доменна помилка розкладки падала в
+    // generic 500 нижче: зокрема PATCH /structure зі зміною підвиду "за
+    // логікою" на структурі, що вже не в режимі 'logic' (switchLogicVariant),
+    // хоча контракт документує тут 422.
+    //
+    // На відміну від card-домену, LayoutValidationError поки не несе власного
+    // `code` (його додання -- зміна domain/layout.ts, поза скоупом цього
+    // фіксу), а єдина така помилка, що реально доходить до транспорту, -- саме
+    // інваріант AC-16 "підвид лише в режимі logic": колізію клітинки
+    // (assertCellAvailable) app/move-card.ts уже перегортає в AppError 409 до
+    // того, як вона сюди дійде. Тому код нижче -- контрактний
+    // structure.logic_variant_requires_logic_mode; щойно домен почне нести
+    // власний `code`, ця гілка мусить пропускати його, як робить гілка вище.
+    if (err instanceof LayoutValidationError) {
+      res.status(422).json({ code: 'structure.logic_variant_requires_logic_mode', message: err.message });
       return;
     }
     // Review 2026-09-07, post-ship follow-up review ("Express 5 req.body ->

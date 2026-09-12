@@ -66,4 +66,74 @@ describe('createCard use-case', () => {
     });
     expect(query).not.toHaveBeenCalled();
   });
+
+  // AC-09 (sad.md §6 Critical flow 8): нова картка отримує клітинку в розкладці
+  // за замовчуванням -- без вибору режиму. Перевіряємо не "параметр передано", а
+  // ПОРЯДОК: позиція присвоюється ПІСЛЯ успішного insertCard (раніше -- нема
+  // картки, на яку посилатись FK), тим самим db (та сама транзакція) і з id
+  // саме створеної картки.
+  it('assigns a default layout position after the card row is inserted (AC-09)', async () => {
+    const order: string[] = [];
+    const query = vi.fn(async (sql: string) => {
+      order.push(/INSERT INTO card_lifecycle_event/.test(sql) ? 'lifecycle' : 'insertCard');
+      return { rows: [/INSERT INTO card_lifecycle_event/.test(sql) ? LIFECYCLE_ROW : CARD_ROW] };
+    });
+    const db: Db = { query } as unknown as Db;
+    const assignDefaultLayoutPosition = vi.fn(async () => {
+      order.push('assignLayoutPosition');
+    });
+
+    const record = await createCard(db, { ownerUserId: 'user-1', name: 'Здоров’я' }, assignDefaultLayoutPosition);
+
+    expect(order).toEqual(['insertCard', 'lifecycle', 'assignLayoutPosition']);
+    expect(assignDefaultLayoutPosition).toHaveBeenCalledTimes(1);
+    expect(assignDefaultLayoutPosition).toHaveBeenCalledWith(db, 'user-1', record.id);
+  });
+
+  // AC-09 + AC-02: назва не пройшла доменну валідацію -- картки немає, отже й
+  // клітинку присвоювати нема чому. Жодного запиту й жодного виклику колаборатора.
+  it('never assigns a layout position when the name is rejected', async () => {
+    const query = vi.fn();
+    const db: Db = { query };
+    const assignDefaultLayoutPosition = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      createCard(db, { ownerUserId: 'user-1', name: '  ' }, assignDefaultLayoutPosition)
+    ).rejects.toBeInstanceOf(CardValidationError);
+    expect(query).not.toHaveBeenCalled();
+    expect(assignDefaultLayoutPosition).not.toHaveBeenCalled();
+  });
+
+  // Збій присвоєння клітинки НЕ глушиться: обидва кроки в одній транзакції
+  // (її відкриває composition root), тож помилка мусить дійти нагору й відкотити
+  // INSERT картки. Інакше AC-09 порушено наполовину -- картка є, клітинки немає.
+  it('propagates a failure from assignDefaultLayoutPosition instead of swallowing it', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [CARD_ROW] })
+      .mockResolvedValueOnce({ rows: [LIFECYCLE_ROW] });
+    const db: Db = { query };
+    const boom = new Error('cell_occupied');
+    const assignDefaultLayoutPosition = vi.fn().mockRejectedValue(boom);
+
+    await expect(
+      createCard(db, { ownerUserId: 'user-1', name: 'Здоров’я' }, assignDefaultLayoutPosition)
+    ).rejects.toBe(boom);
+  });
+
+  // Колаборатор не переданий (усі наявні викликачі, поки composition root не
+  // дротує структуру) -- поведінка попередня, рівно два запити, без падіння.
+  it('creates the card unchanged when no layout-position collaborator is provided', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [CARD_ROW] })
+      .mockResolvedValueOnce({ rows: [LIFECYCLE_ROW] });
+    const db: Db = { query };
+
+    await expect(createCard(db, { ownerUserId: 'user-1', name: 'Здоров’я' })).resolves.toMatchObject({
+      id: 'card-1',
+      status: 'active',
+    });
+    expect(query).toHaveBeenCalledTimes(2);
+  });
 });

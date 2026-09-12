@@ -78,6 +78,26 @@ function baseProps() {
     // стиль, що onRename; повертає СВІЖИЙ CardBackData (як CardBack.onFlagEntry
     // сам вимагає), не Promise<void>.
     onFlagEntry: vi.fn().mockResolvedValue({ metricBlocks: [], aggregateProgress: null, entries: [] }),
+    // T24 (RED, sad.md §5 "Навігація -- чотири напрямки"): реєстрація
+    // Структури в app-shell -- App.tsx ще НЕ приймає ці пропи, це і є
+    // навмисний "не існує такий проп" RED цього тесту. Назви й форма
+    // повністю узгоджені з реальними пропами вже написаних
+    // structure/ui/DeclarationScreen.tsx (loadStructure/onSave),
+    // structure/ui/LayoutBoard.tsx (loadLayout/onMoveCard) і
+    // structure/ui/AnalyticsScreen.tsx (loadAnalytics) -- App лише
+    // прокидає їх без змін (той самий DI-стиль, що loadCards).
+    loadStructure: vi.fn().mockResolvedValue({ declaration: null, layoutMode: null, logicVariant: null, hasArrangedCards: false }),
+    onSaveDeclaration: vi.fn().mockResolvedValue(undefined),
+    loadLayout: vi.fn().mockResolvedValue({ cellCount: 0, justReset: false, cards: [] }),
+    onMoveCard: vi.fn().mockResolvedValue(undefined),
+    loadAnalytics: vi.fn().mockResolvedValue({ layoutMode: null, average: null, excludedCount: 0, trendAvailable: true, cards: [] }),
+    // Review-fix 2026-09-11 (verify): LayoutBoard.loadCloseCardOptions/onCloseCard
+    // уже написані й протестовані (SCR-04), main.tsx їх уже експортує -- але App
+    // їх не приймав і не прокидав, тож LayoutBoard.canCloseCard завжди false і
+    // кнопка "Закрити напрямок" (AC-12) ніде не з'являлась. Той самий DI-стиль,
+    // що loadLayout/onMoveCard вище.
+    loadCloseCardOptions: vi.fn().mockResolvedValue({ metricBlocks: [], targetCards: [] }),
+    onCloseCard: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -505,4 +525,112 @@ test('C14/AC-04: 401 (AppError, httpStatus 401) з loadCards стирає сес
 
   await waitFor(() => expect(props.clearStoredSession).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(props.renderGoogleButton).toHaveBeenCalledTimes(1));
+});
+
+// T24 (RED, sad.md §5 "Building block view" -- "Навігація (чотири напрямки,
+// узгоджено з Андрієм): 1. Декларація 2. Схема 3. Літопис-Аналітика
+// 4. Картки"): App.tsx досі має ОДНУ state machine екрана
+// (deck/create/detail/archive, App.tsx рядок 65) БЕЗ жодного постійного
+// нижнього нав-меню -- ці чотири напрямки взагалі не існують. DoD T24:
+// "App boots with 3 Structure nav tabs reachable from the bottom menu".
+//
+// Мінімальна форма перевірки: бачимо всі 4 підписи одразу після входу
+// (DeckScreen -- дефолтний напрямок "Картки"), клік на кожен новий Structure-
+// напрямок викликає відповідну ін'єктовану loadXxx-функцію і показує щось
+// специфічне для того екрана (текст/поле, унікальне для DeclarationScreen /
+// LayoutBoard / AnalyticsScreen), клік на "Картки" повертає на DeckScreen.
+
+test('T24: після входу видно нижнє нав-меню з 4 пунктами (Декларація/Схема/Літопис-Аналітика/Картки)', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([]);
+
+  render(<App {...props} />);
+
+  await screen.findByText('Тут ще немає жодної картки'); // дефолтний напрямок "Картки" -- DeckScreen уже на екрані
+
+  expect(await screen.findByRole('button', { name: 'Декларація' })).toBeTruthy();
+  expect(await screen.findByRole('button', { name: 'Схема' })).toBeTruthy();
+  expect(await screen.findByRole('button', { name: 'Літопис-Аналітика' })).toBeTruthy();
+  expect(await screen.findByRole('button', { name: 'Картки' })).toBeTruthy();
+});
+
+test('T24: клік "Декларація" в нав-меню перемикає екран на DeclarationScreen (loadStructure)', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([]);
+
+  render(<App {...props} />);
+  await screen.findByText('Тут ще немає жодної картки');
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Декларація' }));
+
+  // DeclarationScreen.tsx -- унікальне поле "Картина світу, навіщо, пріоритет".
+  expect(await screen.findByLabelText('Картина світу, навіщо, пріоритет')).toBeTruthy();
+  expect(props.loadStructure).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText('Тут ще немає жодної картки')).toBeNull();
+});
+
+test('AC-12 (review-fix 2026-09-11): на Схемі з loadCloseCardOptions/onCloseCard кнопка "Закрити напрямок" реально рендериться', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([]);
+  props.loadLayout.mockResolvedValue({
+    cellCount: 4,
+    justReset: false,
+    cards: [{ cardId: 'card-1', cardTitle: 'Спорт', cellIndex: 0, baseOrder: 0 }],
+  });
+
+  render(<App {...props} />);
+  await screen.findByText('Тут ще немає жодної картки');
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Схема' }));
+
+  // LayoutBoard.tsx:124 canCloseCard = loadCloseCardOptions !== undefined && onCloseCard !== undefined --
+  // без прокидання цих двох пропів з App.tsx ця кнопка не існує, попри те, що SCR-04 повністю написаний.
+  expect(await screen.findByRole('button', { name: 'Закрити напрямок «Спорт»' })).toBeTruthy();
+});
+
+test('T24: клік "Схема" в нав-меню перемикає екран на LayoutBoard (loadLayout)', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([]);
+
+  render(<App {...props} />);
+  await screen.findByText('Тут ще немає жодної картки');
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Схема' }));
+
+  // LayoutBoard.tsx з порожнім cards -- EmptyState, унікальний для цього екрана.
+  expect(await screen.findByText('Поки що немає жодної картки')).toBeTruthy();
+  expect(props.loadLayout).toHaveBeenCalledTimes(1);
+});
+
+test('T24: клік "Літопис-Аналітика" в нав-меню перемикає екран на AnalyticsScreen (loadAnalytics)', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([]);
+
+  render(<App {...props} />);
+  await screen.findByText('Тут ще немає жодної картки');
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Літопис-Аналітика' }));
+
+  // AnalyticsScreen.tsx -- унікальний рядок "N картки виключено з середнього".
+  expect(await screen.findByText('0 картки виключено з середнього (немає метрики)')).toBeTruthy();
+  expect(props.loadAnalytics).toHaveBeenCalledTimes(1);
+});
+
+test('T24: клік "Картки" повертає на DeckScreen, під-навігація create/detail/archive лишається робочою', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
+
+  render(<App {...props} />);
+  await screen.findByText('Спорт');
+
+  // Переходимо на інший напрямок і повертаємось -- "Картки" має відновити ту саму DeckScreen-навігацію.
+  fireEvent.click(await screen.findByRole('button', { name: 'Схема' }));
+  await screen.findByText('Спорт', { exact: false }).catch(() => undefined);
+  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
+
+  expect(await screen.findByRole('button', { name: 'Спорт' })).toBeTruthy();
+
+  // Під-навігація "Картки" (create) все ще досяжна під тим самим нав-меню.
+  fireEvent.click(await screen.findByRole('button', { name: '+ Створити картку' }));
+  expect(await screen.findByRole('heading', { name: 'Нова картка' })).toBeTruthy();
 });

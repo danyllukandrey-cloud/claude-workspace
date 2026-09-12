@@ -8,6 +8,16 @@
 import { useCallback, useState } from 'react';
 import { ArchiveScreen, CardDetailScreen, CreateCardForm, DeckScreen } from '../cards/life-area-card';
 import type { CardBackData, CardFaceData, DeckGridItem, EntryViewModel, MetricBlockFormValues } from '../cards/life-area-card';
+import { AnalyticsScreen, DeclarationScreen, LayoutBoard } from '../structure';
+import type {
+  AnalyticsScreenState,
+  CloseCardMetricTransferInput,
+  DeclarationScreenState,
+  LayoutBoardCloseCardOptions,
+  LayoutBoardState,
+  LayoutMode,
+  LogicVariant,
+} from '../structure';
 import { Button } from '../shared/ui';
 import { LoginScreen } from './LoginScreen';
 import type { SessionResult } from './LoginScreen';
@@ -60,9 +70,34 @@ export interface AppProps {
   onUpdateDescription: (cardId: string, input: { description: string; markFilled: boolean }) => Promise<void>;
   /** Review 2026-09-07 C11 (AC-12) -- позначає запис в історії обраної картки помилковим (PATCH /entries/{id}, CardBack.onFlagEntry) і повертає свіжий зворот. */
   onFlagEntry: (cardId: string, entryId: string) => Promise<CardBackData>;
+  /** T24 (sad.md §5, GET /api/v1/structure -- DeclarationScreen.loadStructure). */
+  loadStructure: () => Promise<DeclarationScreenState>;
+  /** T24 (sad.md §5, PATCH /api/v1/structure -- DeclarationScreen.onSave). */
+  onSaveDeclaration: (input: { declaration: string; layoutMode: LayoutMode; logicVariant: LogicVariant }) => Promise<void>;
+  /** T24 (sad.md §5, GET /api/v1/structure/layout -- LayoutBoard.loadLayout). */
+  loadLayout: () => Promise<LayoutBoardState>;
+  /** T24 (sad.md §5, PUT /api/v1/structure/layout/{cardId} -- LayoutBoard.onMoveCard). */
+  onMoveCard: (input: { cardId: string; cellIndex: number }) => Promise<void>;
+  /** T24 (sad.md §5, зведена аналітика -- AnalyticsScreen.loadAnalytics). */
+  loadAnalytics: () => Promise<AnalyticsScreenState>;
+  /**
+   * AC-12 -- GET /api/v1/cards/{cardId}/metric-blocks (LayoutBoard.loadCloseCardOptions).
+   * Опційне, як і в LayoutBoard: без нього кнопка "Закрити напрямок" не рендериться
+   * (review-fix 2026-09-11 -- до цього фіксу пропс узагалі не доходив до App, тож
+   * SCR-04 був написаний і протестований, але недосяжний користувачу).
+   */
+  loadCloseCardOptions?: (cardId: string) => Promise<LayoutBoardCloseCardOptions>;
+  /** AC-12 -- POST /api/v1/structure/layout/{cardId}/close (LayoutBoard.onCloseCard). */
+  onCloseCard?: (input: { cardId: string; metricTransfers: CloseCardMetricTransferInput[] }) => Promise<void>;
 }
 
 type Screen = { screen: 'deck' } | { screen: 'create' } | { screen: 'detail'; cardId: string } | { screen: 'archive' };
+
+// T24 (sad.md §5 "Навігація (чотири напрямки)"): постійне нижнє нав-меню,
+// незалежне від Screen (Screen лишається під-навігацією "Картки" --
+// deck/create/detail/archive, той самий стан переживає перехід на інший
+// напрямок і назад -- тест "клік Картки повертає на DeckScreen").
+type Direction = 'cards' | 'declaration' | 'layout' | 'analytics';
 
 function isSessionValid(session: StoredSession | null, now: () => Date): boolean {
   if (!session) return false;
@@ -89,9 +124,17 @@ export function App({
   addEntry,
   onUpdateDescription,
   onFlagEntry,
+  loadStructure,
+  onSaveDeclaration,
+  loadLayout,
+  onMoveCard,
+  loadAnalytics,
+  loadCloseCardOptions,
+  onCloseCard,
 }: AppProps): JSX.Element {
   const [session, setSession] = useState<StoredSession | null>(() => readStoredSession());
   const [screen, setScreen] = useState<Screen>({ screen: 'deck' });
+  const [direction, setDirection] = useState<Direction>('cards');
 
   // Review 2026-09-07 E (T52): "loadCard/loadBack порушують задокументований
   // контракт референційної стабільності" (той самий контракт, що
@@ -122,7 +165,19 @@ export function App({
     return (
       <main style={{ fontFamily: 'system-ui, sans-serif', padding: '2rem' }}>
         <h1>ПЛАН</h1>
-        {screen.screen === 'create' && (
+
+        {direction === 'declaration' && <DeclarationScreen loadStructure={loadStructure} onSave={onSaveDeclaration} />}
+        {direction === 'layout' && (
+          <LayoutBoard
+            loadLayout={loadLayout}
+            onMoveCard={onMoveCard}
+            loadCloseCardOptions={loadCloseCardOptions}
+            onCloseCard={onCloseCard}
+          />
+        )}
+        {direction === 'analytics' && <AnalyticsScreen loadAnalytics={loadAnalytics} />}
+
+        {direction === 'cards' && screen.screen === 'create' && (
           <CreateCardForm
             onCreate={async (input) => {
               await createCard(input);
@@ -131,7 +186,7 @@ export function App({
             onCancel={() => setScreen({ screen: 'deck' })}
           />
         )}
-        {screen.screen === 'detail' && (
+        {direction === 'cards' && screen.screen === 'detail' && (
           <CardDetailScreen
             loadCard={loadCardForDetail}
             loadBack={loadBackForDetail}
@@ -145,7 +200,7 @@ export function App({
             onFlagEntry={(entryId) => onFlagEntry(screen.cardId, entryId)}
           />
         )}
-        {screen.screen === 'archive' && (
+        {direction === 'cards' && screen.screen === 'archive' && (
           <div>
             <Button label="← Назад" onClick={() => setScreen({ screen: 'deck' })} />
             <ArchiveScreen
@@ -155,7 +210,7 @@ export function App({
             />
           </div>
         )}
-        {screen.screen === 'deck' && (
+        {direction === 'cards' && screen.screen === 'deck' && (
           <DeckScreen
             loadCards={loadCards}
             onOpenCard={(cardId) => setScreen({ screen: 'detail', cardId })}
@@ -169,6 +224,17 @@ export function App({
             onSessionExpired={endSession}
           />
         )}
+
+        {/* T24 (sad.md §5): постійне нижнє нав-меню -- видиме на всіх 4
+            напрямках, не лише на "Картки". "Картки" не скидає під-навігацію
+            create/detail/archive -- лише перемикає direction, Screen
+            лишається як був (тест "клік Картки повертає на DeckScreen"). */}
+        <nav>
+          <Button label="Декларація" onClick={() => setDirection('declaration')} />
+          <Button label="Схема" onClick={() => setDirection('layout')} />
+          <Button label="Літопис-Аналітика" onClick={() => setDirection('analytics')} />
+          <Button label="Картки" onClick={() => setDirection('cards')} />
+        </nav>
       </main>
     );
   }

@@ -1,15 +1,17 @@
 ---
-status: Accepted
+status: Superseded
 owner: "Андрій Данилюк"
 reviewers: []
-updated_at: "2026-08-24"
+updated_at: "2026-09-11"
 feature_size: "M"
 ticket: "ZOTJ-XXX"
 ---
 
+> ⚠️ **SUPERSEDED 2026-09-11 — [D-113](../../../DECISIONS.md#d-113).** Літопис Структури лишається таблицею в тому самому мінімальному бекенді (D-24), не окремим сервісом — обидві ваги аргументу нижче змінились відтоді (докладно в D-113). Документ лишається нижче як історія початкового вибору, не як чинний факт.
+
 # 0004 — Run the Structure history log as a separate deployable service
 
-- **Status:** Accepted
+- **Status:** Superseded (2026-09-11, [D-113](../../../DECISIONS.md#d-113)) — originally Accepted
 - **Date:** 2026-08-24
 - **Deciders:** Андрій Данилюк (з Клодом під час Socratic-проходу `design`)
 
