@@ -8,6 +8,7 @@ import {
   findConflictingRule,
   computeEffectiveRules,
   defaultRuleShadowPredicate,
+  defaultRuleConflictPredicate,
   ruleDirectiveText,
   CATEGORY_DIRECTIVES,
 } from './rules';
@@ -299,5 +300,36 @@ describe('defaultRuleShadowPredicate (AC-12 default topic match)', () => {
     const override = { category: 'reminder' as const, ruleText: null };
     const global = rule({ category: 'data', ruleText: null });
     expect(defaultRuleShadowPredicate(override, global)).toBe(false);
+  });
+});
+
+// AC-14 (D-19, review 2026-09-13): moved here from ../ports/rules-handler.ts's
+// private `isDuplicateInScope` const so both the REST path
+// (POST /api/v1/rules) and ../app/handle-message.ts's chat-drafting path
+// (AC-14) share one definition of "conflict" -- direct coverage here, same
+// style as defaultRuleShadowPredicate above.
+describe('defaultRuleConflictPredicate (AC-14 default duplicate check)', () => {
+  it('matches on exact category equality', () => {
+    const candidate = { scopeCardId: null, category: 'reminder' as const, ruleText: null };
+    const existing = rule({ category: 'reminder', ruleText: null });
+    expect(defaultRuleConflictPredicate(candidate, existing)).toBe(true);
+  });
+
+  it('matches on exact free-text equality (trimmed, case-insensitive)', () => {
+    const candidate = { scopeCardId: null, category: null, ruleText: '  Завжди Уточнюй Одиниці  ' };
+    const existing = rule({ category: null, ruleText: 'завжди уточнюй одиниці' });
+    expect(defaultRuleConflictPredicate(candidate, existing)).toBe(true);
+  });
+
+  it('does not match two unrelated free-text rules', () => {
+    const candidate = { scopeCardId: null, category: null, ruleText: 'нагадуй щодня' };
+    const existing = rule({ category: null, ruleText: 'уточнюй одиниці виміру' });
+    expect(defaultRuleConflictPredicate(candidate, existing)).toBe(false);
+  });
+
+  it('does not match different categories', () => {
+    const candidate = { scopeCardId: null, category: 'reminder' as const, ruleText: null };
+    const existing = rule({ category: 'data', ruleText: null });
+    expect(defaultRuleConflictPredicate(candidate, existing)).toBe(false);
   });
 });

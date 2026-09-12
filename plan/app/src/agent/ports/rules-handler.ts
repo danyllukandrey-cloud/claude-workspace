@@ -15,7 +15,7 @@
 // суперечність" залишається деталлю реалізації, ADR-0004 §Neutral) + запис
 // через infra/postgres-repo.ts.
 //
-// Конфлікт-предикат (isDuplicateInScope нижче) -- КОНСЕРВАТИВНЕ читання
+// Конфлікт-предикат (defaultRuleConflictPredicate, ../domain/rules.ts) -- КОНСЕРВАТИВНЕ читання
 // незакритого design-питання ADR-0004 §Neutral ("guard-перевірка може
 // почати як проста keyword/regex... це деталь реалізації, не предмет цього
 // ADR"): T22 не має в залежностях ані Claude-клієнта (T12), ані ask-agent
@@ -39,8 +39,8 @@
 // ISO-рядок на межі порту (той самий підхід, що metric-block-handlers.ts).
 
 import { randomUUID } from 'node:crypto';
-import { createImperativeRule, findConflictingRule } from '../domain/rules';
-import type { ImperativeRule, ImperativeRuleCategory, RuleConflictPredicate } from '../domain/rules';
+import { createImperativeRule, findConflictingRule, defaultRuleConflictPredicate } from '../domain/rules';
+import type { ImperativeRule, ImperativeRuleCategory } from '../domain/rules';
 import { insertRule, listRulesByScope } from '../infra/postgres-repo';
 import type { Db, RuleRecord } from '../infra/postgres-repo';
 import { AppError } from '../../shared/errors';
@@ -129,25 +129,6 @@ export interface RuleCreateBody {
   ruleText?: string | null;
 }
 
-function normalizeRuleTextForComparison(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-/**
- * Дубль-чек у межах тієї самої області дії -- див. коментар вгорі файлу
- * (консервативне читання незакритого ADR-0004 §Neutral design-питання):
- * та сама категорія вдруге, або дослівний повтор вільного тексту.
- */
-const isDuplicateInScope: RuleConflictPredicate = (candidate, existing) => {
-  if (candidate.category !== null && candidate.category === existing.category) {
-    return true;
-  }
-  if (candidate.ruleText !== null && existing.ruleText !== null) {
-    return normalizeRuleTextForComparison(candidate.ruleText) === normalizeRuleTextForComparison(existing.ruleText);
-  }
-  return false;
-};
-
 /**
  * POST /api/v1/rules (AC-07/AC-08/AC-12/AC-14) -- зберігає правило (з меню
  * категорій, власним текстом, чи обома -- CHECK у базі: OR, не XOR) і
@@ -157,7 +138,9 @@ const isDuplicateInScope: RuleConflictPredicate = (candidate, existing) => {
  * 422 agent.rule_empty -- ні category, ні ruleText не задано (domain
  * `createImperativeRule`, Result sentinel ADR-0006).
  * 409 agent.rule_conflict -- нове правило дублює наявне тієї самої області
- * (isDuplicateInScope вище).
+ * (`defaultRuleConflictPredicate`, ../domain/rules.ts -- moved there
+ * 2026-09-13 so ../app/handle-message.ts's AC-14 chat-drafting path can
+ * share the same definition, D-19).
  */
 export async function createRule(db: Db, ownerUserId: string, body: RuleCreateBody): Promise<RuleResponse> {
   const scopeCardId = body.scopeCardId ?? null;
@@ -180,7 +163,7 @@ export async function createRule(db: Db, ownerUserId: string, body: RuleCreateBo
   const conflict = findConflictingRule(
     { scopeCardId: rule.scopeCardId, category: rule.category, ruleText: rule.ruleText },
     existingInScope,
-    isDuplicateInScope
+    defaultRuleConflictPredicate
   );
   if (conflict) {
     throw new AppError('agent.rule_conflict', 'This rule contradicts an existing rule in the same scope', 409);

@@ -101,6 +101,16 @@ interface FakeDbOptions {
   insertedProposal?: ReturnType<typeof proposalRow>;
   /** Row returned by any UPDATE/soft-delete on long_term_memory_fact. */
   factUpdateResult?: Record<string, unknown> | null;
+  /**
+   * AC-14: raw rows for listRulesByScope's EXACT-scope query (`IS NOT
+   * DISTINCT FROM`) -- deliberately separate from `rules` above, which feeds
+   * listEffectiveRulesForCard's OR-scoped query (global-always-matches).
+   * The two queries share the substring "FROM imperative_rule" but differ in
+   * scope semantics (rules-handler.ts's own createRule test convention would
+   * hit the same ambiguity), so the router below distinguishes them by the
+   * `IS NOT DISTINCT FROM` marker unique to listRulesByScope's SQL text.
+   */
+  rulesInScope?: unknown[];
 }
 
 /** SQL-text router (get-card.test.ts convention) -- only db.query is mocked, real repo modules run unchanged. */
@@ -115,12 +125,19 @@ function fakeDb(opts: FakeDbOptions = {}) {
     if (text.startsWith('SELECT') && text.includes('FROM agent_proposal') && text.includes("status = 'active'")) {
       return { rows: opts.activeProposal ? [opts.activeProposal] : [] };
     }
+    if (text.includes('IS NOT DISTINCT FROM')) {
+      // AC-14: listRulesByScope's EXACT-scope query (checked BEFORE the
+      // generic 'FROM imperative_rule' branch below, since both queries
+      // contain that substring) -- the conflict check needs rules of the
+      // SAME scope only, not the OR-merged "effective" set.
+      return { rows: opts.rulesInScope ?? [] };
+    }
     if (text.includes('FROM imperative_rule')) {
-      // Real SQL (listEffectiveRulesForCard/listRulesByScope): global rules
-      // (scope_card_id IS NULL) always match, a card-override row only when
-      // the query's own cardId param ($2) equals its scope_card_id -- routed
-      // here so a test can actually observe AC-12's card resolution, not just
-      // assert on the params handed to db.query.
+      // Real SQL (listEffectiveRulesForCard): global rules (scope_card_id
+      // IS NULL) always match, a card-override row only when the query's own
+      // cardId param ($2) equals its scope_card_id -- routed here so a test
+      // can actually observe AC-12's card resolution, not just assert on the
+      // params handed to db.query.
       const cardIdParam = (params?.[1] as string | null | undefined) ?? null;
       const rows = (opts.rules ?? []) as { scope_card_id: string | null }[];
       return { rows: rows.filter((rule) => rule.scope_card_id === null || rule.scope_card_id === cardIdParam) };
@@ -146,6 +163,9 @@ function fakeDb(opts: FakeDbOptions = {}) {
     if (text.startsWith('INSERT INTO agent_audit_event')) {
       return { rows: [{ id: 'audit-1', user_id: USER_ID, event_type: 'proposal_created', subject_type: 'proposal', subject_id: 'proposal-1', detail: null, occurred_at: new Date() }] };
     }
+    if (text.startsWith('INSERT INTO imperative_rule')) {
+      return { rows: [ruleRowFromParams(params)] };
+    }
     throw new Error(`Непередбачений запит у тесті: ${text}`);
   });
   return { query: query as unknown as Db['query'] };
@@ -159,6 +179,19 @@ function factRowFromParams(params?: unknown[]) {
     fact_text: factText ?? '',
     topic: topic ?? null,
     status: 'active',
+    created_at: new Date('2026-01-01T00:00:00Z'),
+    updated_at: new Date('2026-01-01T00:00:00Z'),
+  };
+}
+
+function ruleRowFromParams(params?: unknown[]) {
+  const [id, userId, scopeCardId, category, ruleText] = params ?? [];
+  return {
+    id: id ?? 'rule-new',
+    user_id: userId ?? USER_ID,
+    scope_card_id: scopeCardId ?? null,
+    category: category ?? null,
+    rule_text: ruleText ?? null,
     created_at: new Date('2026-01-01T00:00:00Z'),
     updated_at: new Date('2026-01-01T00:00:00Z'),
   };
@@ -737,6 +770,139 @@ describe('handleMessage -- AC-12 fix: rule scope resolves from the message targe
       (c) => String(c[0]).startsWith('INSERT INTO agent_audit_event') && (c[1] as unknown[]).includes('guard_passed')
     );
     expect(guardAudit).toBeDefined();
+  });
+});
+
+describe('handleMessage -- AC-14: chat-based rule drafting (review 2026-09-13, gap fix)', () => {
+  it("saves a global free-text rule once Claude's dialogue converges and no rule of the same scope conflicts", async () => {
+    const db = fakeDb({
+      cards: [cardRow()],
+      metricBlocks: [metricBlockRow()],
+      rulesInScope: [],
+    });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(
+      okClaude(
+        decisionJson({
+          outcome: 'clarification',
+          proposedSummary: null,
+          reply: 'Зберіг правило: завжди уточнюй одиниці виміру.',
+          proposedRule: { category: null, ruleText: 'Завжди уточнюй одиниці виміру', scopeCardId: null },
+        })
+      )
+    );
+
+    const result = await handleMessage(db, askClaude, { userId: USER_ID, text: 'хочу правило про уточнення одиниць' });
+
+    expect(result.reply).toBe('Зберіг правило: завжди уточнюй одиниці виміру.');
+    const insertCall = (db.query as ReturnType<typeof vi.fn>).mock.calls.find((c) => String(c[0]).startsWith('INSERT INTO imperative_rule'));
+    expect(insertCall).toBeDefined();
+    expect(insertCall![1]).toEqual(expect.arrayContaining([USER_ID, null, null, 'Завжди уточнюй одиниці виміру']));
+  });
+
+  it('saves a card-scoped category rule when the scopeCardId resolves to a card this user actually owns', async () => {
+    const db = fakeDb({
+      cards: [cardRow()],
+      metricBlocks: [metricBlockRow()],
+      rulesInScope: [],
+    });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(
+      okClaude(
+        decisionJson({
+          outcome: 'clarification',
+          proposedSummary: null,
+          proposedRule: { category: 'reminder', ruleText: null, scopeCardId: 'card-1' },
+        })
+      )
+    );
+
+    await handleMessage(db, askClaude, { userId: USER_ID, text: 'нагадуй мені про цю картку частіше' });
+
+    const insertCall = (db.query as ReturnType<typeof vi.fn>).mock.calls.find((c) => String(c[0]).startsWith('INSERT INTO imperative_rule'));
+    expect(insertCall).toBeDefined();
+    expect(insertCall![1]).toEqual(expect.arrayContaining([USER_ID, 'card-1', 'reminder', null]));
+  });
+
+  it('does NOT save and overrides the reply when the proposed rule conflicts with an existing rule of the same scope (AC-14 core check)', async () => {
+    const existingGlobalRule = {
+      id: 'rule-existing',
+      user_id: USER_ID,
+      scope_card_id: null,
+      category: null,
+      rule_text: 'завжди уточнюй одиниці виміру',
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+    const db = fakeDb({
+      cards: [cardRow()],
+      metricBlocks: [metricBlockRow()],
+      rulesInScope: [existingGlobalRule],
+    });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(
+      okClaude(
+        decisionJson({
+          outcome: 'clarification',
+          proposedSummary: null,
+          reply: 'Зберіг нове правило.',
+          // Same free text (case/whitespace-insensitive) as the existing global rule above.
+          proposedRule: { category: null, ruleText: '  Завжди уточнюй ОДИНИЦІ виміру  ', scopeCardId: null },
+        })
+      )
+    );
+
+    const result = await handleMessage(db, askClaude, { userId: USER_ID, text: 'хочу таке саме правило ще раз' });
+
+    const inserted = (db.query as ReturnType<typeof vi.fn>).mock.calls.some((c) => String(c[0]).startsWith('INSERT INTO imperative_rule'));
+    expect(inserted).toBe(false);
+    // Claude's own optimistic reply is NOT trusted when the deterministic
+    // check disagrees (same AC-06 "never trust Claude blindly" principle
+    // already applied to cardId resolution above) -- the user must see that
+    // nothing was actually saved and why.
+    expect(result.reply).not.toBe('Зберіг нове правило.');
+    expect(result.reply.toLowerCase()).toContain('вже є');
+  });
+
+  it("never trusts a scopeCardId Claude returns that is outside this user's own catalog (AC-06 applied to AC-14), and skips saving the rule", async () => {
+    const db = fakeDb({
+      cards: [cardRow()],
+      metricBlocks: [metricBlockRow()],
+      rulesInScope: [],
+    });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(
+      okClaude(
+        decisionJson({
+          outcome: 'clarification',
+          proposedSummary: null,
+          proposedRule: { category: 'reminder', ruleText: null, scopeCardId: OTHER_CARD_ID },
+        })
+      )
+    );
+
+    await handleMessage(db, askClaude, { userId: USER_ID, text: 'нагадуй мені про чужу картку' });
+
+    const inserted = (db.query as ReturnType<typeof vi.fn>).mock.calls.some((c) => String(c[0]).startsWith('INSERT INTO imperative_rule'));
+    expect(inserted).toBe(false);
+  });
+
+  it('never saves an empty rule (ADR-0006 domain sentinel -- neither category nor ruleText given)', async () => {
+    const db = fakeDb({
+      cards: [cardRow()],
+      metricBlocks: [metricBlockRow()],
+      rulesInScope: [],
+    });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(
+      okClaude(
+        decisionJson({
+          outcome: 'clarification',
+          proposedSummary: null,
+          proposedRule: { category: null, ruleText: '   ', scopeCardId: null },
+        })
+      )
+    );
+
+    await handleMessage(db, askClaude, { userId: USER_ID, text: 'хочу правило але не знаю яке' });
+
+    const inserted = (db.query as ReturnType<typeof vi.fn>).mock.calls.some((c) => String(c[0]).startsWith('INSERT INTO imperative_rule'));
+    expect(inserted).toBe(false);
   });
 });
 

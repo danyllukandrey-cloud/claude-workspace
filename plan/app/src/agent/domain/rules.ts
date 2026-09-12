@@ -238,6 +238,34 @@ export type RuleConflictPredicate = (
   existing: ImperativeRule,
 ) => boolean;
 
+function normalizeRuleTextForComparison(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+// AC-14 (review 2026-09-13, D-19 single-source-of-truth): moved here from
+// ../ports/rules-handler.ts, where it lived as a private `isDuplicateInScope`
+// const -- ../app/handle-message.ts (AC-14's chat-drafting path) needs the
+// SAME definition of "conflict" as the settings-screen REST path
+// (POST /api/v1/rules), and an app-layer file importing from ports/ would
+// invert ADR-0005's layering (ports depends on app/domain, never the
+// reverse). Exporting a default HERE -- alongside `defaultRuleShadowPredicate`
+// above, the same pattern -- keeps ADR-0004 §Neutral intact (a caller may
+// still supply its own predicate to `findConflictingRule`; this is a
+// convenience default, not a domain requirement) while giving both callers
+// one place to agree on what counts as a duplicate: the same category twice
+// in the same scope, or a literal (case/whitespace-insensitive) repeat of
+// free text. Real semantic (LLM-based) conflict detection remains the
+// explicitly open design question ADR-0004 already names -- not decided here.
+export const defaultRuleConflictPredicate: RuleConflictPredicate = (candidate, existing) => {
+  if (candidate.category !== null && candidate.category === existing.category) {
+    return true;
+  }
+  if (candidate.ruleText !== null && existing.ruleText !== null) {
+    return normalizeRuleTextForComparison(candidate.ruleText) === normalizeRuleTextForComparison(existing.ruleText);
+  }
+  return false;
+};
+
 export interface RuleConflictCheckInput {
   scopeCardId: string | null;
   category: ImperativeRuleCategory | null;

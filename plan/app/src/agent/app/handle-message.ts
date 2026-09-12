@@ -30,11 +30,15 @@ import {
 import type { Proposal as DomainProposal } from '../domain/proposal';
 import { getShortTermWindow, findFactsByTopic, stripThirdPersonNames, prepareFactText } from '../domain/memory';
 import type { ChatMessage, LongTermMemoryFact } from '../domain/memory';
+import { createImperativeRule, findConflictingRule, defaultRuleConflictPredicate, ruleDirectiveText } from '../domain/rules';
+import type { ImperativeRuleCategory, ImperativeRule } from '../domain/rules';
 import {
   findActiveProposalByUser,
   insertProposal,
   updateProposal,
   listEffectiveRulesForCard,
+  listRulesByScope,
+  insertRule,
   listMessagesForSession,
   findActiveFactsByTopic,
   insertAuditEvent,
@@ -42,7 +46,7 @@ import {
   updateFact,
   softDeleteFact,
 } from '../infra/postgres-repo';
-import type { Db, ProposalRecord, ChatMessageRecord, FactRecord } from '../infra/postgres-repo';
+import type { Db, ProposalRecord, ChatMessageRecord, FactRecord, RuleRecord } from '../infra/postgres-repo';
 // app -> cards (plan/app/CLAUDE.md, той самий крос-фічевий імпорт, що вже
 // встановлений ../confirm.ts для life-area-card's createEntry): картка --
 // чужа фіча, її дані читаються лише через уже готові app-/infra-функції
@@ -116,6 +120,15 @@ interface AgentDecision {
    * факт видаляється (`memory_fact_deleted`).
    */
   forgetReplacementText: string | null;
+  /**
+   * AC-14 (US-03, review 2026-09-13 gap fix) -- заповнюється ЛИШЕ коли
+   * Claude вважає діалог формулювання правила завершеним (користувач
+   * підтвердив/уточнив достатньо, щоб зберегти), а не на кожному кроці
+   * уточнення -- так само, як `rememberFact` не заповнюється, доки факт не
+   * "визрів". `null` -- цей хід не стосується збереження правила (звичайна
+   * розмова чи ще триває уточнення формулювання).
+   */
+  proposedRule: { category: ImperativeRuleCategory | null; ruleText: string | null; scopeCardId: string | null } | null;
 }
 
 function safeString(value: unknown): string | null {
@@ -129,6 +142,32 @@ function safeNumber(value: unknown): number | null {
 function safeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === 'string');
+}
+
+const VALID_RULE_CATEGORIES: readonly string[] = [
+  'data',
+  'correction',
+  'survey',
+  'context_clarification',
+  'owner_impact',
+  'reminder',
+];
+
+/**
+ * AC-14 -- будь-яка невідповідність форми (не-об'єкт, невідома категорія)
+ * повертає `null` (той самий fail-safe принцип, що parseAgentDecision
+ * загалом: невідомий формат ніколи не вгадує намір зберегти щось).
+ * Остаточна валідація (порожнє правило) усе одно лишається за
+ * `createImperativeRule` (domain, ADR-0006 Result) нижче -- це лише
+ * розбір JSON-конверта, не бізнес-правило.
+ */
+function safeProposedRule(value: unknown): AgentDecision['proposedRule'] {
+  if (typeof value !== 'object' || value === null) return null;
+  const raw = value as Partial<Record<'category' | 'ruleText' | 'scopeCardId', unknown>>;
+  const category = typeof raw.category === 'string' && VALID_RULE_CATEGORIES.includes(raw.category) ? (raw.category as ImperativeRuleCategory) : null;
+  const ruleText = safeString(raw.ruleText);
+  const scopeCardId = safeString(raw.scopeCardId);
+  return { category, ruleText, scopeCardId };
 }
 
 /**
@@ -157,6 +196,7 @@ function parseAgentDecision(raw: string): AgentDecision {
       rememberTopic: safeString(parsed.rememberTopic),
       forgetTopic: safeString(parsed.forgetTopic),
       forgetReplacementText: safeString(parsed.forgetReplacementText),
+      proposedRule: safeProposedRule(parsed.proposedRule),
     };
   } catch {
     return {
@@ -172,6 +212,7 @@ function parseAgentDecision(raw: string): AgentDecision {
       rememberTopic: null,
       forgetTopic: null,
       forgetReplacementText: null,
+      proposedRule: null,
     };
   }
 }
@@ -296,6 +337,26 @@ function buildMemoryContextText(shortTermWindow: ChatMessage[], longTermFacts: L
   return lines.join('\n');
 }
 
+/**
+ * AC-14 -- показує Claude тексти вже наявних правил цього скоупу (глобальні +
+ * override поточної картки, той самий `activeRules`, що вже читається вище
+ * для guard/промпту -- жодного нового запиту), щоб він сам уникав пропонувати
+ * дослівний дубль ще ДО того, як code-side перевірка (persistProposedRule
+ * нижче) відхилить його. Це лише інформаційний контекст для діалогу --
+ * справжній gate лишається за findConflictingRule/defaultRuleConflictPredicate
+ * (точний скоуп, не цей ширший "ефективний" список).
+ */
+function buildExistingRulesText(activeRules: RuleRecord[]): string {
+  if (activeRules.length === 0) return '';
+  const lines = activeRules.map(
+    (rule) => `- "${ruleDirectiveText(rule)}"${rule.scopeCardId ? ' (діє лише на одній картці)' : ' (глобальне)'}`
+  );
+  return [
+    "Уже наявні активні правила користувача (AC-07/AC-14) -- якщо допомагаєш сформулювати НОВЕ правило, не пропонуй те, що дослівно дублює одне з цих (перевір за змістом, не лише за словом):",
+    ...lines,
+  ].join('\n');
+}
+
 function buildActiveProposalText(proposal: ProposalRecord | null): string {
   if (!proposal) {
     return 'Активної пропозиції немає.';
@@ -322,7 +383,8 @@ const RESPONSE_FORMAT_INSTRUCTION = `Відповідай СТРОГО одни�
   "rememberFact": "<значущий факт, вартий довгострокової пам'яті (AC-09), або null -- фонова дія, окреме підтвердження не потрібне>",
   "rememberTopic": "<тема цього факту для пізнішого пошуку, або null>",
   "forgetTopic": "<тема раніше запам'ятованого факту, який користувач хоче скасувати чи виправити ('забудь, що...'), або null>",
-  "forgetReplacementText": "<заданий разом із forgetTopic -- новий текст факту (виправлення); null разом із forgetTopic -- факт просто видаляється>"
+  "forgetReplacementText": "<заданий разом із forgetTopic -- новий текст факту (виправлення); null разом із forgetTopic -- факт просто видаляється>",
+  "proposedRule": "<об'єкт {category, ruleText, scopeCardId} КОЛИ користувач хоче сформулювати власне правило (AC-14) і діалог уже досяг конкретного, готового до збереження формулювання -- інакше null (ще уточнюєш формулювання в reply, нічого не зберігай передчасно). category -- одне з готового меню (data/correction/survey/context_clarification/owner_impact/reminder) або null; ruleText -- власне формулювання або null; має бути задано ХОЧА Б ОДНЕ з двох. scopeCardId -- id картки зі списку нижче, якщо правило стосується лише ОДНІЄЇ картки (AC-12), або null для глобального правила. Система сама ще раз звірить із наявними правилами тієї самої області дії ПЕРЕД збереженням -- якщо знайде дублікат, збереження не станеться і користувач побачить чому.>"
 }
 "outcome": "proposal" ЛИШЕ тоді, коли proposedSummary заповнено і ти дійсно пропонуєш конкретний запис (AC-01/AC-10/AC-19). В решті випадків -- "clarification": суперечливі чи невизначені дані (AC-04), кілька однаково ймовірних карток або жодної підходящої (AC-05), чи вкладення, з якого не вдалось виділити факт (AC-10b/AC-19b). Обирай cardId/metricBlockId ЛИШЕ зі списку нижче -- ніколи не вигадуй id.`;
 
@@ -331,12 +393,14 @@ function buildBaseSystemPrompt(params: {
   longTermFacts: LongTermMemoryFact[];
   catalog: CardCatalog;
   activeProposal: ProposalRecord | null;
+  activeRules: RuleRecord[];
 }): string {
   const sections = [
     RESPONSE_FORMAT_INSTRUCTION,
     buildMemoryContextText(params.shortTermWindow, params.longTermFacts),
     `Активні картки користувача:\n${buildCardCatalogText(params.catalog)}`,
     buildActiveProposalText(params.activeProposal),
+    buildExistingRulesText(params.activeRules),
   ];
   return sections.filter((section) => section.trim().length > 0).join('\n\n');
 }
@@ -429,6 +493,75 @@ async function persistFactMemoryUpdates(db: Db, userId: string, decision: AgentD
   });
 }
 
+/**
+ * AC-14 (US-03, review 2026-09-13 gap fix) -- зберігає правило, яке Claude
+ * запропонував ПІСЛЯ того, як діалог формулювання визрів
+ * (`decision.proposedRule` заповнено; поки триває уточнення -- воно `null`,
+ * ніякого передчасного збереження). Той самий "не довіряти Claude наосліп"
+ * принцип, що AC-06 вже застосовує до cardId/metricBlockId основного flow'у:
+ *
+ * 1. Домен валідує форму (`createImperativeRule`, ADR-0006 Result) --
+ *    порожнє правило (ні категорії, ні тексту) просто нічого не зберігає,
+ *    той самий fail-safe, що `prepareFactText` вище для AC-09.
+ * 2. `scopeCardId` звіряється з каталогом САМЕ цього користувача -- чужий чи
+ *    вигаданий id означає "не резолвнулось", збереження пропускається (той
+ *    самий шлях, що AC-05 для основного flow'у) -- НЕ мовчки перетворюється
+ *    на глобальне правило, бо це змінило б намір користувача.
+ * 3. Конфлікт-перевірка ТІЄЇ САМОЇ області дії
+ *    (`findConflictingRule`/`defaultRuleConflictPredicate` -- той самий
+ *    предикат, що ../ports/rules-handler.ts's REST-шлях POST /api/v1/rules,
+ *    D-19 одне джерело правди) -- знайдений дублікат СКАСОВУЄ збереження, а
+ *    Claude-ову оптимістичну відповідь замінює детермінованим поясненням
+ *    (той самий принцип, що AC-06: код, не Claude, має останнє слово, коли
+ *    вони розходяться).
+ *
+ * Повертає замінник для `decision.reply`, коли знайдено конфлікт; `null` --
+ * коли нічого замінювати (нема proposedRule, воно порожнє/нерезолвлене, чи
+ * збереження пройшло успішно -- Claude-ова власна відповідь лишається).
+ */
+async function persistProposedRule(db: Db, userId: string, decision: AgentDecision, cardIds: Set<string>): Promise<string | null> {
+  const proposed = decision.proposedRule;
+  if (!proposed) {
+    return null;
+  }
+
+  if (proposed.scopeCardId !== null && !cardIds.has(proposed.scopeCardId)) {
+    return null;
+  }
+
+  const created = createImperativeRule({
+    id: crypto.randomUUID(),
+    userId,
+    scopeCardId: proposed.scopeCardId,
+    category: proposed.category,
+    ruleText: proposed.ruleText,
+  });
+  if (!created.ok) {
+    return null;
+  }
+
+  const existingInScope: ImperativeRule[] = await listRulesByScope(db, userId, created.value.scopeCardId);
+  const conflict = findConflictingRule(
+    { scopeCardId: created.value.scopeCardId, category: created.value.category, ruleText: created.value.ruleText },
+    existingInScope,
+    defaultRuleConflictPredicate
+  );
+  if (conflict) {
+    const conflictText = ruleDirectiveText(conflict);
+    const scopeText = conflict.scopeCardId ? 'на цій картці' : 'глобальне';
+    return `Таке правило вже є (${scopeText}): "${conflictText}". Уточни, чим нове формулювання відрізняється, або скасуй ідею.`;
+  }
+
+  await insertRule(db, {
+    id: created.value.id,
+    userId: created.value.userId,
+    scopeCardId: created.value.scopeCardId,
+    category: created.value.category,
+    ruleText: created.value.ruleText,
+  });
+  return null;
+}
+
 /** AC-02b (Flow 1's refinement leg) -- та сама пропозиція, оновлена на місці, не новий запис. */
 async function refineActiveProposal(
   db: Db,
@@ -512,7 +645,7 @@ export async function handleMessage(
   // цього повідомлення (той самий читальний виклик, що Flow 6).
   const activeRules = await listEffectiveRulesForCard(db, input.userId, candidateCardId);
 
-  const baseSystemPrompt = buildBaseSystemPrompt({ shortTermWindow, longTermFacts, catalog, activeProposal });
+  const baseSystemPrompt = buildBaseSystemPrompt({ shortTermWindow, longTermFacts, catalog, activeProposal, activeRules });
 
   const rawInput = input.text ?? `[вкладення: ${input.attachment?.mediaType ?? 'невідомий тип'}]`;
 
@@ -550,6 +683,17 @@ export async function handleMessage(
   // самий факт одночасно є записом у картку" -- той виняток тут свідомо не
   // додатково обробляється, задача лише про сам відсутній write-шлях).
   await persistFactMemoryUpdates(db, input.userId, decision);
+
+  // AC-14 (review 2026-09-13 gap fix): "запам'ятати правило" -- та сама
+  // фонова дія, незалежна від того, чи цей хід ще й формує proposal. Коли
+  // деterministic-перевірка знаходить конфлікт, Claude-ова оптимістична
+  // відповідь замінюється тут -- ДО того, як decision.reply піде в БУДЬ-ЯКУ
+  // з гілок нижче (proposal чи clarification), той самий принцип, що AC-06
+  // "код, не Claude, має останнє слово".
+  const ruleConflictReply = await persistProposedRule(db, input.userId, decision, catalog.cardIds);
+  if (ruleConflictReply !== null) {
+    decision.reply = ruleConflictReply;
+  }
 
   if (activeProposal) {
     if (decision.activeProposalRelated) {
