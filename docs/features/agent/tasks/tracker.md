@@ -21,7 +21,7 @@
 | T14 | Infra: Google OAuth + app_user provisioning | infra | TBD | M | T1 | done (early, via life-area-card's T30 -- D-109/ISS-51) |
 | T15 | Infra (agent-worker): schedule + report persistence | infra | TBD | M | T7, T13 | todo |
 | T16 | App: handle-message use-case | app | TBD | L | T8, T10, T13, T18 | todo |
-| T17 | App: confirm use-case | app | TBD | S | T8, T13 | todo |
+| T17 | App: confirm use-case | app | TBD | S | T8, T13 | done |
 | T18 | App: ask-agent orchestration | app | TBD | M | T9, T12 | todo |
 | T19 | App (agent-worker): generate-report use-case | app | TBD | M | T11, T15 | todo |
 | T20 | Ports: GET/POST /messages handlers | ports | TBD | M | T16 | todo |
