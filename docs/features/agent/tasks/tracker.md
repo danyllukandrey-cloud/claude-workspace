@@ -46,7 +46,7 @@
 | T39 | App: deleteAccount use-case | app | TBD | M | T34, T13 | done |
 | T40 | App: sync-resource CRUD use-cases | app | TBD | S | T35, T13 | done |
 | T41 | App (agent-worker): daily-sync use-case | app | TBD | M | T35, T38 | done |
-| T42 | App: developer-report use-case | app | TBD | S | T36, T37 | todo |
+| T42 | App: developer-report use-case | app | TBD | S | T36, T37 | done |
 | T43 | Ports: DELETE /account handler | ports | TBD | S | T39 | todo |
 | T44 | Ports: sync-resources handlers | ports | TBD | S | T40 | todo |
 | T45 | UI: SCR-04 Обліковий запис і дані | ui | TBD | M | T25, T43, T44 | todo |
