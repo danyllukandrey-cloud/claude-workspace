@@ -470,10 +470,51 @@ export async function listMessagesForSession(db: Db, userId: string, sessionDate
  * listMessagesForSession вище (scopeована одним календарним днем, AC-15),
  * тут перевіряється "чи це взагалі перший виклик користувача" за весь час.
  * `LIMIT 1` -- питання лише про існування, а не про кількість чи вміст.
+ *
+ * Review 2026-09-12: більше НЕ використовується onboarding-handler.ts
+ * (замінено на insertWelcomeMessageIfFirst нижче -- check-then-insert із
+ * цієї функції й insertChatMessage окремими round trip'ами мав вікно гонки).
+ * Лишається тут як самостійна, окремо протестована перевірка існування --
+ * postgres-repo.test.ts продовжує її покривати.
  */
 export async function hasAnyChatMessage(db: Db, userId: string): Promise<boolean> {
   const { rows } = await db.query('SELECT 1 FROM chat_message WHERE user_id = $1 LIMIT 1', [userId]);
   return rows.length > 0;
+}
+
+/**
+ * Review 2026-09-12 (AC-13 race fix): onboarding-handler.ts (T24) раніше
+ * складав hasAnyChatMessage + insertChatMessage як два окремі round trip --
+ * ChatScreen.tsx викликає GET /onboarding у тому самому Promise.all, що й
+ * loadHistory/loadActiveProposal на кожному монтуванні екрана (і React
+ * StrictMode монтує двічі в dev), тож два одночасні виклики могли обидва
+ * побачити "повідомлень ще нема" між своїми SELECT і INSERT і обидва
+ * вставити вітальний рядок.
+ *
+ * INSERT ... SELECT ... WHERE NOT EXISTS -- перевірка-і-запис усередині
+ * ОДНОГО SQL-запиту (атомарно на рівні бази, не двох round trip з вікном
+ * між ними): друга одночасна спроба виконує той самий запит і бачить
+ * рядок конкурента, щойно вставлений першою -- тому нічого не вставляє й
+ * повертає нуль рядків.
+ *
+ * `null` тут означає одне з двох, і виклику (onboarding-handler.ts) різниця
+ * байдужа -- обидва трактуються як `welcomeShown: true, message: null`, не
+ * як помилка:
+ * 1) користувач уже мав хоч один chat_message (перший виклик колись раніше);
+ * 2) щойно програв гонку конкурентному виклику (сценарій вище).
+ */
+export async function insertWelcomeMessageIfFirst(
+  db: Db,
+  input: { id: string; userId: string; role: ChatRoleRow; content: string; sessionDate: string }
+): Promise<ChatMessageRecord | null> {
+  const { rows } = await db.query<RawChatMessageRow>(
+    `INSERT INTO chat_message (id, user_id, role, content, session_date)
+     SELECT $1, $2, $3, $4, $5
+     WHERE NOT EXISTS (SELECT 1 FROM chat_message WHERE user_id = $2)
+     RETURNING ${CHAT_MESSAGE_COLUMNS}`,
+    [input.id, input.userId, input.role, input.content, input.sessionDate]
+  );
+  return rows[0] ? toChatMessageRecord(rows[0]) : null;
 }
 
 /**
