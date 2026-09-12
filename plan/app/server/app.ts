@@ -140,7 +140,14 @@ export interface AppDeps {
    * no caller anywhere -- unaffected by this fix.
    */
   emailTransport?: EmailTransport;
-  /** T29 -- developer's notification email address (AC-20/AC-20b) -- never read from process.env inside src/ (plan/app/CLAUDE.md dependency rule); composition root (server/index.ts) supplies it. See `emailTransport` above -- now used by the generic error-middleware branch, still an open integration-gap for AC-20b. */
+  /**
+   * T29 -- developer's notification email address (AC-20/AC-20b) -- never
+   * read from process.env inside src/ (plan/app/CLAUDE.md dependency rule);
+   * composition root (server/index.ts) supplies it. See `emailTransport`
+   * above -- used by the generic error-middleware branch (AC-20) AND, since
+   * review 2026-09-13's gap fix, threaded into POST /api/v1/messages's
+   * `chatHandlers.createMessage` call below (AC-20b, chat-initiated).
+   */
   developerEmail?: string;
 }
 
@@ -568,7 +575,14 @@ export function createApp(deps: AppDeps): express.Express {
       if (!deps.askClaude) {
         throw new AppError('agent.llm_unavailable', 'Агент тимчасово недоступний — Claude-клієнт не підключено', 503);
       }
-      const turn = await chatHandlers.createMessage(deps.db, deps.askClaude, ownerUserId(req), req.body);
+      // AC-20b (review 2026-09-13 gap fix): emailTransport/developerEmail
+      // threaded through the same optional way as everywhere else -- absent
+      // in an environment that hasn't configured outbound email, createMessage
+      // simply never attempts to forward a problem to the developer.
+      const turn = await chatHandlers.createMessage(deps.db, deps.askClaude, ownerUserId(req), req.body, {
+        transport: deps.emailTransport,
+        developerEmail: deps.developerEmail,
+      });
       res.status(201).json(turn);
     })
   );

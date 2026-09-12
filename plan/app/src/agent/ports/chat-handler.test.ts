@@ -30,7 +30,17 @@ vi.mock('../app/handle-message', () => ({
   handleMessage: vi.fn(),
 }));
 
+// AC-20b (review 2026-09-13 gap fix): mocked at the module boundary, same
+// convention as handleMessage above -- fileUserRequestedIssueReport is
+// already fully unit-tested at its own layer (developer-report.test.ts);
+// this file only checks that createMessage WIRES it correctly.
+vi.mock('../app/developer-report', () => ({
+  fileUserRequestedIssueReport: vi.fn(),
+}));
+
 import { handleMessage } from '../app/handle-message';
+import { fileUserRequestedIssueReport } from '../app/developer-report';
+import type { EmailTransport } from '../infra/email-client';
 import { createMessage, listMessages } from './chat-handler';
 
 const USER_ID = 'user-1';
@@ -99,12 +109,21 @@ describe('createMessage handler (POST /api/v1/messages)', () => {
 
     const result = await createMessage(db, askClaude, USER_ID, { content: 'пробіг 5 км' }, { now: NOW });
 
-    expect(handleMessage).toHaveBeenCalledWith(db, askClaude, {
-      userId: USER_ID,
-      text: 'пробіг 5 км',
-      attachment: null,
-      now: NOW,
-    });
+    expect(handleMessage).toHaveBeenCalledWith(
+      db,
+      askClaude,
+      {
+        userId: USER_ID,
+        text: 'пробіг 5 км',
+        attachment: null,
+        now: NOW,
+      },
+      // AC-20b (review 2026-09-13 gap fix): no transport/developerEmail given
+      // to createMessage here -- buildReportUserIssue's optional-DI fallback
+      // leaves reportUserIssue undefined, the SAME "absent -- silent no-op"
+      // convention as emailTransport/developerEmail elsewhere.
+      { reportUserIssue: undefined }
+    );
 
     expect(result).toEqual({
       reply: 'Записати 5 км бігу?',
@@ -168,12 +187,17 @@ describe('createMessage handler (POST /api/v1/messages)', () => {
     const attachment = { mediaType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', base64Data: 'QUJD' };
     await createMessage(db, askClaude, USER_ID, { content: null, attachment }, { now: NOW });
 
-    expect(handleMessage).toHaveBeenCalledWith(db, askClaude, {
-      userId: USER_ID,
-      text: null,
-      attachment,
-      now: NOW,
-    });
+    expect(handleMessage).toHaveBeenCalledWith(
+      db,
+      askClaude,
+      {
+        userId: USER_ID,
+        text: null,
+        attachment,
+        now: NOW,
+      },
+      { reportUserIssue: undefined }
+    );
   });
 
   it('propagates agent.attachment_unrecognized (422) from handleMessage unchanged, but still records the user turn (Review 2026-09-12: the attempt must count toward the rate limit)', async () => {
@@ -249,6 +273,65 @@ describe('createMessage handler (POST /api/v1/messages)', () => {
     // handleMessage was never retried -- rejected purely on the (now correctly
     // updated) count, before any second Claude call could be attempted.
     expect(handleMessage).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('createMessage handler -- AC-20b wiring (review 2026-09-13 gap fix)', () => {
+  const FAKE_TRANSPORT = {} as EmailTransport;
+
+  it('passes a bound reportUserIssue callback to handleMessage when transport + developerEmail are both given, and it calls fileUserRequestedIssueReport correctly', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] })
+      .mockResolvedValueOnce({ rows: [chatRow()] })
+      .mockResolvedValueOnce({ rows: [chatRow({ role: 'agent' })] });
+    const db: Db = { query };
+    const askClaude: AskClaude = vi.fn();
+
+    (handleMessage as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ reply: 'Гаразд.', proposal: null });
+    (fileUserRequestedIssueReport as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'report-1',
+      userId: USER_ID,
+      triggerType: 'user_requested',
+      description: 'Кнопка не працює',
+      deliveryStatus: 'sent',
+    });
+
+    await createMessage(
+      db,
+      askClaude,
+      USER_ID,
+      { content: 'відправ це розробнику' },
+      { now: NOW, transport: FAKE_TRANSPORT, developerEmail: 'dev@example.test' }
+    );
+
+    const passedDeps = (handleMessage as unknown as ReturnType<typeof vi.fn>).mock.calls[0][3] as { reportUserIssue?: (d: string) => Promise<unknown> };
+    expect(passedDeps.reportUserIssue).toBeInstanceOf(Function);
+
+    const outcome = await passedDeps.reportUserIssue!('Кнопка не працює');
+    expect(fileUserRequestedIssueReport).toHaveBeenCalledWith(
+      { db, transport: FAKE_TRANSPORT, developerEmail: 'dev@example.test' },
+      { userId: USER_ID, userDescription: 'Кнопка не працює' }
+    );
+    expect(outcome).toEqual({ deliveryStatus: 'sent' });
+  });
+
+  it('passes reportUserIssue: undefined when transport or developerEmail is missing (no attempt to email, same optional-DI fallback as emailTransport elsewhere)', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] })
+      .mockResolvedValueOnce({ rows: [chatRow()] })
+      .mockResolvedValueOnce({ rows: [chatRow({ role: 'agent' })] });
+    const db: Db = { query };
+    const askClaude: AskClaude = vi.fn();
+
+    (handleMessage as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ reply: 'Гаразд.', proposal: null });
+
+    await createMessage(db, askClaude, USER_ID, { content: 'привіт' }, { now: NOW });
+
+    const passedDeps = (handleMessage as unknown as ReturnType<typeof vi.fn>).mock.calls[0][3] as { reportUserIssue?: unknown };
+    expect(passedDeps.reportUserIssue).toBeUndefined();
+    expect(fileUserRequestedIssueReport).not.toHaveBeenCalled();
   });
 });
 

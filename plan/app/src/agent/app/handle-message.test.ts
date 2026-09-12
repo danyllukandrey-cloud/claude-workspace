@@ -906,6 +906,91 @@ describe('handleMessage -- AC-14: chat-based rule drafting (review 2026-09-13, g
   });
 });
 
+describe('handleMessage -- AC-20b: chat-initiated developer report (review 2026-09-13, gap fix)', () => {
+  it("calls the injected reportUserIssue callback with Claude's description and trusts Claude's own confirmation reply on success", async () => {
+    const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()] });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(
+      okClaude(
+        decisionJson({
+          outcome: 'clarification',
+          proposedSummary: null,
+          reply: 'Надіслав це розробнику.',
+          reportIssueToDeveloper: 'Кнопка підтвердження запису не реагує на дотик на Android',
+        })
+      )
+    );
+    const reportUserIssue = vi.fn().mockResolvedValue({ deliveryStatus: 'sent' as const });
+
+    const result = await handleMessage(
+      db,
+      askClaude,
+      { userId: USER_ID, text: 'кнопка підтвердження не працює, відправ це розробнику' },
+      { reportUserIssue }
+    );
+
+    expect(reportUserIssue).toHaveBeenCalledWith('Кнопка підтвердження запису не реагує на дотик на Android');
+    expect(result.reply).toBe('Надіслав це розробнику.');
+  });
+
+  it('overrides the reply when the injected callback reports a failed delivery, instead of trusting an optimistic Claude reply', async () => {
+    const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()] });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(
+      okClaude(
+        decisionJson({
+          outcome: 'clarification',
+          proposedSummary: null,
+          reply: 'Надіслав це розробнику.',
+          reportIssueToDeveloper: 'Щось не працює',
+        })
+      )
+    );
+    const reportUserIssue = vi.fn().mockResolvedValue({ deliveryStatus: 'failed' as const });
+
+    const result = await handleMessage(db, askClaude, { userId: USER_ID, text: 'відправ це розробнику' }, { reportUserIssue });
+
+    expect(result.reply).not.toBe('Надіслав це розробнику.');
+    expect(result.reply.toLowerCase()).toContain('не вдал');
+  });
+
+  it('overrides the reply when the injected callback throws unexpectedly (never lets an email failure crash the whole chat turn)', async () => {
+    const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()] });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(
+      okClaude(
+        decisionJson({
+          outcome: 'clarification',
+          proposedSummary: null,
+          reply: 'Надіслав це розробнику.',
+          reportIssueToDeveloper: 'Щось не працює',
+        })
+      )
+    );
+    const reportUserIssue = vi.fn().mockRejectedValue(new Error('connection terminated unexpectedly'));
+
+    const result = await handleMessage(db, askClaude, { userId: USER_ID, text: 'відправ це розробнику' }, { reportUserIssue });
+
+    expect(result.reply).not.toBe('Надіслав це розробнику.');
+    expect(result.reply.toLowerCase()).toContain('не вдал');
+  });
+
+  it('is a no-op when no reportUserIssue callback is injected (backward-compatible -- existing callers/tests never wire email)', async () => {
+    const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()] });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(
+      okClaude(
+        decisionJson({
+          outcome: 'clarification',
+          proposedSummary: null,
+          reply: 'Гаразд.',
+          reportIssueToDeveloper: 'Щось не працює',
+        })
+      )
+    );
+
+    const result = await handleMessage(db, askClaude, { userId: USER_ID, text: 'відправ це розробнику' });
+
+    expect(result.reply).toBe('Гаразд.');
+  });
+});
+
 describe('handleMessage -- AC-01/AC-02/AC-05 fix: an incomplete proposal never becomes an active one', () => {
   it('falls through to clarification (nothing persisted) when Claude proposes a record but leaves the amount unresolved', async () => {
     const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()] });

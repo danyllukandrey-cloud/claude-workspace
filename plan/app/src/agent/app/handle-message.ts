@@ -80,6 +80,23 @@ export interface HandleMessageResult {
   proposal: ProposalRecord | null;
 }
 
+/**
+ * Опційні ін'єктовані залежності (той самий optional-DI підхід, що D-115's
+ * recordCardRenameEvent) -- відсутні за замовчуванням, тож жоден наявний
+ * викликач/тест не зобов'язаний про них знати. `db` уже несе все, що
+ * app/developer-report.ts потребує для запису рядка, окрім email-транспорту
+ * й адреси розробника -- ці двоє живуть composition root'ом (server/index.ts
+ * -> server/app.ts's AppDeps.emailTransport/developerEmail), не тут (той
+ * самий dependency rule, plan/app/CLAUDE.md), тому викликач (../ports/
+ * chat-handler.ts) сам будує вже "закритий" (bound) колбек навколо
+ * fileUserRequestedIssueReport і передає лише його -- цей файл нічого не
+ * знає про EmailTransport.
+ */
+export interface HandleMessageDeps {
+  /** AC-20b -- повертає фактичний статус доставки (не лише "не впало"), щоб handleMessage міг чесно повідомити користувача, якщо лист не пішов. */
+  reportUserIssue?: (userDescription: string) => Promise<{ deliveryStatus: 'sent' | 'failed' }>;
+}
+
 // --- Claude's structured decision (this file's own wire contract) ---------
 
 interface AgentDecision {
@@ -129,6 +146,13 @@ interface AgentDecision {
    * розмова чи ще триває уточнення формулювання).
    */
   proposedRule: { category: ImperativeRuleCategory | null; ruleText: string | null; scopeCardId: string | null } | null;
+  /**
+   * AC-20b (US-14, review 2026-09-13 gap fix) -- заповнюється, коли Claude
+   * розпізнав прохання користувача переслати проблему розробнику ("я бачу
+   * таку-то штуку, відправ розробнику"): короткий опис проблеми з ПОГЛЯДУ
+   * КОРИСТУВАЧА, готовий лягти в лист. `null` -- цей хід не про це.
+   */
+  reportIssueToDeveloper: string | null;
 }
 
 function safeString(value: unknown): string | null {
@@ -197,6 +221,7 @@ function parseAgentDecision(raw: string): AgentDecision {
       forgetTopic: safeString(parsed.forgetTopic),
       forgetReplacementText: safeString(parsed.forgetReplacementText),
       proposedRule: safeProposedRule(parsed.proposedRule),
+      reportIssueToDeveloper: safeString(parsed.reportIssueToDeveloper),
     };
   } catch {
     return {
@@ -213,6 +238,7 @@ function parseAgentDecision(raw: string): AgentDecision {
       forgetTopic: null,
       forgetReplacementText: null,
       proposedRule: null,
+      reportIssueToDeveloper: null,
     };
   }
 }
@@ -384,7 +410,8 @@ const RESPONSE_FORMAT_INSTRUCTION = `Відповідай СТРОГО одни�
   "rememberTopic": "<тема цього факту для пізнішого пошуку, або null>",
   "forgetTopic": "<тема раніше запам'ятованого факту, який користувач хоче скасувати чи виправити ('забудь, що...'), або null>",
   "forgetReplacementText": "<заданий разом із forgetTopic -- новий текст факту (виправлення); null разом із forgetTopic -- факт просто видаляється>",
-  "proposedRule": "<об'єкт {category, ruleText, scopeCardId} КОЛИ користувач хоче сформулювати власне правило (AC-14) і діалог уже досяг конкретного, готового до збереження формулювання -- інакше null (ще уточнюєш формулювання в reply, нічого не зберігай передчасно). category -- одне з готового меню (data/correction/survey/context_clarification/owner_impact/reminder) або null; ruleText -- власне формулювання або null; має бути задано ХОЧА Б ОДНЕ з двох. scopeCardId -- id картки зі списку нижче, якщо правило стосується лише ОДНІЄЇ картки (AC-12), або null для глобального правила. Система сама ще раз звірить із наявними правилами тієї самої області дії ПЕРЕД збереженням -- якщо знайде дублікат, збереження не станеться і користувач побачить чому.>"
+  "proposedRule": "<об'єкт {category, ruleText, scopeCardId} КОЛИ користувач хоче сформулювати власне правило (AC-14) і діалог уже досяг конкретного, готового до збереження формулювання -- інакше null (ще уточнюєш формулювання в reply, нічого не зберігай передчасно). category -- одне з готового меню (data/correction/survey/context_clarification/owner_impact/reminder) або null; ruleText -- власне формулювання або null; має бути задано ХОЧА Б ОДНЕ з двох. scopeCardId -- id картки зі списку нижче, якщо правило стосується лише ОДНІЄЇ картки (AC-12), або null для глобального правила. Система сама ще раз звірить із наявними правилами тієї самої області дії ПЕРЕД збереженням -- якщо знайде дублікат, збереження не станеться і користувач побачить чому.>",
+  "reportIssueToDeveloper": "<КОРОТКИЙ опис проблеми з погляду користувача, КОЛИ користувач явно просить переслати проблему розробнику ('відправ це розробнику', 'повідом про це розробнику' тощо, AC-20b) -- або null, коли це звичайна розмова. Якщо задано, твій reply МАЄ підтвердити користувачу, що надіслано (наприклад: 'Надіслав це розробнику.') -- система сама повторно перевірить, чи надсилання дійсно вдалось, і замінить твою відповідь поясненням, якщо ні.>"
 }
 "outcome": "proposal" ЛИШЕ тоді, коли proposedSummary заповнено і ти дійсно пропонуєш конкретний запис (AC-01/AC-10/AC-19). В решті випадків -- "clarification": суперечливі чи невизначені дані (AC-04), кілька однаково ймовірних карток або жодної підходящої (AC-05), чи вкладення, з якого не вдалось виділити факт (AC-10b/AC-19b). Обирай cardId/metricBlockId ЛИШЕ зі списку нижче -- ніколи не вигадуй id.`;
 
@@ -599,10 +626,39 @@ async function refineActiveProposal(
   return { reply: decision.reply, proposal: null };
 }
 
+/**
+ * AC-20b (US-14, review 2026-09-13 gap fix) -- пересилає розробнику проблему,
+ * яку користувач явно попросив переслати (`decision.reportIssueToDeveloper`).
+ * Той самий "код, не Claude, має останнє слово" принцип, що AC-14/AC-06 вище:
+ * на успіху Claude-ова власна відповідь (уже інструктована підтвердити
+ * надсилання, AC-20b DoD) лишається як є; на невдалій доставці ЧИ
+ * неочікуваній помилці колбека (лист не мав впасти цілком мовчки -- AC-20b
+ * вимагає, щоб користувач дізнався правду, не оптимістичне "надіслано", коли
+ * насправді ні) -- відповідь замінюється детермінованим поясненням. Відсутній
+ * колбек (deps не передано) -- тихий no-op, той самий fallback, що
+ * emailTransport/developerEmail деінде в проєкті (T29 wiring).
+ */
+async function notifyDeveloperOfUserIssue(deps: HandleMessageDeps | undefined, decision: AgentDecision): Promise<string | null> {
+  const description = decision.reportIssueToDeveloper?.trim();
+  if (!description || !deps?.reportUserIssue) {
+    return null;
+  }
+  try {
+    const result = await deps.reportUserIssue(description);
+    if (result.deliveryStatus === 'failed') {
+      return 'Спробував переслати це розробнику, але надсилання не вдалось -- спробуй ще раз трохи пізніше.';
+    }
+    return null;
+  } catch {
+    return 'Спробував переслати це розробнику, але сталася помилка й надсилання не вдалось -- спробуй ще раз трохи пізніше.';
+  }
+}
+
 export async function handleMessage(
   db: Db,
   askClaude: AskClaude,
-  input: HandleMessageInput
+  input: HandleMessageInput,
+  deps?: HandleMessageDeps
 ): Promise<HandleMessageResult> {
   const sessionDate = toSessionDate(input.now ?? new Date());
 
@@ -693,6 +749,16 @@ export async function handleMessage(
   const ruleConflictReply = await persistProposedRule(db, input.userId, decision, catalog.cardIds);
   if (ruleConflictReply !== null) {
     decision.reply = ruleConflictReply;
+  }
+
+  // AC-20b (review 2026-09-13 gap fix): застосовується ПІСЛЯ AC-14's
+  // можливого перезапису -- рідкісний випадок, коли той самий хід одночасно
+  // зачепив і невдале правило, і прохання переслати проблему, вирішується на
+  // користь останнього (детальніше в docstring нижче не потрібно: обидва
+  // шляхи -- крайні випадки, порядок лише має бути детермінованим).
+  const developerReportReply = await notifyDeveloperOfUserIssue(deps, decision);
+  if (developerReportReply !== null) {
+    decision.reply = developerReportReply;
   }
 
   if (activeProposal) {

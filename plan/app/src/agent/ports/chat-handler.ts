@@ -61,6 +61,16 @@
 import { randomUUID } from 'node:crypto';
 import type { AskClaude, ClaudeAttachment } from '../infra/claude-client';
 import { handleMessage } from '../app/handle-message';
+import type { HandleMessageDeps } from '../app/handle-message';
+// AC-20b (review 2026-09-13 gap fix): fileUserRequestedIssueReport (app
+// layer, T42) already existed and was fully unit-tested, but had no caller
+// anywhere -- the same class of gap AC-09/worker-cron already had before
+// their own review fixes. Ports importing from app/ is normal layering
+// (ADR-0005: domain <- app <- ports), unlike ../app/handle-message.ts
+// importing from ports/ (which would invert it) -- see domain/rules.ts's
+// defaultRuleConflictPredicate comment for that other direction.
+import { fileUserRequestedIssueReport } from '../app/developer-report';
+import type { EmailTransport } from '../infra/email-client';
 import { insertChatMessage, countRecentUserMessages, findAllMessagesByUser } from '../infra/postgres-repo';
 import type { Db, ProposalRecord, ChatMessageRecord, ChatRoleRow } from '../infra/postgres-repo';
 import { AppError } from '../../shared/errors';
@@ -173,6 +183,38 @@ export interface MessageCreateBody {
 export interface CreateMessageOptions {
   /** Injectable "зараз" -- узгодженість сесії з handleMessage (той самий `now`) і тестова керованість. */
   now?: Date;
+  /**
+   * AC-20b (review 2026-09-13 gap fix) -- той самий optional-DI підхід, що
+   * server/app.ts's AppDeps.emailTransport/developerEmail: composition root
+   * (server/index.ts) постачає реальні значення; відсутність (наявні
+   * виклики/тести цього файлу) -- цей маршрут просто ніколи не намагається
+   * переслати проблему розробнику, а не падає.
+   */
+  transport?: EmailTransport;
+  developerEmail?: string;
+}
+
+/**
+ * AC-20b -- "закриває" (binds) fileUserRequestedIssueReport (app-шар,
+ * T42) навколо ЦІЄЇ конкретної (db, transport, developerEmail, ownerUserId)
+ * трійки, щоб ../app/handle-message.ts отримав лише простий колбек
+ * `(userDescription) => Promise<{deliveryStatus}>` -- він нічого не знає
+ * про EmailTransport (той самий "app-шар не знає про composition root",
+ * що ../app/handle-message.ts's власний docblock уже пояснює).
+ */
+function buildReportUserIssue(
+  db: Db,
+  ownerUserId: string,
+  transport?: EmailTransport,
+  developerEmail?: string
+): HandleMessageDeps['reportUserIssue'] {
+  if (!transport || !developerEmail) {
+    return undefined;
+  }
+  return async (userDescription: string) => {
+    const report = await fileUserRequestedIssueReport({ db, transport, developerEmail }, { userId: ownerUserId, userDescription });
+    return { deliveryStatus: report.deliveryStatus };
+  };
 }
 
 export async function createMessage(
@@ -207,9 +249,11 @@ export async function createMessage(
   // countRecentUserMessages вище: клієнт міг повторювати непідтримуване
   // вкладення чи "їздити" на збої Claude необмежено, і кожна спроба була
   // реальним (оплаченим) викликом Claude, не врахованим лічильником.
+  const reportUserIssue = buildReportUserIssue(db, ownerUserId, options.transport, options.developerEmail);
+
   let result: Awaited<ReturnType<typeof handleMessage>>;
   try {
-    result = await handleMessage(db, askClaude, { userId: ownerUserId, text, attachment, now });
+    result = await handleMessage(db, askClaude, { userId: ownerUserId, text, attachment, now }, { reportUserIssue });
   } finally {
     await insertChatMessage(db, {
       id: randomUUID(),
