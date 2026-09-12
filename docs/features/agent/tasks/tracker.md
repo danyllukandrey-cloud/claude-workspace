@@ -17,7 +17,7 @@
 | T10 | Domain: hybrid memory model | domain | TBD | M | — | done |
 | T11 | Domain (agent-worker): activity-report model | domain | TBD | S | — | done |
 | T12 | Infra: Claude API client | infra | TBD | M | — | done |
-| T13 | Infra: Postgres repo | infra | TBD | L | T2, T3, T4, T5, T6 | todo |
+| T13 | Infra: Postgres repo | infra | TBD | L | T2, T3, T4, T5, T6 | done |
 | T14 | Infra: Google OAuth + app_user provisioning | infra | TBD | M | T1 | done (early, via life-area-card's T30 -- D-109/ISS-51) |
 | T15 | Infra (agent-worker): schedule + report persistence | infra | TBD | M | T7, T13 | todo |
 | T16 | App: handle-message use-case | app | TBD | L | T8, T10, T13, T18 | todo |
