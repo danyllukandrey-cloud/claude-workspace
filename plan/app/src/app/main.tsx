@@ -75,6 +75,19 @@ import {
   flagUnmaintainedCards,
   logicLayoutScale,
 } from '../structure';
+import type {
+  AccountScreenResource,
+  ChatMessage,
+  ChatProposal,
+  ComposerSendInput,
+  ImperativeRuleCategory,
+  OnboardingResult,
+  ReportViewModel,
+  RuleSettingsScreenRule,
+  RuleSettingsScreenSaveInput,
+  RuleSettingsScreenTargetCard,
+  SendMessageResult,
+} from '../agent';
 import { AppError } from '../shared/errors';
 import { collectAllPages } from '../shared/pagination';
 import { createLocalStorageAdapter } from '../shared/storage/local';
@@ -1215,6 +1228,368 @@ function toAnalyticsTrend(trend: GapTrend): AnalyticsTrend {
   return trend === 'growing' || trend === 'shrinking' ? trend : null;
 }
 
+// --- Agent (T29 wiring -- contracts/openapi.yaml) --------------------------
+//
+// Той самий DI-стиль, що вже встановлений вище для cards/structure: кожна
+// injected функція AppProps -- тонкий fetch + authHeaders()/AppError на межі,
+// жодної бізнес-логіки тут (та вже вся в ../agent/app|domain/ports). Реюзує
+// РІВНО ті самі DTO-поля, що ports/*.ts уже повертають (D-19) -- жодних
+// вигаданих назв полів.
+
+interface AgentMessageDto {
+  id: string;
+  role: 'user' | 'agent';
+  content: string;
+  createdAt: string;
+}
+
+interface AgentMessagePageDto {
+  items: AgentMessageDto[];
+  has_next: boolean;
+  has_prev: boolean;
+  next_cursor: string | null;
+}
+
+interface AgentProposalDto {
+  id: string;
+  cardId: string | null;
+  metricBlockId: string | null;
+  status: 'active' | 'confirmed' | 'dropped';
+  sourceType: 'text' | 'attachment';
+  rawInput: string;
+  proposedAmount: number | null;
+  proposedSummary: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface MessageTurnDto {
+  reply: string;
+  proposal: AgentProposalDto | null;
+}
+
+interface ActiveProposalResponseDto {
+  proposal: AgentProposalDto | null;
+}
+
+interface OnboardingStatusDto {
+  welcomeShown: boolean;
+  message: AgentMessageDto | null;
+}
+
+function toChatProposal(proposal: AgentProposalDto | null): ChatProposal | null {
+  return proposal ? { id: proposal.id, proposedSummary: proposal.proposedSummary } : null;
+}
+
+/** GET /api/v1/messages -- повна історія (ChatScreen.loadHistory). MessagePage.items -- та сама форма, що ChatMessage. */
+async function loadChatHistory(): Promise<ChatMessage[]> {
+  const response = await fetch('/api/v1/messages', { headers: authHeaders() });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    throw new AppError(body?.code ?? 'agent.request_failed', body?.message ?? 'Не вдалося завантажити історію чату', response.status);
+  }
+
+  const page = (await response.json()) as AgentMessagePageDto;
+  return page.items;
+}
+
+/** GET /api/v1/onboarding -- вітальне повідомлення на перший виклик (ChatScreen.loadOnboarding, AC-13). */
+async function loadChatOnboarding(): Promise<OnboardingResult> {
+  const response = await fetch('/api/v1/onboarding', { headers: authHeaders() });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    throw new AppError(body?.code ?? 'agent.request_failed', body?.message ?? 'Не вдалося завантажити вітання', response.status);
+  }
+
+  const status = (await response.json()) as OnboardingStatusDto;
+  return { welcomeShown: status.welcomeShown, message: status.message };
+}
+
+/** GET /api/v1/proposals/active -- чи є пропозиція, що чекає підтвердження (ChatScreen.loadActiveProposal). */
+async function loadActiveChatProposal(): Promise<ChatProposal | null> {
+  const response = await fetch('/api/v1/proposals/active', { headers: authHeaders() });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    throw new AppError(
+      body?.code ?? 'agent.request_failed',
+      body?.message ?? 'Не вдалося завантажити активну пропозицію',
+      response.status,
+    );
+  }
+
+  const result = (await response.json()) as ActiveProposalResponseDto;
+  return toChatProposal(result.proposal);
+}
+
+/**
+ * Читає File як base64 (без префіксу `data:...;base64,`). POST /messages тут
+ * приймає вкладення вже декодованим (mediaType+base64Data, той самий формат,
+ * що ClaudeAttachment/server/app.ts очікують) -- див. коментар у
+ * server/app.ts's POST /api/v1/messages про те, чому не справжній multipart.
+ */
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== 'string') {
+        reject(new Error('Не вдалося прочитати вкладення'));
+        return;
+      }
+      const commaIndex = result.indexOf(',');
+      resolve(commaIndex === -1 ? result : result.slice(commaIndex + 1));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error('Не вдалося прочитати вкладення'));
+    reader.readAsDataURL(file);
+  });
+}
+
+/** POST /api/v1/messages -- одне повідомлення/вкладення (ChatScreen.sendMessage, AC-01/AC-10/AC-19). */
+async function sendChatMessage(input: ComposerSendInput): Promise<SendMessageResult> {
+  const attachment = input.attachment
+    ? { mediaType: input.attachment.type, base64Data: await fileToBase64(input.attachment) }
+    : null;
+
+  const response = await fetch('/api/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ content: input.content, attachment }),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    // 422/429/503 -- ChatScreen розрізняє через AppError-подібну форму (code+message), Banner-повідомлення.
+    throw new AppError(body?.code ?? 'agent.message_failed', body?.message ?? 'Не вдалося надіслати повідомлення', response.status);
+  }
+
+  const turn = (await response.json()) as MessageTurnDto;
+  return { reply: turn.reply, proposal: toChatProposal(turn.proposal) };
+}
+
+/** POST /api/v1/proposals/{id}/confirm -- підтвердження пропозиції (ChatScreen.confirmProposal, AC-02). */
+async function confirmChatProposal(proposalId: string): Promise<void> {
+  const response = await fetch(`/api/v1/proposals/${proposalId}/confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({}),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    throw new AppError(body?.code ?? 'agent.confirm_failed', body?.message ?? 'Не вдалося підтвердити пропозицію', response.status);
+  }
+}
+
+/**
+ * GET /api/v1/cards -- перелік карток, доступних для card-override правил
+ * (RuleSettingsScreen.targetCards, AC-12). Реюзає той самий ендпоінт, що
+ * loadCards вище -- лише інша форма поля (cardId/cardTitle, не id/name).
+ * Мовчазний фолбек на [] при помилці -- лише вужчий вибір override-скоупу
+ * в UI, не критичний шлях (глобальні правила лишаються доступні).
+ */
+async function loadRuleTargetCards(): Promise<RuleSettingsScreenTargetCard[]> {
+  const response = await fetch('/api/v1/cards', { headers: authHeaders() });
+  if (!response.ok) return [];
+
+  const page = (await response.json()) as CardPageDto;
+  return page.items.map((card) => ({ cardId: card.id, cardTitle: card.name }));
+}
+
+interface AgentRuleDto {
+  id: string;
+  scopeCardId: string | null;
+  category: ImperativeRuleCategory | null;
+  ruleText: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface AgentRulePageDto {
+  items: AgentRuleDto[];
+  has_next: boolean;
+  has_prev: boolean;
+  next_cursor: string | null;
+}
+
+function toRuleSettingsRule(rule: AgentRuleDto): RuleSettingsScreenRule {
+  return { id: rule.id, scopeCardId: rule.scopeCardId, category: rule.category, ruleText: rule.ruleText };
+}
+
+/** GET /api/v1/rules -- усі активні правила області (RuleSettingsScreen.loadRules, AC-08). Збирає всі сторінки (collectAllPages) -- список правил малий, той самий підхід, що вже усталений для інших невеликих колекцій. */
+async function loadRules(scopeCardId: string | null): Promise<RuleSettingsScreenRule[]> {
+  const rules = await collectAllPages<AgentRuleDto>(async (after) => {
+    const query = new URLSearchParams();
+    if (scopeCardId) query.set('scopeCardId', scopeCardId);
+    if (after) query.set('after', after);
+    const response = await fetch(`/api/v1/rules?${query.toString()}`, { headers: authHeaders() });
+
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+      throw new AppError(body?.code ?? 'agent.request_failed', body?.message ?? 'Не вдалося завантажити правила', response.status);
+    }
+
+    return (await response.json()) as AgentRulePageDto;
+  });
+
+  return rules.map(toRuleSettingsRule);
+}
+
+/** POST /api/v1/rules -- зберігає одне правило (RuleSettingsScreen.onSave, AC-07/AC-08/AC-12/AC-14). */
+async function onSaveRule(input: RuleSettingsScreenSaveInput): Promise<RuleSettingsScreenRule> {
+  const response = await fetch('/api/v1/rules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    // 409 agent.rule_conflict / 422 agent.rule_empty -- RuleSettingsScreen розрізняє за `code`.
+    throw new AppError(body?.code ?? 'agent.rule_save_failed', body?.message ?? 'Не вдалося зберегти правило', response.status);
+  }
+
+  return toRuleSettingsRule((await response.json()) as AgentRuleDto);
+}
+
+const REPORT_PERIOD_LABELS: Record<'weekly' | 'monthly' | 'quarterly', string> = {
+  weekly: 'Тижневий',
+  monthly: 'Місячний',
+  quarterly: 'Квартальний',
+};
+
+/** "18.08–24.08" -- той самий формат-стиль, що formatRecordedAtLabel вище (dd.mm), для короткого підпису періоду. */
+function formatPeriodRange(periodStart: string, periodEnd: string): string {
+  const formatter = new Intl.DateTimeFormat('uk-UA', { day: '2-digit', month: '2-digit' });
+  return `${formatter.format(new Date(periodStart))}–${formatter.format(new Date(periodEnd))}`;
+}
+
+interface AgentReportDto {
+  id: string;
+  periodType: 'weekly' | 'monthly' | 'quarterly';
+  periodStart: string;
+  periodEnd: string;
+  content: string;
+  status: 'generated' | 'dead_letter';
+  generatedAt: string;
+}
+
+interface AgentReportPageDto {
+  items: AgentReportDto[];
+  has_next: boolean;
+  has_prev: boolean;
+  next_cursor: string | null;
+}
+
+/** GET /api/v1/reports -- звіти активності (ReportsScreen.loadReports, AC-11). */
+async function loadReports(): Promise<ReportViewModel[]> {
+  const reports = await collectAllPages<AgentReportDto>(async (after) => {
+    const query = new URLSearchParams();
+    if (after) query.set('after', after);
+    const response = await fetch(`/api/v1/reports?${query.toString()}`, { headers: authHeaders() });
+
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+      throw new AppError(
+        body?.code ?? 'agent.request_failed',
+        body?.message ?? 'Не вдалося завантажити звіти активності',
+        response.status,
+      );
+    }
+
+    return (await response.json()) as AgentReportPageDto;
+  });
+
+  return reports.map((report) => ({
+    id: report.id,
+    periodLabel: `${REPORT_PERIOD_LABELS[report.periodType]}, ${formatPeriodRange(report.periodStart, report.periodEnd)}`,
+    summary: report.content,
+    status: report.status,
+  }));
+}
+
+interface AgentSyncResourceDto {
+  id: string;
+  url: string;
+  status: 'active' | 'error';
+  lastSyncedAt: string | null;
+  lastError: string | null;
+  createdAt: string;
+}
+
+function toAccountScreenResource(resource: AgentSyncResourceDto): AccountScreenResource {
+  return { id: resource.id, url: resource.url, status: resource.status, lastError: resource.lastError };
+}
+
+/** GET /api/v1/sync-resources -- список ресурсів синхронізації (AccountScreen.loadResources, AC-18). */
+async function loadSyncResources(): Promise<AccountScreenResource[]> {
+  const response = await fetch('/api/v1/sync-resources', { headers: authHeaders() });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    throw new AppError(
+      body?.code ?? 'agent.request_failed',
+      body?.message ?? 'Не вдалося завантажити ресурси синхронізації',
+      response.status,
+    );
+  }
+
+  const resources = (await response.json()) as AgentSyncResourceDto[];
+  return resources.map(toAccountScreenResource);
+}
+
+/** POST /api/v1/sync-resources -- додає ресурс синхронізації (AccountScreen.onAddResource, AC-18). */
+async function onAddSyncResource(url: string): Promise<AccountScreenResource> {
+  const response = await fetch('/api/v1/sync-resources', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ url }),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    // 422 sync_resource.url_invalid -- AccountScreen показує message inline під полем.
+    throw new AppError(body?.code ?? 'sync_resource.add_failed', body?.message ?? 'Не вдалося додати ресурс', response.status);
+  }
+
+  return toAccountScreenResource((await response.json()) as AgentSyncResourceDto);
+}
+
+/** DELETE /api/v1/sync-resources/{id} -- прибирає ресурс синхронізації (AccountScreen.onRemoveResource). */
+async function onRemoveSyncResource(resourceId: string): Promise<void> {
+  const response = await fetch(`/api/v1/sync-resources/${resourceId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    throw new AppError(body?.code ?? 'sync_resource.remove_failed', body?.message ?? 'Не вдалося прибрати ресурс', response.status);
+  }
+}
+
+/**
+ * DELETE /api/v1/account -- видаляє акаунт і всі дані назавжди
+ * (AccountScreen.onDeleteAccount, AC-17/AC-17b). ВІДКРИТЕ ПИТАННЯ (той
+ * самий, що server/app.ts і ports/account-handler.ts коментують): контракт
+ * не документує тіло DELETE-запиту -- цей клієнт надсилає `confirmed` у
+ * JSON-тілі, узгоджено з тим, як server/app.ts його читає тут же.
+ */
+async function onDeleteAccount(confirmed: boolean): Promise<void> {
+  const response = await fetch('/api/v1/account', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ confirmed }),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    throw new AppError(body?.code ?? 'account.delete_failed', body?.message ?? 'Не вдалося видалити акаунт', response.status);
+  }
+}
+
 const root = document.getElementById('root');
 if (!root) throw new Error('Не знайдено елемент #root у index.html');
 
@@ -1247,6 +1622,19 @@ createRoot(root).render(
       loadAnalytics={loadAnalytics}
       loadCloseCardOptions={loadCloseCardOptions}
       onCloseCard={onCloseCard}
+      loadChatHistory={loadChatHistory}
+      loadChatOnboarding={loadChatOnboarding}
+      loadActiveChatProposal={loadActiveChatProposal}
+      sendChatMessage={sendChatMessage}
+      confirmChatProposal={confirmChatProposal}
+      loadRuleTargetCards={loadRuleTargetCards}
+      loadRules={loadRules}
+      onSaveRule={onSaveRule}
+      loadReports={loadReports}
+      loadSyncResources={loadSyncResources}
+      onAddSyncResource={onAddSyncResource}
+      onRemoveSyncResource={onRemoveSyncResource}
+      onDeleteAccount={onDeleteAccount}
     />
   </StrictMode>,
 );
