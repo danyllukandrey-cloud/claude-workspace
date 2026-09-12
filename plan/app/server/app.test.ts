@@ -888,8 +888,12 @@ function agentDb(
 
     if (text.includes('chat_message')) {
       if (sql.startsWith('SELECT COUNT')) return { rows: [{ count: '0' }] }; // rate limit
-      if (sql.includes('SELECT 1 FROM CHAT_MESSAGE')) {
-        return { rows: opts.hasAnyChatMessage ? [{ '?column?': 1 }] : [] };
+      // AC-13 race fix (2026-09-12): getOnboardingStatus's insertWelcomeMessageIfFirst
+      // is now ONE atomic `INSERT ... SELECT ... WHERE NOT EXISTS` query -- no
+      // longer a separate hasAnyChatMessage SELECT. `hasAnyChatMessage: true` here
+      // simulates "already onboarded" (the WHERE NOT EXISTS finds a row -> 0 rows back).
+      if (sql.includes('WHERE NOT EXISTS')) {
+        return { rows: opts.hasAnyChatMessage ? [] : [CHAT_MESSAGE_ROW] };
       }
       if (sql.startsWith('INSERT')) return { rows: [CHAT_MESSAGE_ROW] };
       return { rows: [] }; // listMessagesForSession / findAllMessagesByUser
