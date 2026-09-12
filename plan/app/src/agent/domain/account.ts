@@ -8,15 +8,18 @@
 // `app_user`, бо FK на `agent_audit_event.user_id` -- ON DELETE CASCADE;
 // видали `app_user` першим -- і щойно записаний аудит-рядок каскадно
 // зникне разом з рештою, а слід видалення акаунта буде втрачено назавжди.
+//
+// Sentinel Result (docs/features/agent/adr/0006-domain-sentinel-for-expected-errors.md,
+// Accepted): відсутнє підтвердження (AC-17b) -- очікуваний доменний
+// результат, не аварія -- `Result<T, E>` (`shared/result.ts`), не `throw`
+// (вирівняно з `proposal.ts`, T8).
 
-export class AccountDeletionValidationError extends Error {
+import type { Result } from '../../shared/result';
+import { ok, err } from '../../shared/result';
+
+export interface AccountDeletionError {
   code: string;
-
-  constructor(code: string, message: string) {
-    super(message);
-    this.name = 'AccountDeletionValidationError';
-    this.code = code;
-  }
+  message: string;
 }
 
 export interface AccountDeletionInput {
@@ -62,23 +65,27 @@ export interface AccountDeletionPlan {
 
 // AC-17b: без явного підтвердження видалення відмовляється ДО будь-якого
 // запису -- випадковий дотик не має призводити до незворотної втрати даних.
-export function assertDeletionConfirmed(confirmed: boolean): void {
+export function assertDeletionConfirmed(confirmed: boolean): Result<true, AccountDeletionError> {
   if (!confirmed) {
-    throw new AccountDeletionValidationError(
-      'account.confirmation_required',
-      'Видалення акаунта вимагає явного підтвердження (AC-17b)'
-    );
+    return err({
+      code: 'account.confirmation_required',
+      message: 'Видалення акаунта вимагає явного підтвердження (AC-17b)',
+    });
   }
+  return ok(true);
 }
 
 // AC-17: підтверджене видалення -- впорядкований план із двох кроків.
 // Крок 1 (аудит) мусить бути виконаний і завершитись ДО кроку 2 (видалення)
 // -- сам план лише описує порядок, виконання (послідовне чи в транзакції)
 // лишається за App-шаром.
-export function planAccountDeletion(input: AccountDeletionInput): AccountDeletionPlan {
-  assertDeletionConfirmed(input.confirmed);
+export function planAccountDeletion(input: AccountDeletionInput): Result<AccountDeletionPlan, AccountDeletionError> {
+  const confirmation = assertDeletionConfirmed(input.confirmed);
+  if (!confirmation.ok) {
+    return confirmation;
+  }
 
-  return {
+  return ok({
     steps: [
       {
         type: 'write_audit_event',
@@ -95,5 +102,5 @@ export function planAccountDeletion(input: AccountDeletionInput): AccountDeletio
         userId: input.userId,
       },
     ],
-  };
+  });
 }

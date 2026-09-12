@@ -4,6 +4,14 @@
 // проблему) зводяться до однієї моделі `DeveloperReport`, що відповідає
 // таблиці `developer_report` (data-model.md) -- лише поля, обчислювані ДО
 // збереження/відправки; `sentAt` -- DEFAULT БД, тут не обчислюється.
+//
+// Sentinel Result (docs/features/agent/adr/0006-domain-sentinel-for-expected-errors.md,
+// Accepted): порожній опис -- очікуваний доменний результат (NOT NULL у
+// схемі), не аварія -- `Result<T, E>` (`shared/result.ts`), не `throw`
+// (вирівняно з `proposal.ts`, T8).
+
+import type { Result } from '../../shared/result';
+import { ok, err } from '../../shared/result';
 
 export type DeveloperReportTriggerType = 'agent_detected' | 'user_requested';
 export type DeveloperReportDeliveryStatus = 'sent' | 'failed';
@@ -22,24 +30,20 @@ export interface DeveloperReport {
   deliveryStatus: DeveloperReportDeliveryStatus;
 }
 
-export class DeveloperReportValidationError extends Error {
+export interface DeveloperReportError {
   code: string;
-
-  constructor(code: string, message: string) {
-    super(message);
-    this.name = 'DeveloperReportValidationError';
-    this.code = code;
-  }
+  message: string;
 }
 
 // `description` -- NOT NULL у схемі (data-model.md `developer_report.description`).
-function assertNonEmptyDescription(value: string): void {
+function checkNonEmptyDescription(value: string): Result<true, DeveloperReportError> {
   if (value == null || !value.trim()) {
-    throw new DeveloperReportValidationError(
-      'developer_report.description_required',
-      'Опис звіту обовʼязковий',
-    );
+    return err({
+      code: 'developer_report.description_required',
+      message: 'Опис звіту обовʼязковий',
+    });
   }
+  return ok(true);
 }
 
 // AC-20 -- агент сам виявив технічну помилку чи збій. Вхід свідомо НЕ має
@@ -54,20 +58,23 @@ export interface AgentDetectedErrorInput {
   context?: string | null;
 }
 
-export function reportAgentDetectedError(input: AgentDetectedErrorInput): DeveloperReport {
-  assertNonEmptyDescription(input.errorSummary);
+export function reportAgentDetectedError(input: AgentDetectedErrorInput): Result<DeveloperReport, DeveloperReportError> {
+  const checked = checkNonEmptyDescription(input.errorSummary);
+  if (!checked.ok) {
+    return checked;
+  }
   const description =
     input.context && input.context.trim().length > 0
       ? `${input.errorSummary} — ${input.context}`
       : input.errorSummary;
 
-  return {
+  return ok({
     id: input.id,
     userId: input.userId ?? null,
     triggerType: 'agent_detected',
     description,
     deliveryStatus: 'sent',
-  };
+  });
 }
 
 // AC-20b -- користувач сам просить переслати проблему. Опис зберігається
@@ -80,14 +87,17 @@ export interface UserRequestedReportInput {
   userDescription: string;
 }
 
-export function reportUserRequestedIssue(input: UserRequestedReportInput): DeveloperReport {
-  assertNonEmptyDescription(input.userDescription);
+export function reportUserRequestedIssue(input: UserRequestedReportInput): Result<DeveloperReport, DeveloperReportError> {
+  const checked = checkNonEmptyDescription(input.userDescription);
+  if (!checked.ok) {
+    return checked;
+  }
 
-  return {
+  return ok({
     id: input.id,
     userId: input.userId ?? null,
     triggerType: 'user_requested',
     description: input.userDescription,
     deliveryStatus: 'sent',
-  };
+  });
 }

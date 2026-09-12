@@ -14,28 +14,14 @@
 // Sentinel Result (docs/features/agent/adr/0006-domain-sentinel-for-expected-errors.md,
 // Accepted): domain НІКОЛИ не кидає виняток для очікуваного результату
 // (вкладення нерозпізнане, перехід з невідповідного стану) -- функції
-// повертають типізований `Result<T, E>`, викликач (`app/`) явно розбирає `ok`.
-// Чиста функція, без I/O (plan/app/CLAUDE.md -- domain нічого не імпортує).
+// повертають типізований `Result<T, E>` зі спільного `shared/result.ts`
+// (ADR-0006 §Positive -- "одна конвенція на весь бекенд"), викликач (`app/`)
+// явно розбирає `ok`. Чиста функція, без I/O (plan/app/CLAUDE.md -- domain
+// нічого не імпортує, крім самого типу-контракту, той самий виняток, що
+// `shared/storage/port.ts` для UI-шару).
 
-export interface Ok<T> {
-  ok: true;
-  value: T;
-}
-
-export interface Err<E> {
-  ok: false;
-  error: E;
-}
-
-export type Result<T, E> = Ok<T> | Err<E>;
-
-export function ok<T>(value: T): Ok<T> {
-  return { ok: true, value };
-}
-
-export function err<E>(error: E): Err<E> {
-  return { ok: false, error };
-}
+import type { Result } from '../../shared/result';
+import { ok, err } from '../../shared/result';
 
 export type ProposalStatus = 'active' | 'confirmed' | 'dropped';
 export type ProposalSourceType = 'text' | 'attachment';

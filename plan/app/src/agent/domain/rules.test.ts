@@ -6,16 +6,23 @@ import {
   isCardOverride,
   rulesInSameScope,
   findConflictingRule,
-  ImperativeRuleValidationError,
 } from './rules';
 import type { ImperativeRule } from './rules';
+
+/** Розпаковує `Result<ImperativeRule, RuleError>` для happy-path тестів, де очікується `ok`. */
+function unwrap(result: ReturnType<typeof createImperativeRule>): ImperativeRule {
+  if (!result.ok) {
+    throw new Error(`очікувалось ok, отримано err: ${result.error.code}`);
+  }
+  return result.value;
+}
 
 describe('createCategoryRule', () => {
   // AC-08: Given the user opened rule settings, when they pick one or more
   // categories from the curated menu (no free text), then the system stores
   // the chosen categories as active rules.
   it('creates a global rule from a curated category, without free text', () => {
-    const rule = createCategoryRule({ id: 'rule-1', userId: 'user-1', category: 'reminder' });
+    const rule = unwrap(createCategoryRule({ id: 'rule-1', userId: 'user-1', category: 'reminder' }));
     expect(rule).toMatchObject({
       id: 'rule-1',
       userId: 'user-1',
@@ -25,10 +32,10 @@ describe('createCategoryRule', () => {
     });
   });
 
-  it('rejects an unknown category not in the D-27 curated menu', () => {
-    expect(() =>
-      createCategoryRule({ id: 'rule-1', userId: 'user-1', category: 'not_a_real_category' as never }),
-    ).toThrow(ImperativeRuleValidationError);
+  it('rejects an unknown category not in the D-27 curated menu -- ADR-0006 sentinel, not a throw', () => {
+    const result = createCategoryRule({ id: 'rule-1', userId: 'user-1', category: 'not_a_real_category' as never });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('imperative_rule.category_invalid');
   });
 });
 
@@ -37,7 +44,7 @@ describe('createFreeTextRule', () => {
   // rule, when it is created as free text, then the system stores it without
   // a curated category.
   it('creates a global rule from free text, without a category', () => {
-    const rule = createFreeTextRule({ id: 'rule-2', userId: 'user-1', ruleText: 'не радь, якщо не питаю' });
+    const rule = unwrap(createFreeTextRule({ id: 'rule-2', userId: 'user-1', ruleText: 'не радь, якщо не питаю' }));
     expect(rule).toMatchObject({
       id: 'rule-2',
       userId: 'user-1',
@@ -48,38 +55,35 @@ describe('createFreeTextRule', () => {
   });
 
   it('trims surrounding whitespace from the rule text', () => {
-    const rule = createFreeTextRule({ id: 'rule-2', userId: 'user-1', ruleText: '  не радь, якщо не питаю  ' });
+    const rule = unwrap(createFreeTextRule({ id: 'rule-2', userId: 'user-1', ruleText: '  не радь, якщо не питаю  ' }));
     expect(rule.ruleText).toBe('не радь, якщо не питаю');
   });
 
-  it('rejects empty/whitespace-only free text', () => {
-    expect(() => createFreeTextRule({ id: 'rule-2', userId: 'user-1', ruleText: '   ' })).toThrow(
-      ImperativeRuleValidationError,
-    );
+  it('rejects empty/whitespace-only free text -- ADR-0006 sentinel, not a throw', () => {
+    const result = createFreeTextRule({ id: 'rule-2', userId: 'user-1', ruleText: '   ' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('imperative_rule.empty');
   });
 });
 
 describe('createImperativeRule', () => {
   // data-model.md CHECK (`category IS NOT NULL OR rule_text IS NOT NULL`):
   // a rule can never be empty on both sides at once.
-  it('rejects a rule with neither category nor free text', () => {
-    expect(() => createImperativeRule({ id: 'rule-3', userId: 'user-1' })).toThrow(ImperativeRuleValidationError);
-    try {
-      createImperativeRule({ id: 'rule-3', userId: 'user-1', category: null, ruleText: null });
-      expect.fail('очікувалась помилка imperative_rule.empty');
-    } catch (err) {
-      expect(err).toBeInstanceOf(ImperativeRuleValidationError);
-      expect((err as ImperativeRuleValidationError).code).toBe('imperative_rule.empty');
-    }
+  it('rejects a rule with neither category nor free text -- ADR-0006 sentinel, not a throw', () => {
+    const result = createImperativeRule({ id: 'rule-3', userId: 'user-1', category: null, ruleText: null });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('imperative_rule.empty');
   });
 
   it('allows both a category and free text on the same rule (CHECK is OR, not XOR)', () => {
-    const rule = createImperativeRule({
-      id: 'rule-4',
-      userId: 'user-1',
-      category: 'data',
-      ruleText: 'уточнюй, якщо не знаєш одиниці виміру',
-    });
+    const rule = unwrap(
+      createImperativeRule({
+        id: 'rule-4',
+        userId: 'user-1',
+        category: 'data',
+        ruleText: 'уточнюй, якщо не знаєш одиниці виміру',
+      }),
+    );
     expect(rule.category).toBe('data');
     expect(rule.ruleText).toBe('уточнюй, якщо не знаєш одиниці виміру');
   });
@@ -87,12 +91,14 @@ describe('createImperativeRule', () => {
 
 describe('isCardOverride (AC-12)', () => {
   it('reports false for a global rule (scopeCardId null)', () => {
-    const rule = createCategoryRule({ id: 'rule-1', userId: 'user-1', category: 'reminder' });
+    const rule = unwrap(createCategoryRule({ id: 'rule-1', userId: 'user-1', category: 'reminder' }));
     expect(isCardOverride(rule)).toBe(false);
   });
 
   it('reports true for a card-scoped override', () => {
-    const rule = createCategoryRule({ id: 'rule-1', userId: 'user-1', category: 'reminder', scopeCardId: 'card-1' });
+    const rule = unwrap(
+      createCategoryRule({ id: 'rule-1', userId: 'user-1', category: 'reminder', scopeCardId: 'card-1' }),
+    );
     expect(isCardOverride(rule)).toBe(true);
   });
 });

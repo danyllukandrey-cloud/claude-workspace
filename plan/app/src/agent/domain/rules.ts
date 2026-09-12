@@ -12,6 +12,14 @@
 // `scopeCardId` (AC-12): NULL -- глобальне правило, заповнено -- перевизначення
 // саме на цій картці. Перевизначення свідомо переважає глобальне на цій
 // картці -- це очікуваний намір (spec.md AC-12), не суперечність.
+//
+// Sentinel Result (docs/features/agent/adr/0006-domain-sentinel-for-expected-errors.md,
+// Accepted): валідація нижче -- очікуваний доменний результат (невідома
+// категорія, порожнє правило), не аварія -- тому `Result<T, E>`
+// (`shared/result.ts`), не `throw` (вирівняно з `proposal.ts`, T8).
+
+import type { Result } from '../../shared/result';
+import { ok, err } from '../../shared/result';
 
 export type ImperativeRuleCategory =
   | 'data'
@@ -40,14 +48,9 @@ export interface ImperativeRule {
   ruleText: string | null;
 }
 
-export class ImperativeRuleValidationError extends Error {
+export interface RuleError {
   code: string;
-
-  constructor(code: string, message: string) {
-    super(message);
-    this.name = 'ImperativeRuleValidationError';
-    this.code = code;
-  }
+  message: string;
 }
 
 function normalizeRuleText(value: string | null | undefined): string | null {
@@ -65,31 +68,31 @@ export interface CreateImperativeRuleInput {
   ruleText?: string | null;
 }
 
-export function createImperativeRule(input: CreateImperativeRuleInput): ImperativeRule {
+export function createImperativeRule(input: CreateImperativeRuleInput): Result<ImperativeRule, RuleError> {
   const category = input.category ?? null;
   const ruleText = normalizeRuleText(input.ruleText);
 
   if (category !== null && !VALID_CATEGORIES.includes(category)) {
-    throw new ImperativeRuleValidationError(
-      'imperative_rule.category_invalid',
-      `Невідома категорія правила: ${String(category)}`,
-    );
+    return err({
+      code: 'imperative_rule.category_invalid',
+      message: `Невідома категорія правила: ${String(category)}`,
+    });
   }
 
   if (category === null && ruleText === null) {
-    throw new ImperativeRuleValidationError(
-      'imperative_rule.empty',
-      'Правило має містити або категорію з готового меню, або власний текст',
-    );
+    return err({
+      code: 'imperative_rule.empty',
+      message: 'Правило має містити або категорію з готового меню, або власний текст',
+    });
   }
 
-  return {
+  return ok({
     id: input.id,
     userId: input.userId,
     scopeCardId: input.scopeCardId ?? null,
     category,
     ruleText,
-  };
+  });
 }
 
 // AC-08 -- готове меню категорій, без вільного тексту користувача.
@@ -98,7 +101,7 @@ export function createCategoryRule(input: {
   userId: string;
   category: ImperativeRuleCategory;
   scopeCardId?: string | null;
-}): ImperativeRule {
+}): Result<ImperativeRule, RuleError> {
   return createImperativeRule({ ...input, ruleText: null });
 }
 
@@ -108,7 +111,7 @@ export function createFreeTextRule(input: {
   userId: string;
   ruleText: string;
   scopeCardId?: string | null;
-}): ImperativeRule {
+}): Result<ImperativeRule, RuleError> {
   return createImperativeRule({ ...input, category: null });
 }
 

@@ -9,6 +9,14 @@
 // приватність: ім'я третьої особи ніколи не потрапляє в пам'ять
 // користувача (sad.md §8 "Privacy -- третя особа в тексті",
 // data-model.md `long_term_memory_fact.fact_text`).
+//
+// Sentinel Result (docs/features/agent/adr/0006-domain-sentinel-for-expected-errors.md,
+// Accepted): "нічого не лишилось після зачистки" -- очікуваний результат
+// (fact_text NOT NULL), не аварія -- `prepareFactText` повертає `Result<T, E>`
+// (`shared/result.ts`), не `throw` (вирівняно з `proposal.ts`, T8).
+
+import type { Result } from '../../shared/result';
+import { ok, err } from '../../shared/result';
 
 export interface ChatMessage {
   id: string;
@@ -113,13 +121,21 @@ export function stripThirdPersonNames(
  * факт (нічого не лишилось після зачистки, або вхід був порожнім/пробілами)
  * ніколи не потрапляє в довгострокову пам'ять.
  */
+export interface MemoryError {
+  code: string;
+  message: string;
+}
+
 export function prepareFactText(
   rawText: string,
   thirdPersonNames: string[] = [],
-): string {
+): Result<string, MemoryError> {
   const sanitized = stripThirdPersonNames(rawText, thirdPersonNames);
   if (sanitized.length === 0) {
-    throw new Error('fact text must not be empty after removing third-person names');
+    return err({
+      code: 'long_term_memory_fact.fact_text_empty',
+      message: 'fact text must not be empty after removing third-person names',
+    });
   }
-  return sanitized;
+  return ok(sanitized);
 }

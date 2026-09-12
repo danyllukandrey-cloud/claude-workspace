@@ -122,17 +122,26 @@ describe('stripThirdPersonNames -- AC-06 (приватність: чуже ім\
 
 describe('prepareFactText -- AC-06 + AC-09 (текст факту готується до запису, data-model.md fact_text NOT NULL)', () => {
   it('strips the third-person name before the text is handed off for storage', () => {
-    const prepared = prepareFactText('біг з Марією 5 км', ['Марією']);
+    const result = prepareFactText('біг з Марією 5 км', ['Марією']);
 
-    expect(prepared).not.toContain('Марією');
-    expect(prepared).toBe('біг з 5 км');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).not.toContain('Марією');
+      expect(result.value).toBe('біг з 5 км');
+    }
   });
 
-  it('throws when nothing measurable survives stripping -- a fact record can never be empty', () => {
-    expect(() => prepareFactText('Марія', ['Марія'])).toThrowError(/empty/i);
+  it('returns an err (ADR-0006 sentinel, not a throw) when nothing measurable survives stripping -- a fact record can never be empty', () => {
+    const result = prepareFactText('Марія', ['Марія']);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('long_term_memory_fact.fact_text_empty');
   });
 
-  it('throws on a blank raw fact text even with no names to strip', () => {
-    expect(() => prepareFactText('   ', [])).toThrowError(/empty/i);
+  it('returns an err on a blank raw fact text even with no names to strip', () => {
+    const result = prepareFactText('   ', []);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('long_term_memory_fact.fact_text_empty');
   });
 });
