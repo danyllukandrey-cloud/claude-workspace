@@ -34,7 +34,7 @@
 | T27 | UI: SCR-02 Налаштування правил screen | ui | TBD | M | T22 | done |
 | T28 | UI: SCR-03 Звіти активності screen | ui | TBD | M | T23 | done |
 | T29 | Wiring: register agent module | wiring | TBD | S | T14, T26, T27, T28, T45, T47 | done |
-| T30 | Tests: cross-cutting integration | tests | TBD | M | T29 | todo |
+| T30 | Tests: cross-cutting integration | tests | TBD | M | T29 | done |
 | T31 | Migration: create sync_resource table | migration | TBD | S | T1 | done |
 | T32 | Migration: create developer_report table | migration | TBD | S | T1 | done |
 | T33 | Migration: extend agent_audit_event types | migration | TBD | S | T6 | done |
@@ -56,3 +56,5 @@
 **Total:** 47 tasks — 21 S + 21 M + 5 L. Доповнено 2026-08-29 (T31-T47, D-89) — 17 задач на видалення акаунта / синхронізацію / документи / звіт про баг / раніше пропущену T3-підказку. Найбільша фіча SDD-конвеєра (9 сутностей, 13 ендпоінтів, 3 поверхні) — реалістично довше за одну сесію навіть у термінах size-matrix (M); у реальному часі — значно довше через темп проєкту (~8-12 год/тиждень, уточнено 2026-08-29 — стара оцінка 1-2 год/тиждень застаріла, [D-87](../../../DECISIONS.md#d-87)).
 
 **T2-T7, T31-T33 (9 міграцій) промоутнено 2026-09-12** — усі staged-файли вже були написані `sdd:data-model` (29 серпня), цього разу лише присвоєно реальні номери послідовності (timestamp) і перенесено в `plan/app/migrations/`, той самий формат, що вже проведений для T1. **Apply/revert проти реальної PostgreSQL НЕ перевірено цією сесією** (немає доступу до `.env`/БД у пісочниці) — перевірити `npm run migrate` / `npm run migrate:down` наступного разу, перш ніж вважати ці задачі остаточно "done" у продакшн-сенсі. Крос-фічева передумова (FK на `card`/`metric_block`) виконана — обидві таблиці `life-area-card` вже в живому дереві раніше.
+
+**47/47 -- implement-хвиля `agent` завершена 2026-09-12** (`/sdd:implement agent`, паралельні Workflow-хвилі по фазах DAG + пряма реалізація T26/T47/T30 + окремий фокусований прохід на T29 wiring). 885/885 юніт-тестів зелені, `tsc --noEmit` чисто (app і server). По дорозі виправлено реальну несумісність: частина паралельних агентів фази 1 не підхопила вже ухвалений [ADR-0006](../adr/0006-domain-sentinel-for-expected-errors.md) (домен ніколи не кидає виняток) і скопіювала старий throw-стиль із `life-area-card`/`structure` — вирівняно консолідованим комітом одразу після фази 1, спільний `shared/result.ts` винесено з T8. **Не перевірено цією сесією** (немає доступу до БД у пісочниці): apply/revert 9 міграцій проти реальної PostgreSQL, і чи застосунок реально запускається (`npm run dev`/`npm run dev:server`) проти живої бази з реальним `ANTHROPIC_API_KEY`. Наступний крок — незалежне рев'ю (`/sdd:review agent`), той самий прецедент, що `structure`/`life-area-card`, перш ніж push/PR/merge.
