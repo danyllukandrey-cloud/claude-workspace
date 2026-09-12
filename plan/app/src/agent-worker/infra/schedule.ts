@@ -8,15 +8,22 @@
 //
 //   1. readLifeAreaCardActivity -- CROSS-FEATURE READ (agent-worker ->
 //      cards/life-area-card), зовнішній до цього DAG (tasks.json T15 dod).
-//      ADR-0002: worker ділить ту саму PostgreSQL, що backend-service, і
-//      сам читає активність напряму з бази -- без черги/події. `entry` не
-//      має власного user_id (life-area-card/data-model.md) -- лише
-//      `card_id`, тож доступ до "чия ця активність" йде через
-//      `card.owner_user_id` (той самий join-через-власника шаблон, що
-//      ../../structure/infra/postgres-repo.ts уже використовує для
-//      cross-feature перевірки власності). Лише `status = 'confirmed'`
-//      рахується активністю -- `pending`/`rejected` ще не усталені факти
-//      (та сама межа, що life-area-card's listPendingEntriesByCard).
+//      Review fix (2026-09-12): цей файл раніше сам писав SQL, що
+//      з'єднував `entry`/`card` (знання чужої схеми поза
+//      life-area-card) -- натомість, за прецедентом ../app/daily-sync.ts's
+//      buildUserSnapshot (той самий cross-feature read, той самий
+//      ADR-0002), тепер повторно використовує власні експортовані функції
+//      life-area-card (listCardsByOwner, listEntriesByCard) і сам лише
+//      фільтрує/формує ActivityRecord[]. `entry` не має власного user_id
+//      (life-area-card/data-model.md) -- лише `card_id`, тож "чия ця
+//      активність" видно через картки власника (listCardsByOwner уже сам
+//      фільтрує `WHERE owner_user_id = $1`, life-area-card/infra/postgres-repo.ts).
+//      Лише `status = 'confirmed'` рахується активністю -- `pending`/`rejected`
+//      ще не усталені факти (та сама межа, що life-area-card's
+//      listPendingEntriesByCard), і лише записи в межах
+//      [periodStart, periodEnd] включно (порівняння за датою UTC, той
+//      самий підхід, що вже дає ../app/generate-report.ts's
+//      buildReportContent для форматування дати).
 //
 //   2. saveActivityReport -- ІДЕМПОТЕНТНИЙ запис у `activity_report`
 //      (data-model.md `uq_activity_report_period (user_id, period_type,
@@ -33,6 +40,7 @@
 
 import type { QueryResultRow } from 'pg';
 import type { ReportPeriodType } from '../domain/report';
+import { listCardsByOwner, listEntriesByCard } from '../../cards/life-area-card/infra/postgres-repo';
 
 export interface Db {
   query<T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]): Promise<{ rows: T[] }>;
@@ -47,28 +55,22 @@ export interface ActivityRecord {
   recordedAt: Date;
 }
 
-interface RawActivityRow extends QueryResultRow {
-  id: string;
-  card_id: string;
-  amount: string;
-  raw_text: string | null;
-  recorded_at: Date;
+/** Дата запису у форматі YYYY-MM-DD (UTC) -- порівнюється лексикографічно з periodStart/periodEnd, той самий формат. */
+function recordedDateUtc(recordedAt: Date): string {
+  return recordedAt.toISOString().slice(0, 10);
 }
 
-function toActivityRecord(row: RawActivityRow): ActivityRecord {
-  return {
-    id: row.id,
-    cardId: row.card_id,
-    amount: Number(row.amount),
-    rawText: row.raw_text,
-    recordedAt: row.recorded_at,
-  };
+function isWithinPeriod(recordedAt: Date, periodStart: string, periodEnd: string): boolean {
+  const recordedDate = recordedDateUtc(recordedAt);
+  return recordedDate >= periodStart && recordedDate <= periodEnd;
 }
 
 /**
  * Читає підтверджену активність користувача (усі його картки) за
- * [periodStart, periodEnd] включно -- cross-feature read у `entry`/`card`
- * (life-area-card/data-model.md), зовнішній до agent-worker DAG.
+ * [periodStart, periodEnd] включно -- cross-feature read, зовнішній до
+ * agent-worker DAG, реалізований через life-area-card's власні
+ * listCardsByOwner/listEntriesByCard (не через власний SQL проти чужих
+ * таблиць -- див. коментар угорі файлу).
  */
 export async function readLifeAreaCardActivity(
   db: Db,
@@ -76,17 +78,22 @@ export async function readLifeAreaCardActivity(
   periodStart: string,
   periodEnd: string
 ): Promise<ActivityRecord[]> {
-  const { rows } = await db.query<RawActivityRow>(
-    `SELECT e.id, e.card_id, e.amount, e.raw_text, e.recorded_at
-     FROM entry e
-     JOIN card c ON c.id = e.card_id
-     WHERE c.owner_user_id = $1
-       AND e.status = 'confirmed'
-       AND e.recorded_at::date BETWEEN $2 AND $3
-     ORDER BY e.recorded_at ASC`,
-    [userId, periodStart, periodEnd]
-  );
-  return rows.map(toActivityRecord);
+  const cards = await listCardsByOwner(db, userId);
+  const entriesByCard = await Promise.all(cards.map((card) => listEntriesByCard(db, card.id)));
+
+  const activity: ActivityRecord[] = entriesByCard
+    .flat()
+    .filter((entry) => entry.status === 'confirmed' && isWithinPeriod(entry.recordedAt, periodStart, periodEnd))
+    .map((entry) => ({
+      id: entry.id,
+      cardId: entry.cardId,
+      amount: entry.amount,
+      rawText: entry.rawText,
+      recordedAt: entry.recordedAt,
+    }));
+
+  activity.sort((a, b) => a.recordedAt.getTime() - b.recordedAt.getTime());
+  return activity;
 }
 
 /** Дані для одного запису activity_report -- id генерується викликачем (crypto.randomUUID(), §2 SAD). */
