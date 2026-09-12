@@ -9,11 +9,24 @@
 // після onSend компонент сам скидає чернетку, викликач не повинен
 // синхронізувати controlled value ззовні для цього.
 //
+// Composer СКЛАДАЄТЬСЯ зі спільних примітивів shared/ui (Review 2026-09,
+// finding 3): текстове поле -- TextField, кнопка відправки -- Button.
+// Єдиний бере bare <input type="file"> -- для вкладення в repo ще нема
+// спільного примітиву. Наслідок: TextField (shared/ui/TextField.tsx) не
+// приймає prop `disabled` (жоден інший виклик у репозиторії його теж не
+// передає) -- тому поки повідомлення "в польоті" (`disabled` тут), сам
+// текстовий інпут лишається технічно клікабельним; заблоковані лише
+// вкладення-інпут і кнопка "Надіслати" (canSend-ґейт і так не дає
+// відправити текст без натискання кнопки). Розширювати TextField
+// власним disabled-пропом -- поза межами цього фікса (торкнув би спільний
+// примітив і всі його виклики).
+//
 // Правило залежностей (plan/app/CLAUDE.md): чистий presentation-примітив,
 // нічого з domain/ports -- байти вкладення транзитні (openapi.yaml
 // MessageCreate.attachment: "не зберігаються"), сам fetch робить викликач.
 
 import { useState } from 'react';
+import { Button, TextField } from '../../../shared/ui';
 
 export interface ComposerSendInput {
   /** NULL, якщо надіслано лише вкладення без тексту (AC-10). */
@@ -48,16 +61,7 @@ export function Composer({ onSend, disabled = false }: ComposerProps): JSX.Eleme
 
   return (
     <div>
-      <label>
-        Повідомлення
-        <input
-          type="text"
-          value={text}
-          placeholder="напиши або додай фото"
-          disabled={disabled}
-          onChange={(event) => setText(event.target.value)}
-        />
-      </label>
+      <TextField label="Повідомлення" value={text} onChange={setText} placeholder="напиши або додай фото" />
       <label>
         Прикріпити фото
         <input
@@ -66,9 +70,7 @@ export function Composer({ onSend, disabled = false }: ComposerProps): JSX.Eleme
           onChange={(event) => setAttachment(event.target.files?.[0] ?? null)}
         />
       </label>
-      <button type="button" onClick={handleSend} disabled={disabled || !canSend}>
-        Надіслати
-      </button>
+      <Button label="Надіслати" onClick={handleSend} disabled={disabled || !canSend} />
     </div>
   );
 }

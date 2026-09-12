@@ -58,6 +58,15 @@ test('loading: перед резолвом loadRules показує Spinner', ()
   expect(screen.getByRole('status')).toBeTruthy();
 });
 
+test('error: відхилений loadRules -- Banner variant="error", не вічний Spinner', async () => {
+  const props = baseProps({ loadRules: vi.fn().mockRejectedValue(new Error('мережа недоступна')) });
+  render(<RuleSettingsScreen {...props} />);
+
+  const banner = await screen.findByText('мережа недоступна');
+  expect(banner.closest('[data-variant]')?.getAttribute('data-variant')).toBe('error');
+  expect(screen.queryByRole('status')).toBeNull();
+});
+
 test('default: показує готове меню з 6 категорій (D-27), TextField і кнопку "Зберегти" (AC-08)', async () => {
   const props = baseProps();
   render(<RuleSettingsScreen {...props} />);
@@ -141,6 +150,40 @@ test('conflict: 409 agent.rule_conflict показує Banner variant="error" з
 
   const banner = await screen.findByText(/contradicts/i);
   expect(banner.closest('[data-variant]')?.getAttribute('data-variant')).toBe('error');
+});
+
+test('conflict: часткова відмова (Promise.allSettled) -- успішна категорія лишається збереженою, зникає з обраних, лише відхилена категорія лишається позначеною й показана в Banner (AC-08/AC-14)', async () => {
+  const onSave = vi.fn((input: { category: string | null }) =>
+    input.category === 'correction'
+      ? Promise.reject({
+          name: 'AppError',
+          message: 'This rule contradicts an existing rule in the same scope',
+          code: 'agent.rule_conflict',
+          httpStatus: 409,
+        })
+      : Promise.resolve(rule({ id: 'rule-new', category: input.category as 'data' })),
+  );
+  const props = baseProps({ loadRules: vi.fn().mockResolvedValue([]), onSave });
+  render(<RuleSettingsScreen {...props} />);
+
+  await screen.findByText('Дані');
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Дані' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Корекція' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+
+  const banner = await screen.findByText(/contradicts/i);
+  expect(banner.closest('[data-variant]')?.getAttribute('data-variant')).toBe('error');
+  expect(onSave).toHaveBeenCalledTimes(2);
+
+  // Успішна категорія ("Дані") зникла з обраних (checkbox більше не checked,
+  // бо вона тепер серед завантажених правил); відхилена ("Корекція")
+  // лишається позначеною -- користувач бачить, що саме не збереглось.
+  const dataCheckbox = screen.getByRole('checkbox', { name: 'Дані' }) as HTMLInputElement;
+  const correctionCheckbox = screen.getByRole('checkbox', { name: 'Корекція' }) as HTMLInputElement;
+  expect(dataCheckbox.checked).toBe(true); // тепер це існуюче правило (disabled), не вибір, що очікує збереження
+  expect(dataCheckbox.disabled).toBe(true);
+  expect(correctionCheckbox.checked).toBe(true);
+  expect(correctionCheckbox.disabled).toBe(false);
 });
 
 test('validation: без обраної категорії і без власного тексту -- inline-помилка під формою, onSave не викликається (422 agent.rule_empty)', async () => {

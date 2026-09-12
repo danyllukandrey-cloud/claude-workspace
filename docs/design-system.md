@@ -41,6 +41,7 @@ updated_at: "2026-09-06"
 | `MessageBubble` | `plan/app/src/agent/ui/chat/MessageBubble.tsx:15` | user, agent (проп `message.role`) | Одне повідомлення чату — `data-role` розрізняє відправника (SCR-01, T25) |
 | `ProposalCard`  | `plan/app/src/agent/ui/chat/ProposalCard.tsx:31` | proposal-pending — кнопки "Підтвердити"/"Уточнити" | Пропозиція запису, що чекає підтвердження (AC-01/AC-02/AC-02b/AC-10, SCR-01, T25) |
 | `Composer`      | `plan/app/src/agent/ui/chat/Composer.tsx:33` | default, disabled (сабміт заблоковано) | Текст і/або вкладення (фото/документ) — надсилання лише коли хоч одне не порожнє (AC-01/AC-10, SCR-01, T25) |
+| `HintBubble`    | `plan/app/src/agent/ui/chat/HintBubble.tsx:17` | default (показана), dismissed (закриття — рішення й дія викликача, ChatScreen) | Дисмісибл-підказка над `Composer`, статичний UI-текст, не репліка агента (AC-16/AC-16b, SCR-01, T47). Інший стиль хмаринки-підказки, ніж [D-112](DECISIONS.md#d-112) (`TextField`/`NumberField`) — окремий компонент, навмисно не об'єднаний з ним, але той самий "дисмісибл-підказка" патерн: звіряти обидва місця, якщо один стиль зміниться, щоб не розійшлись мовчки |
 
 `screens.md` кожної фічі описує екрани цими назвами; коли `implement` напише компонент насправді, рядок оновлюється реальним `file:line` і переліком станів.
 
