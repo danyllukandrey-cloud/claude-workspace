@@ -41,8 +41,6 @@ export interface CardBackProps {
    * свіжість забезпечує повторний виклик loadBack, не повернене значення.
    */
   onCreateMetricBlock?: (values: MetricBlockFormValues) => Promise<void>;
-  /** ТИМЧАСОВО (D-110, docs/DECISIONS.md) -- вносить запис для блоку metricBlockId; відсутній -- кнопка "+" на плитках не рендериться. */
-  onAddEntry?: (metricBlockId: string, amount: number) => Promise<void>;
 }
 
 type LoadState = 'loading' | 'ready' | 'error';
@@ -56,7 +54,6 @@ export function CardBack({
   onFlagEntry,
   onRenameTransferredBlock,
   onCreateMetricBlock,
-  onAddEntry,
 }: CardBackProps): JSX.Element {
   const [state, setState] = useState<LoadState>('loading');
   const [data, setData] = useState<CardBackData | null>(null);
@@ -167,13 +164,6 @@ export function CardBack({
     });
   };
 
-  const handleAddEntry = (metricBlockId: string, amount: number): Promise<void> => {
-    if (!onAddEntry) return Promise.resolve();
-    return onAddEntry(metricBlockId, amount).then(() => {
-      refresh();
-    });
-  };
-
   const handleConfirmRename = (): void => {
     if (!onRenameTransferredBlock || !data.pendingTransferCollision) return;
     setCollisionError(undefined);
@@ -225,11 +215,7 @@ export function CardBack({
         <>
           {data.aggregateProgress !== null && <p>Загальний прогрес: {Math.round(data.aggregateProgress * 100)}%</p>}
           {data.metricBlocks.map((block) => (
-            <MetricBlockCard
-              key={block.id}
-              block={block}
-              onAddEntry={onAddEntry ? (amount) => handleAddEntry(block.id, amount) : undefined}
-            />
+            <MetricBlockCard key={block.id} block={block} />
           ))}
         </>
       )}

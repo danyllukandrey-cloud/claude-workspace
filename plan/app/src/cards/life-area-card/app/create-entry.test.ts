@@ -75,9 +75,10 @@ describe('createEntry use-case', () => {
     expect(query.mock.calls[3][1]).toEqual(expect.arrayContaining(['confirmed']));
   });
 
-  // AC-06: конфліктний запис (інший пристрій, у межах windowMs) -> новий запис
-  // 'pending' І існуючий конфліктний запис (зараз 'confirmed') теж переводиться
-  // в 'pending' -- обидва, не лише новий.
+  // AC-06 (D-119, docs/DECISIONS.md -- вже без прив'язки до пристрою): існуючий
+  // запис близько за часом (у межах windowMs) -> новий запис 'pending' І
+  // існуючий конфліктний запис (зараз 'confirmed') теж переводиться в
+  // 'pending' -- обидва, не лише новий.
   it('marks both the new entry and the conflicting existing entry as pending', async () => {
     const conflicting = entryRow({ id: 'entry-existing', status: 'confirmed', source_device_id: 'device-a' });
     const query = vi

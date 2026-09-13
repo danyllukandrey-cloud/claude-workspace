@@ -107,7 +107,7 @@ erDiagram
 | `amount` | NUMERIC | NOT NULL | величина цього запису, додається до лічильника блоку |
 | `raw_text` | TEXT | NULL | що сказав користувач — показ в історії (US-12) |
 | `status` | TEXT | NOT NULL DEFAULT 'pending', CHECK (`status` IN ('pending','confirmed','rejected')) | ADR-0002. Виправлення/відкат (AC-12) — позначаємо `rejected`, ніколи фізично не видаляємо (підтверджено з Андрієм) |
-| `source_device_id` | TEXT | NULL | для виявлення близького за часом конфлікту (AC-06) |
+| `source_device_id` | TEXT | NULL | зберігається з контракту (`POST .../entries`), але AC-06 більше НЕ звіряє його для виявлення конфлікту — [D-119](../../DECISIONS.md#d-119): жодного реального device-сигналу вже нема (єдиний клієнт, що його слав, — тимчасова кнопка D-110, прибрана). Конфлікт тепер лише за часовим вікном |
 | `recorded_at` | timestamptz | NOT NULL DEFAULT now() | коли подія сталась/надійшла |
 | `confirmed_at` | timestamptz | NULL | коли статус перейшов у `confirmed`/`rejected` |
 | `created_at` | timestamptz | NOT NULL DEFAULT now() | |

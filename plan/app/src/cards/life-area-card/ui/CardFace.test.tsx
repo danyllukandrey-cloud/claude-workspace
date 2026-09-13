@@ -222,7 +222,7 @@ test('SCR-02: відкрите меню/чернетка rename скидають
 // способу відкрити Опис на редагування чи позначити картку заповненою --
 // AC-03 (блокування markFilled без Опису) технічно існував на бекенді
 // (update-card.ts), але користувач не міг його досягти жодним кліком.
-// onUpdateDescription -- опційний (як onAddEntry в MetricBlockCard, T49):
+// onUpdateDescription -- опційний (як onCreateMetricBlock в CardBack, T49):
 // відсутній -- афорданс не рендериться.
 
 test('C10: без onUpdateDescription клік по Опису нічого не відкриває', async () => {
