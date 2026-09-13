@@ -152,39 +152,68 @@ export function DeclarationScreen({ loadStructure, onSave }: DeclarationScreenPr
   };
 
   return (
-    <div>
-      <label>
+    <div className="mx-auto flex w-full max-w-md flex-col gap-6 px-4 py-6">
+      <label className="flex flex-col gap-1.5 text-sm font-medium text-ink">
         Картина світу, навіщо, пріоритет
-        <textarea value={declaration} onChange={(event) => setDeclaration(event.target.value)} />
+        <textarea
+          value={declaration}
+          onChange={(event) => setDeclaration(event.target.value)}
+          rows={5}
+          className="min-h-32 resize-y rounded-control border border-border bg-surface-solid px-3.5 py-2.5 font-sans text-sm font-normal text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-soft"
+        />
       </label>
 
-      <fieldset>
-        {LAYOUT_MODE_OPTIONS.map((option) => (
-          <label key={option.value}>
-            <input
-              type="radio"
-              name="layoutMode"
-              checked={layoutMode === option.value}
-              onChange={() => handleLayoutModeChange(option.value)}
-            />
-            {option.label}
-          </label>
-        ))}
-      </fieldset>
-
-      {layoutMode === 'logic' && (
-        <fieldset>
-          {LOGIC_VARIANT_OPTIONS.map((option) => (
-            <label key={option.value}>
+      {/* D-111: варіанти одного вибору (режим розкладки) лишаються поруч,
+          як рядок пігулок, що переноситься на вузькому екрані. */}
+      <fieldset className="m-0 flex flex-wrap gap-2 border-0 p-0">
+        {LAYOUT_MODE_OPTIONS.map((option) => {
+          const isSelected = layoutMode === option.value;
+          return (
+            <label
+              key={option.value}
+              className={`flex cursor-pointer items-center gap-2 rounded-control border px-3.5 py-2.5 text-sm font-medium transition-colors ${
+                isSelected
+                  ? 'border-accent bg-accent-soft text-accent'
+                  : 'border-border bg-surface-solid text-ink-muted hover:border-accent/40'
+              }`}
+            >
               <input
                 type="radio"
-                name="logicVariant"
-                checked={logicVariant === option.value}
-                onChange={() => setLogicVariant(option.value)}
+                name="layoutMode"
+                checked={isSelected}
+                onChange={() => handleLayoutModeChange(option.value)}
+                className="h-4 w-4 accent-accent"
               />
               {option.label}
             </label>
-          ))}
+          );
+        })}
+      </fieldset>
+
+      {layoutMode === 'logic' && (
+        <fieldset className="m-0 flex flex-wrap gap-2 border-0 p-0">
+          {LOGIC_VARIANT_OPTIONS.map((option) => {
+            const isSelected = logicVariant === option.value;
+            return (
+              <label
+                key={option.value}
+                className={`flex cursor-pointer items-center gap-2 rounded-control border px-3.5 py-2.5 text-sm font-medium transition-colors ${
+                  isSelected
+                    ? 'border-accent bg-accent-soft text-accent'
+                    : 'border-border bg-surface-solid text-ink-muted hover:border-accent/40'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="logicVariant"
+                  checked={isSelected}
+                  onChange={() => setLogicVariant(option.value)}
+                  className="h-4 w-4 accent-accent"
+                />
+                {option.label}
+              </label>
+            );
+          })}
         </fieldset>
       )}
 
