@@ -241,97 +241,111 @@ export function App({
 
   if (isSessionValid(session, now)) {
     return (
-      <main style={{ fontFamily: 'system-ui, sans-serif', padding: '2rem' }}>
-        <h1>ПЛАН</h1>
+      // D-120: слайд-каркас застосунку -- тонка титульна смуга (бренд-назва)
+      // зверху, скролований контент по центру, постійне нижнє нав-меню знизу
+      // (T24, коментар нижче) -- flex-колонка на всю висоту viewport (dvh, не
+      // vh -- враховує мобільні адресні панелі), а не `position: fixed`, щоб
+      // нав-меню ніколи не перекривало контент, скільки б рядків воно не
+      // зайняло при переносі (flex-wrap) на вузькому екрані.
+      <main className="flex min-h-dvh flex-col bg-bg font-sans text-ink">
+        <h1 className="border-b border-border bg-surface-solid px-4 py-3 font-display text-lg font-bold tracking-tight text-ink sm:px-6">
+          ПЛАН
+        </h1>
 
-        {direction === 'declaration' && <DeclarationScreen loadStructure={loadStructure} onSave={onSaveDeclaration} />}
-        {direction === 'layout' && (
-          <LayoutBoard
-            loadLayout={loadLayout}
-            onMoveCard={onMoveCard}
-            loadCloseCardOptions={loadCloseCardOptions}
-            onCloseCard={onCloseCard}
-          />
-        )}
-        {direction === 'analytics' && <AnalyticsScreen loadAnalytics={loadAnalytics} />}
-
-        {direction === 'agent-chat' && (
-          <ChatScreen
-            loadHistory={loadChatHistory}
-            loadOnboarding={loadChatOnboarding}
-            loadActiveProposal={loadActiveChatProposal}
-            sendMessage={sendChatMessage}
-            confirmProposal={confirmChatProposal}
-          />
-        )}
-        {direction === 'agent-rules' && (
-          <RuleSettingsScreen targetCards={ruleTargetCards} loadRules={loadRules} onSave={onSaveRule} />
-        )}
-        {direction === 'agent-reports' && <ReportsScreen loadReports={loadReports} />}
-        {direction === 'agent-account' && (
-          <AccountScreen
-            loadResources={loadSyncResources}
-            onAddResource={onAddSyncResource}
-            onRemoveResource={onRemoveSyncResource}
-            onDeleteAccount={onDeleteAccount}
-            // AC-17: акаунт видалено -> сесія завершена, повернення на екран
-            // входу -- той самий endSession, що кнопка "Вийти" вже використовує.
-            onDeleted={endSession}
-          />
-        )}
-
-        {direction === 'cards' && screen.screen === 'create' && (
-          <CreateCardForm
-            onCreate={async (input) => {
-              await createCard(input);
-              setScreen({ screen: 'deck' });
-            }}
-            onCancel={() => setScreen({ screen: 'deck' })}
-          />
-        )}
-        {direction === 'cards' && screen.screen === 'detail' && (
-          <CardDetailScreen
-            loadCard={loadCardForDetail}
-            loadBack={loadBackForDetail}
-            onRename={(name) => onRename(screen.cardId, name)}
-            onBack={() => setScreen({ screen: 'deck' })}
-            onArchive={() => archiveCard(screen.cardId)}
-            onArchived={() => setScreen({ screen: 'deck' })}
-            onCreateMetricBlock={(values) => createMetricBlock(screen.cardId, values)}
-            onUpdateDescription={(input) => onUpdateDescription(screen.cardId, input)}
-            onFlagEntry={(entryId) => onFlagEntry(screen.cardId, entryId)}
-          />
-        )}
-        {direction === 'cards' && screen.screen === 'archive' && (
-          <div>
-            <Button label="← Назад" onClick={() => setScreen({ screen: 'deck' })} />
-            <ArchiveScreen
-              loadArchivedCards={loadArchivedCards}
-              onRestoreCard={onRestoreCard}
-              loadArchivedCardHistory={loadArchivedCardHistory}
+        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+          {direction === 'declaration' && <DeclarationScreen loadStructure={loadStructure} onSave={onSaveDeclaration} />}
+          {direction === 'layout' && (
+            <LayoutBoard
+              loadLayout={loadLayout}
+              onMoveCard={onMoveCard}
+              loadCloseCardOptions={loadCloseCardOptions}
+              onCloseCard={onCloseCard}
             />
-          </div>
-        )}
-        {direction === 'cards' && screen.screen === 'deck' && (
-          <DeckScreen
-            loadCards={loadCards}
-            onOpenCard={(cardId) => setScreen({ screen: 'detail', cardId })}
-            onCreateCard={() => setScreen({ screen: 'create' })}
-            onOpenArchive={() => setScreen({ screen: 'archive' })}
-            onLogout={endSession}
-            // Review 2026-09-07 C14 (AC-04): 401 при завантаженні колоди --
-            // той самий шлях, що ручний "Вийти" (сесія все одно недійсна,
-            // тримати її в сховищі означає знову впертись у 401 наступного
-            // разу).
-            onSessionExpired={endSession}
-          />
-        )}
+          )}
+          {direction === 'analytics' && <AnalyticsScreen loadAnalytics={loadAnalytics} />}
+
+          {direction === 'agent-chat' && (
+            <ChatScreen
+              loadHistory={loadChatHistory}
+              loadOnboarding={loadChatOnboarding}
+              loadActiveProposal={loadActiveChatProposal}
+              sendMessage={sendChatMessage}
+              confirmProposal={confirmChatProposal}
+            />
+          )}
+          {direction === 'agent-rules' && (
+            <RuleSettingsScreen targetCards={ruleTargetCards} loadRules={loadRules} onSave={onSaveRule} />
+          )}
+          {direction === 'agent-reports' && <ReportsScreen loadReports={loadReports} />}
+          {direction === 'agent-account' && (
+            <AccountScreen
+              loadResources={loadSyncResources}
+              onAddResource={onAddSyncResource}
+              onRemoveResource={onRemoveSyncResource}
+              onDeleteAccount={onDeleteAccount}
+              // AC-17: акаунт видалено -> сесія завершена, повернення на екран
+              // входу -- той самий endSession, що кнопка "Вийти" вже використовує.
+              onDeleted={endSession}
+            />
+          )}
+
+          {direction === 'cards' && screen.screen === 'create' && (
+            <CreateCardForm
+              onCreate={async (input) => {
+                await createCard(input);
+                setScreen({ screen: 'deck' });
+              }}
+              onCancel={() => setScreen({ screen: 'deck' })}
+            />
+          )}
+          {direction === 'cards' && screen.screen === 'detail' && (
+            <CardDetailScreen
+              loadCard={loadCardForDetail}
+              loadBack={loadBackForDetail}
+              onRename={(name) => onRename(screen.cardId, name)}
+              onBack={() => setScreen({ screen: 'deck' })}
+              onArchive={() => archiveCard(screen.cardId)}
+              onArchived={() => setScreen({ screen: 'deck' })}
+              onCreateMetricBlock={(values) => createMetricBlock(screen.cardId, values)}
+              onUpdateDescription={(input) => onUpdateDescription(screen.cardId, input)}
+              onFlagEntry={(entryId) => onFlagEntry(screen.cardId, entryId)}
+            />
+          )}
+          {direction === 'cards' && screen.screen === 'archive' && (
+            <div className="flex flex-col gap-4">
+              <Button label="← Назад" onClick={() => setScreen({ screen: 'deck' })} />
+              <ArchiveScreen
+                loadArchivedCards={loadArchivedCards}
+                onRestoreCard={onRestoreCard}
+                loadArchivedCardHistory={loadArchivedCardHistory}
+              />
+            </div>
+          )}
+          {direction === 'cards' && screen.screen === 'deck' && (
+            <DeckScreen
+              loadCards={loadCards}
+              onOpenCard={(cardId) => setScreen({ screen: 'detail', cardId })}
+              onCreateCard={() => setScreen({ screen: 'create' })}
+              onOpenArchive={() => setScreen({ screen: 'archive' })}
+              onLogout={endSession}
+              // Review 2026-09-07 C14 (AC-04): 401 при завантаженні колоди --
+              // той самий шлях, що ручний "Вийти" (сесія все одно недійсна,
+              // тримати її в сховищі означає знову впертись у 401 наступного
+              // разу).
+              onSessionExpired={endSession}
+            />
+          )}
+        </div>
 
         {/* T24 (sad.md §5): постійне нижнє нав-меню -- видиме на всіх 4
             напрямках, не лише на "Картки". "Картки" не скидає під-навігацію
             create/detail/archive -- лише перемикає direction, Screen
-            лишається як був (тест "клік Картки повертає на DeckScreen"). */}
-        <nav>
+            лишається як був (тест "клік Картки повертає на DeckScreen").
+            D-111: усі пункти -- одного класу дії (навігація між напрямками)
+            -- лишаються згруповані в одному <nav>, тепер з переносом рядків
+            (flex-wrap), щоб на вузькому екрані (~360-400px) вони НЕ виходили
+            за межі екрана й не змушували сторінку скролитись горизонтально. */}
+        <nav className="flex flex-wrap justify-center gap-2 border-t border-border bg-surface-solid px-3 py-3 sm:gap-3 sm:px-4">
           <Button label="Чат" onClick={() => setDirection('agent-chat')} />
           <Button label="Налаштування правил" onClick={() => setDirection('agent-rules')} />
           <Button label="Звіти активності" onClick={() => setDirection('agent-reports')} />
