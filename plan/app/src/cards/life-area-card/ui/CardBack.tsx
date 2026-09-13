@@ -178,7 +178,7 @@ export function CardBack({
   };
 
   return (
-    <div>
+    <div className="flex flex-col gap-4">
       {/* Review 2026-09-07 E (T52): фоновий refresh невдалий -- НЕблокуючий
           банер над уже показаними даними, не заміна всього екрана. */}
       {refreshError !== null && <Banner variant="error" text={refreshError} />}
@@ -186,7 +186,7 @@ export function CardBack({
       {/* AC-14/AC-15: перенос уже стався зовні -- тут лише пропозиція
           перейменувати, коли він зіткнувся з наявним блоком тієї ж картки. */}
       {data.pendingTransferCollision && (
-        <div>
+        <div className="flex flex-col gap-3">
           <Banner variant="error" text={FALLBACK_COLLISION_ERROR_TEXT} />
           <TextField label="Нова назва блоку-метрики" value={renameValue} onChange={setRenameValue} error={collisionError} />
           <Button label="Зберегти" onClick={handleConfirmRename} />
@@ -212,15 +212,23 @@ export function CardBack({
           actionHint="Додайте блок-метрику, щоб почати відстежувати прогрес"
         />
       ) : (
-        <>
-          {data.aggregateProgress !== null && <p>Загальний прогрес: {Math.round(data.aggregateProgress * 100)}%</p>}
+        <div className="flex flex-col gap-3">
+          {data.aggregateProgress !== null && (
+            <p className="font-display text-sm font-bold text-ink">
+              Загальний прогрес: {Math.round(data.aggregateProgress * 100)}%
+            </p>
+          )}
           {data.metricBlocks.map((block) => (
             <MetricBlockCard key={block.id} block={block} />
           ))}
-        </>
+        </div>
       )}
 
-      <button type="button" onClick={() => setHistoryExpanded((expanded) => !expanded)}>
+      <button
+        type="button"
+        onClick={() => setHistoryExpanded((expanded) => !expanded)}
+        className="w-full rounded-control border border-border px-4 py-2.5 text-left text-sm font-bold text-ink transition-colors hover:bg-border"
+      >
         Історія записів {historyExpanded ? '▴' : '▾'}
       </button>
       {historyExpanded && (
@@ -237,7 +245,11 @@ export function CardBack({
           користувач бачив кнопки вгорі на звороті й унизу на лиці -- це не
           "згруповано по стороні", а буквально ОДНЕ Й ТЕ САМЕ місце на обох
           сторонах, інакше доводиться щоразу шукати кнопки заново. */}
-      <button type="button" onClick={onFlip}>
+      <button
+        type="button"
+        onClick={onFlip}
+        className="w-full rounded-control border border-border px-4 py-2.5 text-sm font-bold text-ink transition-colors hover:bg-border"
+      >
         ← лицьова
       </button>
     </div>

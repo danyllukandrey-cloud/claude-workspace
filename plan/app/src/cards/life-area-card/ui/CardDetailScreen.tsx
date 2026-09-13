@@ -11,8 +11,14 @@
 // ін'єктовані пропи-функції, той самий стиль DI, що CardFace/CardBack.
 // Композиція лише перемикає локальний стан "face"/"back" і прокидає пропи
 // далі без змін.
+//
+// D-120: сама "картка" (матова поверхня + сфумато-підкладка) -- це CardShell
+// (shared/ui), той самий примітив, що ArchiveScreen.tsx уже використовує для
+// показу однієї картки (front/back). CardFace й CardBack -- це буквально
+// SCR-02/SCR-03, "лицьова" і "зворот" ОДНІЄЇ картки, тому composition тут
+// віддає їх у front/back CardShell замість дублювати його розмітку.
 import { useState } from 'react';
-import { Button } from '../../../shared/ui';
+import { Button, CardShell } from '../../../shared/ui';
 import { CardBack } from './CardBack';
 import { CardFace } from './CardFace';
 import type { MetricBlockFormValues } from './MetricBlockForm';
@@ -65,25 +71,29 @@ export function CardDetailScreen({
   // закінчується "← лицьова" (перенесено з верху). "← Назад" завжди йде
   // останньою, після контенту поточної сторони -- жодної умови на `side`.
   return (
-    <div>
-      {side === 'face' ? (
-        <CardFace
-          loadCard={loadCard}
-          onFlip={() => setSide('back')}
-          onRename={onRename}
-          onArchive={onArchive}
-          onArchived={onArchived}
-          onUpdateDescription={onUpdateDescription}
-        />
-      ) : (
-        <CardBack
-          loadBack={loadBack}
-          onFlip={() => setSide('face')}
-          onFlagEntry={onFlagEntry}
-          onRenameTransferredBlock={onRenameTransferredBlock}
-          onCreateMetricBlock={onCreateMetricBlock}
-        />
-      )}
+    <div className="mx-auto flex w-full max-w-md flex-col gap-4 px-4 py-6">
+      <CardShell
+        isFlipped={side === 'back'}
+        front={
+          <CardFace
+            loadCard={loadCard}
+            onFlip={() => setSide('back')}
+            onRename={onRename}
+            onArchive={onArchive}
+            onArchived={onArchived}
+            onUpdateDescription={onUpdateDescription}
+          />
+        }
+        back={
+          <CardBack
+            loadBack={loadBack}
+            onFlip={() => setSide('face')}
+            onFlagEntry={onFlagEntry}
+            onRenameTransferredBlock={onRenameTransferredBlock}
+            onCreateMetricBlock={onCreateMetricBlock}
+          />
+        }
+      />
       <Button label="← Назад" onClick={onBack} />
     </div>
   );
