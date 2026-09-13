@@ -54,10 +54,22 @@ describe('moveCard (integration) -- AC-02/AC-08/AC-15 проти реально�
     await db.query('INSERT INTO card (id, owner_user_id, name) VALUES ($1, $2, $3)', [cardOneId, ownerId, 'T12 card one']);
     await db.query('INSERT INTO card (id, owner_user_id, name) VALUES ($1, $2, $3)', [cardTwoId, ownerId, 'T12 card two']);
 
-    await db.query(
-      'INSERT INTO structure_layout_position (id, structure_id, card_id, cell_index) VALUES ($1, $2, $3, 1)',
-      [crypto.randomUUID(), structureId, cardOneId]
-    );
+    // cardOne: insertLayoutPosition (не голий SQL) -- пише сентинел-час
+    // (D-117), не дефолт колонки now(). ISS-114: раніше тут був прямий INSERT
+    // без position_updated_at, тож щойно створена позиція мала час "зараз" --
+    // перший move нижче (тест "moves a card to a free cell") теж рухається з
+    // positionUpdatedAt "зараз", і залежно від розбіжності годинників
+    // клієнт/Neon (resolvePositionConflict -- `>=`, при рівності перемагає
+    // СТАРА позиція) рух міг тихо програти. Той самий клас бага, що D-117 вже
+    // виправив у production-коді -- цей тест просто обходив фікс власним
+    // прямим INSERT.
+    await insertLayoutPosition(db, { id: crypto.randomUUID(), structureId, cardId: cardOneId, cellIndex: 1 });
+    // cardTwo: лишається голим INSERT (дефолт now()) -- НАВМИСНО, не той самий
+    // фікс. Тест "stale positionUpdatedAt" нижче звіряється з датою 2000 рік,
+    // яка мусить бути СТАРІШОЮ за поточну позицію -- сентинел-час (1970) був
+    // би СТАРІШИЙ за 2000 рік і зламав би саме цей тест (застарілий запис
+    // виглядав би новішим за вже збережену позицію). "now()" тут завжди
+    // новіший за рік 2000 незалежно від будь-якої розбіжності годинників.
     await db.query(
       'INSERT INTO structure_layout_position (id, structure_id, card_id, cell_index) VALUES ($1, $2, $3, 2)',
       [crypto.randomUUID(), structureId, cardTwoId]
