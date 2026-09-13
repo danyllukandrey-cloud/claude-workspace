@@ -33,7 +33,7 @@
 //   imperative_rule.scope_card_id   -> card        SET NULL (agent/03)
 //   long_term_memory_fact.user_id   -> app_user   CASCADE   (agent/04)
 //   chat_message.user_id            -> app_user   CASCADE   (agent/05)
-//   agent_audit_event.user_id       -> app_user   CASCADE   (agent/06)
+//   agent_audit_event.user_id       -> app_user   SET NULL  (agent/06 -- fixed by D-118, was CASCADE; migration 11)
 //   activity_report.user_id         -> app_user   CASCADE   (agent/07)
 //   sync_resource.user_id           -> app_user   CASCADE   (agent/08)
 //   developer_report.user_id        -> app_user   SET NULL  (agent/09 -- deliberately survives, D-89 Notes)
@@ -48,18 +48,21 @@
 //   structure_history_event.structure_id   -> structure CASCADE (structure/backend/05)
 //   structure_history_event.card_id        -> card      CASCADE (structure/backend/05)
 //
-// `agent`'s "6 tables" (tasks.json T39/tracker.md T46 DoD wording) are the six
-// tables that only ever belonged to this feature before D-89 widened the
-// graph: agent_proposal, imperative_rule, long_term_memory_fact, chat_message,
-// agent_audit_event, activity_report. `sync_resource` (agent/08, T31) also
-// CASCADEs on `user_id` and is asserted empty here too -- the task doc's "6"
-// undercounts it by one; flagged as an open question in this task's returned
-// summary rather than silently amended (task instructions: don't decide
-// documentation discrepancies unilaterally). `developer_report` is the one
-// agent table that intentionally does NOT reach zero rows -- ON DELETE SET
-// NULL, not CASCADE (data-model.md Notes: "a bug report must outlive the
-// account that triggered it") -- asserted explicitly below, not lumped in
-// with the "zero rows" set.
+// `agent`'s tables that actually reach zero rows for the deleted user_id:
+// agent_proposal, imperative_rule, long_term_memory_fact, chat_message,
+// activity_report, sync_resource (agent/08, T31, also CASCADE -- tracker.md
+// T46 DoD's original "6 tables" wording predates this one and undercounts,
+// see ISS-109). Two agent tables intentionally do NOT reach zero rows --
+// `developer_report` (ON DELETE SET NULL from the start, data-model.md Notes:
+// "a bug report must outlive the account that triggered it") and, since
+// D-118, `agent_audit_event` too: it was ON DELETE CASCADE until an
+// independent review found that CASCADE silently defeated the very reason
+// deleteAccount writes an `account_deleted` row before deleting app_user --
+// the freshly-written audit row vanished in the same transaction, so the
+// deletion trail it was meant to leave was never actually reachable. Fixed
+// to SET NULL (migration 11): the row -- both this pre-existing one and the
+// `account_deleted` row deleteAccount writes -- now survives with `user_id`
+// cleared, asserted explicitly below, not lumped in with the "zero rows" set.
 
 import { describe, it, expect } from 'vitest';
 import { deleteAccount } from './delete-account';
@@ -88,7 +91,7 @@ const SCHEMA: Record<string, ForeignKey[]> = {
   ],
   long_term_memory_fact: [{ column: 'user_id', refTable: 'app_user', onDelete: 'CASCADE' }],
   chat_message: [{ column: 'user_id', refTable: 'app_user', onDelete: 'CASCADE' }],
-  agent_audit_event: [{ column: 'user_id', refTable: 'app_user', onDelete: 'CASCADE' }],
+  agent_audit_event: [{ column: 'user_id', refTable: 'app_user', onDelete: 'SET NULL' }], // D-118, migration 11 -- was CASCADE
   activity_report: [{ column: 'user_id', refTable: 'app_user', onDelete: 'CASCADE' }],
   sync_resource: [{ column: 'user_id', refTable: 'app_user', onDelete: 'CASCADE' }],
   developer_report: [{ column: 'user_id', refTable: 'app_user', onDelete: 'SET NULL' }],
@@ -183,16 +186,16 @@ class FakeCascadingDb implements Db {
   }
 }
 
-// The six tables tracker.md T46 names explicitly, plus sync_resource (see
-// header comment -- the doc undercounts by one). developer_report is
-// deliberately excluded: it survives by design (SET NULL), asserted
-// separately below.
+// The tables that actually reach zero rows for the deleted user_id -- see
+// header comment for tracker.md T46 DoD's original wording (ISS-109) and for
+// why `agent_audit_event` moved out of this set (D-118). `developer_report`
+// was never in this set: both it and `agent_audit_event` survive by design
+// (SET NULL), asserted separately below.
 const AGENT_TABLES_THAT_MUST_EMPTY = [
   'agent_proposal',
   'imperative_rule',
   'long_term_memory_fact',
   'chat_message',
-  'agent_audit_event',
   'activity_report',
   'sync_resource',
 ] as const;
@@ -315,19 +318,25 @@ describe('deleteAccount -- AC-17 cascading deletion across agent/life-area-card/
     expect(db.rows('structure_history_event').map((row) => row.id)).toEqual(['history-b']);
   });
 
-  it('the account_deleted audit row itself is swept away by the same cascade (D-89 accepted trade-off), not left behind', async () => {
-    // agent_audit_event.user_id is ON DELETE CASCADE (agent/06) -- the very
-    // audit row deleteAccount writes to record the deletion vanishes along
-    // with the rest once app_user is deleted. Documented here so the
-    // behaviour is asserted, not merely narrated in delete-account.ts's
-    // comments.
+  it('the account_deleted audit row (and any pre-existing audit row) survives the deletion, orphaned, not swept away (D-118)', async () => {
+    // agent_audit_event.user_id is ON DELETE SET NULL (agent/06, migration 11,
+    // D-118) -- CASCADE here used to defeat the very reason deleteAccount
+    // writes an `account_deleted` row before deleting app_user: the row
+    // vanished in the same transaction, so the deletion trail was never
+    // actually reachable. Both the pre-existing audit row seeded below and
+    // the fresh `account_deleted` row deleteAccount itself writes must
+    // survive with `user_id` cleared -- documented here so the behaviour is
+    // asserted, not merely narrated in delete-account.ts's comments.
     const db = new FakeCascadingDb();
     seedFullUserGraph(db, 'user-deleted', 'a');
 
     await deleteAccount(db, { userId: 'user-deleted', confirmed: true });
 
-    const auditRowsForDeletedUser = db.rows('agent_audit_event').filter((row) => row.user_id === 'user-deleted');
-    expect(auditRowsForDeletedUser).toEqual([]);
+    const survivingAuditRows = db.rows('agent_audit_event');
+    expect(survivingAuditRows.map((row) => row.event_type).sort()).toEqual(['account_deleted', 'proposal_confirmed']);
+    for (const row of survivingAuditRows) {
+      expect(row.user_id).toBeNull();
+    }
   });
 
   it('developer_report survives the cascade by design (ON DELETE SET NULL, not CASCADE) -- the bug report outlives the account', async () => {

@@ -2,9 +2,12 @@
 // план, який будує чиста доменна функція planAccountDeletion (T34,
 // domain/account.ts): крок 1 пише account_deleted у agent_audit_event, крок 2
 // видаляє app_user. Порядок кроків НЕ переставляється тут -- він уже
-// зафіксований планом і перевірений доменними тестами (D-89: FK CASCADE на
-// agent_audit_event.user_id інакше знищила б щойно записаний аудит-рядок
-// разом з рештою, коли видаляється app_user).
+// зафіксований планом і перевірений доменними тестами: INSERT у
+// agent_audit_event потребує існуючого app_user (FK), тож запис мусить
+// відбутись ДО видалення. Аудит-рядок від зникнення це не рятує (і не
+// рятувало навіть коли FK був CASCADE, D-118) -- за це відповідає ON DELETE
+// SET NULL на agent_audit_event.user_id (data-model.md, migration 11), не
+// порядок кроків.
 //
 // Sentinel Result (ADR-0006): planAccountDeletion повертає Result, ніколи не
 // кидає -- відсутнє підтвердження (AC-17b) мапиться тут явною перевіркою
@@ -16,15 +19,17 @@
 // не створює -- композицію робить викликач (ports/composition root, T43).
 //
 // DELETE FROM app_user -- єдиний запит на видалення, без ручного видалення по
-// одній з-поміж 6 власних таблиць агента чи life-area-card.card/
+// одній з-поміж власних таблиць агента чи life-area-card.card/
 // structure.structure: каскад робить сама PostgreSQL через ON DELETE CASCADE
-// (data-model.md `agent_audit_event`/`agent_proposal`/`imperative_rule`/
-// `long_term_memory_fact`/`chat_message`/`activity_report`.user_id, плюс
-// card.owner_user_id/structure.owner_user_id -- FK CASCADE додано 2026-08-29,
-// migrations life-area-card/07 і structure/backend/03). `sync_resource`
-// теж каскадить на app_user (T31), `developer_report` навмисно ON DELETE
-// SET NULL (data-model.md Notes) -- звіт про баг не має зникати з акаунтом,
-// що його спричинив, тож лишається сиротою, не видаляється.
+// (data-model.md `agent_proposal`/`imperative_rule`/`long_term_memory_fact`/
+// `chat_message`/`activity_report`.user_id, плюс card.owner_user_id/
+// structure.owner_user_id -- FK CASCADE додано 2026-08-29, migrations
+// life-area-card/07 і structure/backend/03). `sync_resource` теж каскадить
+// на app_user (T31). Дві таблиці НЕ каскадять, навмисно (ON DELETE SET NULL,
+// рядок лишається сиротою, не видаляється): `developer_report` (data-model.md
+// Notes) -- звіт про баг не має зникати з акаунтом, що його спричинив; і
+// `agent_audit_event` (D-118, migration 11 -- був CASCADE, виправлено після
+// рев'ю: інакше слід видалення акаунта був недосяжний, див. domain/account.ts).
 //
 // app_user не має власного репозиторного модуля в agent/infra (та сама
 // конвенція, що server/app.ts upsertAppUser -- "SQL напряму, без ORM"):
