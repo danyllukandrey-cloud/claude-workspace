@@ -9,7 +9,7 @@
 //   composition root, компонент лишається presentation-рівнем (ADR-0004).
 
 import { useEffect, useRef, useState } from 'react';
-import { Banner, Button } from '../shared/ui';
+import { Banner, Button, Logo } from '../shared/ui';
 
 export interface SessionUser {
   id: string;
@@ -83,21 +83,34 @@ export function LoginScreen({ requestSession, onLoginSuccess, renderGoogleButton
   }, [retryToken]);
 
   return (
-    <main style={{ fontFamily: 'system-ui, sans-serif', padding: '2rem' }}>
-      <h1>ПЛАН</h1>
-      <div ref={containerRef} />
-      {errorMessage && (
-        <>
-          <Banner variant="error" text={errorMessage} />
-          <Button
-            label="Спробувати ще раз"
-            onClick={() => {
-              setErrorMessage(null);
-              setRetryToken((token) => token + 1);
-            }}
-          />
-        </>
-      )}
+    <main className="relative isolate flex min-h-dvh items-center justify-center overflow-hidden bg-bg px-4">
+      {/* Та сама "сфумато"-аура, що позаду CardShell (D-120) -- екран входу
+          лишається візуально тим самим продуктом, не окремою заставкою. */}
+      <div aria-hidden="true" className="absolute -left-16 -top-20 -z-10 h-72 w-72 rounded-full bg-blob-a opacity-90 blur-3xl" />
+      <div aria-hidden="true" className="absolute -bottom-24 -right-10 -z-10 h-64 w-64 rounded-full bg-blob-b opacity-90 blur-3xl" />
+      <div aria-hidden="true" className="absolute right-1/3 top-2/3 -z-10 h-48 w-48 rounded-full bg-blob-c opacity-90 blur-3xl" />
+
+      <div className="flex w-full max-w-xs flex-col items-center gap-8 text-center">
+        <div className="flex flex-col items-center gap-3">
+          <Logo className="h-48 w-48 text-accent" />
+          <h1 className="font-display text-2xl font-bold tracking-tight text-ink">ПЛАН</h1>
+        </div>
+
+        <div ref={containerRef} className="flex justify-center" />
+
+        {errorMessage && (
+          <div className="flex w-full flex-col items-center gap-3">
+            <Banner variant="error" text={errorMessage} />
+            <Button
+              label="Спробувати ще раз"
+              onClick={() => {
+                setErrorMessage(null);
+                setRetryToken((token) => token + 1);
+              }}
+            />
+          </div>
+        )}
+      </div>
     </main>
   );
 }

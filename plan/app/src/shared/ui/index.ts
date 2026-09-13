@@ -28,3 +28,6 @@ export type { TextFieldProps } from './TextField';
 
 export { NumberField } from './NumberField';
 export type { NumberFieldProps } from './NumberField';
+
+export { Logo } from './Logo';
+export type { LogoProps } from './Logo';

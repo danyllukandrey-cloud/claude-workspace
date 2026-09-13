@@ -316,7 +316,17 @@ function renderGoogleButton(
         client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID ?? '',
         callback: (response) => onCredential(response.credential),
       });
-      window.google.accounts.id.renderButton(container, { theme: 'outline', size: 'large' });
+      // D-120: власну кнопку малює сам Google (не наш код, реєстрація акаунта
+      // Google того вимагає) -- єдине, що можемо підлаштувати, це форма
+      // (shape 'pill' -- та сама заокругленість, що наші кнопки) і темна/світла
+      // тема, звірена з системною темою пристрою (та сама автоматика, що
+      // theme.css), щоб кнопка не лишалась світлою плямою на темному фоні.
+      const isDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+      window.google.accounts.id.renderButton(container, {
+        theme: isDark ? 'filled_black' : 'outline',
+        size: 'large',
+        shape: 'pill',
+      });
     })
     .catch((error: unknown) => {
       console.error(error);

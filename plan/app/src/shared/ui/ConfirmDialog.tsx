@@ -49,21 +49,42 @@ export function ConfirmDialog({
   }, []);
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={messageId}
-      onKeyDown={(event) => {
-        if (event.key === 'Escape') onCancel();
-      }}
-    >
-      <p id={messageId}>{message}</p>
-      <button type="button" onClick={onConfirm} disabled={confirmDisabled}>
-        {confirmLabel}
-      </button>
-      <button type="button" onClick={onCancel} ref={cancelButtonRef}>
-        {cancelLabel}
-      </button>
+    // D-120: сама дія завжди "з наслідками, що не скасовуються одним кліком"
+    // (комент над компонентом вище) -- підтвердження навмисно у кольорі
+    // світлофора "bad", матовим суцільним заповненням (не .chip-gloss --
+    // глянець лишається тільки за статусом виміру, тут інший контекст).
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={messageId}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') onCancel();
+        }}
+        className="flex w-full max-w-sm flex-col gap-5 rounded-card border border-border bg-surface-solid p-6 shadow-soft"
+      >
+        <p id={messageId} className="text-sm font-medium text-ink">
+          {message}
+        </p>
+        <div className="flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            ref={cancelButtonRef}
+            className="rounded-control border border-border px-4 py-2.5 text-sm font-bold text-ink transition-colors hover:bg-border"
+          >
+            {cancelLabel}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={confirmDisabled}
+            className="rounded-control bg-bad px-4 py-2.5 text-sm font-bold text-accent-ink shadow-btn transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

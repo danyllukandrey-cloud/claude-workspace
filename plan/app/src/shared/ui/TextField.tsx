@@ -50,7 +50,7 @@ export function TextField({
       {/* Хмаринка -- ЗАВЖДИ поза <label>: текст усередині <label> формує
           accessible name поля (getByLabelText), домішувати туди текст
           підказки не можна -- зламає зв'язок підпис<->поле. */}
-      <label>
+      <label className="flex flex-col gap-1.5 text-sm font-medium text-ink">
         {label}
         <input
           type="text"
@@ -59,16 +59,27 @@ export function TextField({
           onChange={(event) => onChange(event.target.value)}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
+          className="rounded-control border border-border bg-surface-solid px-3.5 py-2.5 font-sans text-sm font-normal text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-soft"
         />
-        {error && <p role="alert">{error}</p>}
+        {error && (
+          <p role="alert" className="text-xs font-semibold text-bad">
+            {error}
+          </p>
+        )}
       </label>
       {showHint && (
-        <div role="tooltip">
-          <span>{required ? 'Обовʼязково' : 'Необовʼязково'}</span>
-          <p>{hint}</p>
+        <div
+          role="tooltip"
+          className="mt-1.5 flex items-start gap-2 rounded-control border border-border bg-surface-solid px-3.5 py-2.5 shadow-soft"
+        >
+          <div className="flex-1">
+            <span className="text-xs font-bold text-accent">{required ? 'Обовʼязково' : 'Необовʼязково'}</span>
+            <p className="mt-0.5 text-xs text-ink-muted">{hint}</p>
+          </div>
           <button
             type="button"
             aria-label={`Закрити підказку: ${label}`}
+            className="text-ink-faint transition-colors hover:text-accent"
             // Review 2026-09-07 E (T52): без preventDefault тут mousedown на цій
             // кнопці спершу відводить фокус з інпута (реальний браузер) -> onBlur
             // ставить isFocused=false -> хмаринка (разом із цією кнопкою)
