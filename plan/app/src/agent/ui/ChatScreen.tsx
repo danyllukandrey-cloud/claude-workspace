@@ -215,8 +215,8 @@ export function ChatScreen({
   };
 
   return (
-    <div>
-      <h1>Чат</h1>
+    <div className="flex flex-col gap-3">
+      <h1 className="font-display text-xl font-bold text-ink">Чат</h1>
 
       <MessageList messages={messages} />
 
