@@ -31,6 +31,8 @@
 // як є з GET /cards/{cardId} (сервер уже порахував середнє часток bounded-
 // блоків, capped 100%).
 
+import './theme.css';
+
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import type {
