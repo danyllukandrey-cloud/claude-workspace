@@ -15,6 +15,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { moveCard } from './move-card';
+import { insertLayoutPosition } from '../infra/postgres-repo';
 import { createDb, type DbWithTransaction } from '../../../server/db';
 
 beforeAll(() => {
@@ -125,5 +126,33 @@ describe('moveCard (integration) -- AC-02/AC-08/AC-15 проти реально�
       [cardTwoId]
     );
     expect(rows[0]?.cell_index).toBe(2);
+  });
+
+  // D-117 (postgres-repo.ts NEVER_MOVED_SENTINEL comment references THIS file
+  // by name): a real client/server clock skew (~54ms measured against dev
+  // Neon) made a just-created position look "newer" than the user's very
+  // first real move, which was then silently ignored -- fixed by writing an
+  // epoch sentinel instead of relying on the column's `now()` default.
+  it('a freshly created (never-moved) position can be moved immediately, even with near-zero elapsed time (D-117)', async () => {
+    const freshCardId = crypto.randomUUID();
+    await db.query('INSERT INTO card (id, owner_user_id, name) VALUES ($1, $2, $3)', [freshCardId, ownerId, 'T12 fresh card (D-117)']);
+    // insertLayoutPosition -- the real function D-117 fixed, not a raw SQL
+    // INSERT with an unspecified position_updated_at default.
+    await insertLayoutPosition(db, { id: crypto.randomUUID(), structureId, cardId: freshCardId, cellIndex: 20 });
+
+    const result = await moveCard(db, {
+      ownerUserId: ownerId,
+      cardId: freshCardId,
+      cellIndex: 21,
+      positionUpdatedAt: new Date().toISOString(), // "now", same as the real client would send
+    });
+
+    expect(result.cellIndex).toBe(21);
+
+    const { rows } = await db.query<{ cell_index: number }>(
+      "SELECT cell_index FROM structure_layout_position WHERE card_id = $1 AND status = 'active'",
+      [freshCardId]
+    );
+    expect(rows[0]?.cell_index).toBe(21);
   });
 });
