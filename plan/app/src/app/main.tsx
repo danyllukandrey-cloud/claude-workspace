@@ -49,7 +49,6 @@ import {
   computeAggregateProgress,
   cacheCardFace,
   cacheEntries,
-  cacheEntry,
   cacheMetricBlocks,
   clearAllCachedData,
   computeProgressFromCache,
@@ -168,36 +167,6 @@ function authHeaders(): Record<string, string> {
   return session ? { Authorization: `Bearer ${session.token}` } : {};
 }
 
-const DEVICE_ID_STORAGE_KEY = 'plan.deviceId';
-
-/**
- * Review 2026-09-07 (виправлення регресу B7, знайденого повторним рев'ю):
- * detectConflict (domain/conflict.ts) не має жодного способу відрізнити "той
- * самий пристрій, два швидких записи" від "справді різні пристрої" (AC-06)
- * без стійкого ідентифікатора пристрою -- цей клієнт раніше взагалі ніколи
- * не надсилав sourceDeviceId, тому КОЖЕН другий запис на тому самому блоці
- * трактувався як можливий конфлікт і скидав прогрес назад у "очікує".
- * Генерується ОДИН РАЗ і зберігається в localStorage -- переживає
- * перезавантаження сторінки, унікальний для ЦЬОГО браузера (не для
- * користувача -- той самий Google-акаунт з іншого пристрою отримає свій
- * власний id, що й потрібно для AC-06).
- */
-function getDeviceId(): string {
-  try {
-    const existing = localStorage.getItem(DEVICE_ID_STORAGE_KEY);
-    if (existing) return existing;
-    const generated = crypto.randomUUID();
-    localStorage.setItem(DEVICE_ID_STORAGE_KEY, generated);
-    return generated;
-  } catch {
-    // Приватний режим / переповнене сховище -- новий id щоразу; конфлікт-
-    // детекція після цього ж фіксу трактує "невідомий пристрій" як "той
-    // самий" (безпечний дефолт), тож це не ламає звичайний потік, лише не
-    // ловить рідкісний реальний конфлікт із цього самого сеансу.
-    return crypto.randomUUID();
-  }
-}
-
 /** Формат "27.08" -- достатньо для короткого підпису в історії записів (AC-13). */
 function formatRecordedAtLabel(recordedAt: string): string {
   return new Intl.DateTimeFormat('uk-UA', { day: '2-digit', month: '2-digit' }).format(new Date(recordedAt));
@@ -231,8 +200,8 @@ function clearStoredSession(): void {
  * лише сервер, тут довіряємо власному щойно виданому токену) середній сегмент
  * (payload), щоб мати ownerUserId для ключів кешу без окремого мережевого
  * виклику. `null`, якщо сесії нема чи токен не JWT-форми -- викликачі
- * (loadBack/addEntry) підставляють порожній рядок як безпечний fallback
- * (кеш просто не намespaced для цього єдиного виклику, не крах).
+ * (loadBack) підставляють порожній рядок як безпечний fallback (кеш просто
+ * не намespaced для цього єдиного виклику, не крах).
  */
 function currentOwnerUserId(): string | null {
   const token = readStoredSession()?.token;
@@ -703,29 +672,6 @@ async function onFlagEntry(cardId: string, entryId: string): Promise<CardBackDat
   }
 
   return loadBack(cardId);
-}
-
-/** ТИМЧАСОВО (D-110, docs/DECISIONS.md) -- реальний POST .../metric-blocks/{metricBlockId}/entries -- CardBack.onAddEntry. */
-async function addEntry(cardId: string, metricBlockId: string, amount: number): Promise<void> {
-  const response = await fetch(`/api/v1/cards/${cardId}/metric-blocks/${metricBlockId}/entries`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    // Review 2026-09-07 (B7 regression fix): sourceDeviceId -- див. getDeviceId вище.
-    body: JSON.stringify({ amount, sourceDeviceId: getDeviceId() }),
-  });
-
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { message?: string } | null;
-    throw new Error(body?.message ?? 'Не вдалося зберегти запис');
-  }
-
-  // T45 (review C13, "writes to it ... after every ... confirmed entry"):
-  // CardBack одразу перезавантажує дані після успішного addEntry (ISS-60),
-  // що й так синхронізує весь кеш через loadBack вище -- цей рядок лише
-  // страхує вікно МІЖ "запис прийнято" і "перезавантаження завершилось",
-  // щоб застосунок не показав застарілий кеш, якщо мережа зникне саме тоді.
-  const entry = (await response.json()) as EntryDto;
-  cacheEntry(storage, currentOwnerUserId() ?? '', cardId, toDomainEntry(entry));
 }
 
 // T24 (sad.md §5, contracts/openapi.yaml Structure/Layout tags): реальні
@@ -1612,7 +1558,6 @@ createRoot(root).render(
       loadArchivedCardHistory={loadArchivedCardHistory}
       archiveCard={archiveCard}
       createMetricBlock={createMetricBlock}
-      addEntry={addEntry}
       onUpdateDescription={onUpdateDescription}
       onFlagEntry={onFlagEntry}
       loadStructure={loadStructure}

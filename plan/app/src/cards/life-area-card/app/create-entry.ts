@@ -23,8 +23,9 @@
 // AC-06 + AC-11 -- один прапорець на вхід у createEntry (T7): needsReview
 // стає true, коли агент недоступний (AC-11, спрацьовує завжди -- незалежно
 // від конфлікту) АБО коли detectConflict (T8) знайшов близький за часом
-// запис з іншого пристрою (AC-06). Обидва випадки ведуть до того самого
-// статусу pending -- домен (T7) не розрізняє причину, лише результат.
+// запис ТОГО САМОГО блоку (AC-06, D-119 -- вже без прив'язки до пристрою,
+// див. domain/conflict.ts). Обидва випадки ведуть до того самого статусу
+// pending -- домен (T7) не розрізняє причину, лише результат.
 //
 // До порівняння (AC-06) беруться лише 'pending'/'confirmed' існуючі записи
 // (tasks/t8-domain-conflict.md §What) -- вже вирішений 'rejected' запис не
@@ -90,10 +91,7 @@ export async function createEntry(db: Db, input: CreateEntryInput): Promise<Entr
   // вже вирішений 'rejected' запис не повинен знову спричиняти pending.
   const candidateEntries = existingEntries.filter((existing) => existing.status !== 'rejected');
 
-  const newTiming = {
-    sourceDeviceId: input.sourceDeviceId ?? null,
-    recordedAt: input.recordedAt,
-  };
+  const newTiming = { recordedAt: input.recordedAt };
   const windowMs = input.windowMs ?? DEFAULT_CONFLICT_WINDOW_MS;
   const agentAvailable = input.agentAvailable ?? true;
 
@@ -101,7 +99,7 @@ export async function createEntry(db: Db, input: CreateEntryInput): Promise<Entr
   // кандидату за раз -- так "чи є конфлікт" і "який САМЕ рядок конфліктує"
   // виходять з одного джерела правди, не двох окремих реалізацій.
   const conflicting = candidateEntries.find((existing) =>
-    detectConflict(newTiming, [{ sourceDeviceId: existing.sourceDeviceId, recordedAt: existing.recordedAt.getTime() }], windowMs)
+    detectConflict(newTiming, [{ recordedAt: existing.recordedAt.getTime() }], windowMs)
   );
   const hasConflict = Boolean(conflicting);
   // AC-11 (агент недоступний) і AC-06 (конфлікт) -- один і той самий прапорець

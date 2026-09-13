@@ -73,11 +73,6 @@ function baseProps() {
     // ISS-60 (docs/ISSUES.md): реальний POST /cards/{id}/metric-blocks
     // (main.tsx) -- App замикає над cardId, той самий стиль, що onRename.
     createMetricBlock: vi.fn().mockResolvedValue(undefined),
-    // D-110 (docs/DECISIONS.md, ТИМЧАСОВЕ): реальний POST
-    // /cards/{cardId}/metric-blocks/{metricBlockId}/entries (main.tsx) --
-    // App замикає над cardId, лишає metricBlockId параметром (CardBack сам
-    // замикає над block.id для кожної плитки).
-    addEntry: vi.fn().mockResolvedValue(undefined),
     // Review C10 (AC-03): реальний PATCH /cards/{cardId} (description/markFilled,
     // main.tsx) -- App замикає над cardId, той самий стиль, що onRename.
     onUpdateDescription: vi.fn().mockResolvedValue(undefined),
@@ -487,12 +482,9 @@ test('ISS-56: архівування картки в деталях виклик
   expect(props.loadCards).toHaveBeenCalledTimes(2);
 });
 
-// ISS-60/D-110 (RED, docs/ISSUES.md): App замикає createMetricBlock/addEntry
-// над cardId обраної картки й передає в CardDetailScreen -> CardBack (той
-// самий стиль, що onRename/loadCard/loadBack вище). addEntry лишається
-// параметризованим metricBlockId -- CardBack сам замикає над block.id
-// на рівні кожної плитки (MetricBlockCard), тому тут App лише прокидає
-// (cardId, metricBlockId, amount) => addEntry(cardId, metricBlockId, amount).
+// ISS-60 (RED, docs/ISSUES.md): App замикає createMetricBlock над cardId
+// обраної картки й передає в CardDetailScreen -> CardBack (той самий стиль,
+// що onRename/loadCard/loadBack вище).
 
 test('ISS-60: створення блоку-метрики в деталях картки викликає injected createMetricBlock(cardId, values)', async () => {
   const props = validSessionProps();
@@ -518,31 +510,6 @@ test('ISS-60: створення блоку-метрики в деталях к�
     isOngoing: false,
     targetDate: null,
   });
-});
-
-test('D-110: тимчасова кнопка "+" на блоці-метриці викликає injected addEntry(cardId, metricBlockId, amount)', async () => {
-  const props = validSessionProps();
-  props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
-  props.loadBack.mockResolvedValue({
-    metricBlocks: [
-      { id: 'mb1', label: 'Тренування', unit: 'раз', progress: { kind: 'bounded', share: 0.5, overGoal: 0 }, hasPendingEntry: false },
-    ],
-    aggregateProgress: 0.5,
-    entries: [],
-  });
-
-  render(<App {...props} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
-
-  fireEvent.click(await screen.findByRole('button', { name: 'Спорт' }));
-  fireEvent.click(await screen.findByRole('button', { name: /перегорнути/ }));
-  await screen.findByText(/Тренування: 50%/);
-
-  fireEvent.click(screen.getByRole('button', { name: '+' }));
-  fireEvent.change(screen.getByLabelText('Кількість'), { target: { value: '2' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Додати' }));
-
-  expect(props.addEntry).toHaveBeenCalledWith('card-1', 'mb1', 2);
 });
 
 test('ISS-58: клік "Вийти" в Колоді стирає сесію і повертає на LoginScreen', async () => {

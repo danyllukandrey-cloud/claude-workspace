@@ -346,11 +346,6 @@ test('ISS-60: успішне збереження форми викликає on
   expect(screen.queryByLabelText('Що рахуємо:')).toBeNull();
 });
 
-// D-110 (docs/DECISIONS.md, ТИМЧАСОВЕ): onAddEntry прокидається з CardBack
-// у КОЖЕН MetricBlockCard, замкнутий над block.id -- MetricBlockCard сам
-// нічого не знає про metricBlockId (лише amount), тому саме CardBack додає
-// його при передачі.
-
 // Review 2026-09-07 A4 (RED, docs/features/life-area-card/_review/review-2026-09-07.md):
 // раніше кнопка "+ Додати блок-метрику" рендерилась лише коли
 // metricBlocks.length===0 -- користувач, у якого вже є хоч один блок, не мав
@@ -388,15 +383,16 @@ test('T52: невдалий фоновий refresh (після успішног�
     entries: [],
   };
   const loadBack = vi.fn().mockResolvedValueOnce(initial).mockRejectedValueOnce(new Error('Мережа впала'));
-  const onAddEntry = vi.fn().mockResolvedValue(undefined);
+  const onCreateMetricBlock = vi.fn().mockResolvedValue(undefined);
 
-  render(<CardBack loadBack={loadBack} onFlip={vi.fn()} onAddEntry={onAddEntry} />);
+  render(<CardBack loadBack={loadBack} onFlip={vi.fn()} onCreateMetricBlock={onCreateMetricBlock} />);
 
   await screen.findByText(/Тренування: 50%/);
 
-  fireEvent.click(screen.getByRole('button', { name: '+' }));
-  fireEvent.change(screen.getByLabelText('Кількість'), { target: { value: '1' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Додати' }));
+  fireEvent.click(screen.getByRole('button', { name: '+ Додати блок-метрику' }));
+  fireEvent.change(screen.getByLabelText('Що рахуємо:'), { target: { value: 'Сон' } });
+  fireEvent.change(screen.getByLabelText('Одиниця:'), { target: { value: 'год' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
 
   await vi.waitFor(() => expect(loadBack).toHaveBeenCalledTimes(2));
 
@@ -422,21 +418,23 @@ test('T52: фоновий refresh ігнорує застарілу (out-of-orde
     .mockResolvedValueOnce(initial) // початкове завантаження
     .mockReturnValueOnce(new Promise<CardBackData>((resolve) => (resolveStaleRefresh = resolve))) // refresh #1 -- зависає
     .mockResolvedValueOnce(freshData); // refresh #2 -- issued пізніше, резолвиться одразу
-  const onAddEntry = vi.fn().mockResolvedValue(undefined);
+  const onCreateMetricBlock = vi.fn().mockResolvedValue(undefined);
 
-  render(<CardBack loadBack={loadBack} onFlip={vi.fn()} onAddEntry={onAddEntry} />);
+  render(<CardBack loadBack={loadBack} onFlip={vi.fn()} onCreateMetricBlock={onCreateMetricBlock} />);
   await screen.findByText(/Тренування: 0%/);
 
   // Триггер #1 -- refresh стає "у польоті", не резолвиться.
-  fireEvent.click(screen.getByRole('button', { name: '+' }));
-  fireEvent.change(screen.getByLabelText('Кількість'), { target: { value: '1' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Додати' }));
+  fireEvent.click(screen.getByRole('button', { name: '+ Додати блок-метрику' }));
+  fireEvent.change(screen.getByLabelText('Що рахуємо:'), { target: { value: 'Сон' } });
+  fireEvent.change(screen.getByLabelText('Одиниця:'), { target: { value: 'год' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
   await vi.waitFor(() => expect(loadBack).toHaveBeenCalledTimes(2));
 
   // Триггер #2 -- issued ПІЗНІШЕ, резолвиться РАНІШЕ.
-  fireEvent.click(screen.getByRole('button', { name: '+' }));
-  fireEvent.change(screen.getByLabelText('Кількість'), { target: { value: '1' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Додати' }));
+  fireEvent.click(screen.getByRole('button', { name: '+ Додати блок-метрику' }));
+  fireEvent.change(screen.getByLabelText('Що рахуємо:'), { target: { value: 'Сон' } });
+  fireEvent.change(screen.getByLabelText('Одиниця:'), { target: { value: 'год' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
   await screen.findByText(/Тренування: 60%/);
 
   // Застаріла відповідь #1 нарешті приходить -- має бути ПРОІГНОРОВАНА.
@@ -445,23 +443,4 @@ test('T52: фоновий refresh ігнорує застарілу (out-of-orde
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
   expect(screen.getByText(/Тренування: 60%/)).toBeTruthy();
-});
-
-test('D-110: onAddEntry, якщо переданий, прокидається в MetricBlockCard замкнутим над id блоку', async () => {
-  const data: CardBackData = {
-    metricBlocks: [
-      { id: 'mb1', label: 'Тренування', unit: 'раз', progress: { kind: 'bounded', share: 0.5, overGoal: 0 }, hasPendingEntry: false },
-    ],
-    aggregateProgress: 0.5,
-    entries: [],
-  };
-  const onAddEntry = vi.fn().mockResolvedValue(undefined);
-  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onAddEntry={onAddEntry} />);
-
-  await screen.findByText(/Тренування: 50%/);
-  fireEvent.click(screen.getByRole('button', { name: '+' }));
-  fireEvent.change(screen.getByLabelText('Кількість'), { target: { value: '3' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Додати' }));
-
-  expect(onAddEntry).toHaveBeenCalledWith('mb1', 3);
 });

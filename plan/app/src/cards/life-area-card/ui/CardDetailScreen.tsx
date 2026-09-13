@@ -37,8 +37,6 @@ export interface CardDetailScreenProps {
   onArchived: () => void;
   /** ISS-60: створює новий блок-метрику картки -- опційно, прокидається без змін у CardBack.onCreateMetricBlock. */
   onCreateMetricBlock?: (values: MetricBlockFormValues) => Promise<void>;
-  /** ТИМЧАСОВО (D-110, docs/DECISIONS.md) -- вносить запис для блоку -- опційно, прокидається без змін у CardBack.onAddEntry. */
-  onAddEntry?: (metricBlockId: string, amount: number) => Promise<void>;
   /** Review C10 (AC-03): зберігає Опис/markFilled -- опційно, прокидається без змін у CardFace.onUpdateDescription. */
   onUpdateDescription?: (input: { description: string; markFilled: boolean }) => Promise<void>;
 }
@@ -55,7 +53,6 @@ export function CardDetailScreen({
   onArchive,
   onArchived,
   onCreateMetricBlock,
-  onAddEntry,
   onUpdateDescription,
 }: CardDetailScreenProps): JSX.Element {
   const [side, setSide] = useState<Side>('face');
@@ -85,7 +82,6 @@ export function CardDetailScreen({
           onFlagEntry={onFlagEntry}
           onRenameTransferredBlock={onRenameTransferredBlock}
           onCreateMetricBlock={onCreateMetricBlock}
-          onAddEntry={onAddEntry}
         />
       )}
       <Button label="← Назад" onClick={onBack} />
