@@ -130,33 +130,37 @@ export function ArchiveScreen({
     const handleBack = (): void => setState({ status: 'list', items });
 
     return (
-      <div>
-        <h1>Архів карток</h1>
+      <div className="flex flex-col gap-4 p-4">
+        <h1 className="font-display text-xl font-bold text-ink">Архів карток</h1>
         <CardShell
           isFlipped={false}
           front={
-            <div>
-              <h2>{card.name}</h2>
-            <p>Картка в архіві -- новий запис недоступний, поки її не розархівовано</p>
-            <Button label="Розархівувати" onClick={handleRestore} disabled={isRestoring} />
-            {restoreError !== null && <Banner variant="error" text={restoreError} />}
+            <div className="flex flex-col gap-4">
+              <h2 className="font-display text-lg font-bold text-ink">{card.name}</h2>
+              <p className="text-sm text-ink-muted">Картка в архіві -- новий запис недоступний, поки її не розархівовано</p>
+              <Button label="Розархівувати" onClick={handleRestore} disabled={isRestoring} />
+              {restoreError !== null && <Banner variant="error" text={restoreError} />}
 
-            {history.status === 'loading' && <Spinner />}
-            {history.status === 'error' && <Banner variant="error" text={history.message} />}
-            {history.status === 'ready' && (
-              <div>
-                <h3>Історія записів</h3>
-                <ul>
-                  {history.entries.map((entry) => (
-                    <li key={entry.id}>
-                      <span>{entry.recordedAtLabel}</span> <span>{entry.summary}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <Button label="← Назад" onClick={handleBack} />
-          </div>
+              {history.status === 'loading' && <Spinner />}
+              {history.status === 'error' && <Banner variant="error" text={history.message} />}
+              {history.status === 'ready' && (
+                <div className="flex flex-col gap-2">
+                  <h3 className="text-sm font-bold text-ink">Історія записів</h3>
+                  <ul className="flex flex-col gap-2">
+                    {history.entries.map((entry) => (
+                      <li
+                        key={entry.id}
+                        className="flex items-center justify-between gap-2 rounded-control border border-border bg-surface-solid px-3.5 py-2.5 text-sm"
+                      >
+                        <span className="text-ink-muted">{entry.recordedAtLabel}</span>
+                        <span className="font-medium text-ink">{entry.summary}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <Button label="← Назад" onClick={handleBack} />
+            </div>
           }
           back={null}
         />
@@ -166,8 +170,8 @@ export function ArchiveScreen({
 
   if (state.items.length === 0) {
     return (
-      <div>
-        <h1>Архів карток</h1>
+      <div className="flex flex-col gap-4 p-4">
+        <h1 className="font-display text-xl font-bold text-ink">Архів карток</h1>
         <EmptyState message="Архів порожній" actionHint="Заархівовані картки з'являться тут після архівації" />
       </div>
     );
@@ -206,8 +210,8 @@ export function ArchiveScreen({
   };
 
   return (
-    <div>
-      <h1>Архів карток</h1>
+    <div className="flex flex-col gap-4 p-4">
+      <h1 className="font-display text-xl font-bold text-ink">Архів карток</h1>
       <DeckGrid items={items} onOpen={handleOpen} />
     </div>
   );
