@@ -158,11 +158,15 @@ export function LayoutBoard({
    * і без назви вони були б нерозрізненні (і для скрінрідера, і для тесту).
    */
   const cardChip = (card: LayoutBoardCard): JSX.Element => (
-    <span key={card.cardId}>
+    <span
+      key={card.cardId}
+      className="flex max-w-full flex-col items-center gap-1 rounded-control bg-surface-solid px-2.5 py-2 text-center shadow-soft"
+    >
       <span
         draggable
         data-card-id={card.cardId}
         onDragStart={(event) => handleDragStart(event, card.cardId)}
+        className="max-w-full truncate text-xs font-semibold text-ink"
       >
         {card.cardTitle}
       </span>
@@ -171,6 +175,7 @@ export function LayoutBoard({
           type="button"
           aria-label={`Закрити напрямок «${card.cardTitle}»`}
           onClick={() => openCloseDialog(card)}
+          className="text-[11px] font-medium text-ink-faint transition-colors hover:text-accent"
         >
           Закрити напрямок
         </button>
@@ -224,22 +229,31 @@ export function LayoutBoard({
         data-testid={`cell-${cellIndex}`}
         onDragOver={(event) => event.preventDefault()}
         onDrop={(event) => handleDrop(event, cellIndex)}
+        className={`flex min-h-[4.5rem] flex-col items-center justify-center gap-1 rounded-control p-1.5 text-center ${
+          card === null ? 'border border-border' : ''
+        }`}
       >
         {card !== null && cardChip(card)}
-        {cellErrors[cellIndex] !== undefined && <span>{cellErrors[cellIndex]}</span>}
+        {cellErrors[cellIndex] !== undefined && (
+          <span className="text-[11px] font-medium text-bad">{cellErrors[cellIndex]}</span>
+        )}
       </div>
     );
   });
 
   return (
-    <div>
+    <div className="flex flex-col gap-4">
       {state.justReset && <Banner variant="info" text="Розклади заново -- попереднє розташування скинуто" />}
 
       {banner !== null && <Banner variant={banner.variant} text={banner.text} />}
 
-      <div>{cells}</div>
+      <div className="grid grid-cols-3 gap-2">{cells}</div>
 
-      {unassigned.length > 0 && <div data-testid="unassigned-tray">{unassigned.map(cardChip)}</div>}
+      {unassigned.length > 0 && (
+        <div data-testid="unassigned-tray" className="flex flex-wrap gap-2 border-t border-border pt-3">
+          {unassigned.map(cardChip)}
+        </div>
+      )}
 
       {/* AC-12 / SCR-04. `key` -- cardId: CloseCardDialog ініціалізує свій
           стан рядків ОДИН раз (useState(() => ...)), тож без ремаунта
@@ -249,37 +263,43 @@ export function LayoutBoard({
           саме закриваєш. role="dialog" -- теж звідси; фокус-пастка поки
           відсутня (знахідка рев'ю про фокус лишається відкритою). */}
       {closingCard !== null && (
-        <div role="dialog" aria-label={`Закрити напрямок «${closingCard.cardTitle}»`}>
-          <h2>Закрити «{closingCard.cardTitle}»?</h2>
-          {closeOptions === null ? (
-            <Spinner />
-          ) : (
-            <CloseCardDialog
-              key={closingCard.cardId}
-              cardTitle={closingCard.cardTitle}
-              metricBlocks={closeOptions.metricBlocks}
-              targetCards={closeOptions.targetCards}
-              onClose={({ metricTransfers }) =>
-                (onCloseCard as NonNullable<LayoutBoardProps['onCloseCard']>)({
-                  cardId: closingCard.cardId,
-                  metricTransfers,
-                })
-              }
-              onClosed={() => {
-                dismissCloseDialog();
-                // Джерело правди -- сервер (позиція стала 'closed', метрики
-                // переїхали): перечитуємо розкладку, а не вгадуємо новий стан
-                // локально. screens.md SCR-04 success -- "повернення на SCR-02".
-                loadLayout()
-                  .then(setState)
-                  .catch((err: unknown) => {
-                    const message = err instanceof Error ? err.message : 'Не вдалося оновити розкладку';
-                    setBanner({ variant: 'error', text: `Напрямок закрито, але розкладку не перечитано. ${message}` });
-                  });
-              }}
-              onCancel={dismissCloseDialog}
-            />
-          )}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm">
+          <div
+            role="dialog"
+            aria-label={`Закрити напрямок «${closingCard.cardTitle}»`}
+            className="flex w-full max-w-sm flex-col gap-4 rounded-card border border-border bg-surface-solid p-6 shadow-soft"
+          >
+            <h2 className="font-display text-lg font-semibold text-ink">Закрити «{closingCard.cardTitle}»?</h2>
+            {closeOptions === null ? (
+              <Spinner />
+            ) : (
+              <CloseCardDialog
+                key={closingCard.cardId}
+                cardTitle={closingCard.cardTitle}
+                metricBlocks={closeOptions.metricBlocks}
+                targetCards={closeOptions.targetCards}
+                onClose={({ metricTransfers }) =>
+                  (onCloseCard as NonNullable<LayoutBoardProps['onCloseCard']>)({
+                    cardId: closingCard.cardId,
+                    metricTransfers,
+                  })
+                }
+                onClosed={() => {
+                  dismissCloseDialog();
+                  // Джерело правди -- сервер (позиція стала 'closed', метрики
+                  // переїхали): перечитуємо розкладку, а не вгадуємо новий стан
+                  // локально. screens.md SCR-04 success -- "повернення на SCR-02".
+                  loadLayout()
+                    .then(setState)
+                    .catch((err: unknown) => {
+                      const message = err instanceof Error ? err.message : 'Не вдалося оновити розкладку';
+                      setBanner({ variant: 'error', text: `Напрямок закрито, але розкладку не перечитано. ${message}` });
+                    });
+                }}
+                onCancel={dismissCloseDialog}
+              />
+            )}
+          </div>
         </div>
       )}
     </div>

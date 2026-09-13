@@ -31,10 +31,13 @@ export function ProposalCard({
   confirmDisabled = false,
 }: ProposalCardProps): JSX.Element {
   return (
-    <div>
-      <p>{proposedSummary}</p>
-      <Button label="Підтвердити" onClick={onConfirm} disabled={confirmDisabled} />
-      <Button label="Уточнити" onClick={onRefine} />
+    <div className="flex flex-col gap-3 rounded-card border border-border bg-surface-solid p-4 shadow-soft">
+      <p className="text-sm font-medium text-ink">{proposedSummary}</p>
+      {/* D-111: обидві дії стосуються цієї ж пропозиції -- лишаються поруч, одна група. */}
+      <div className="flex flex-wrap gap-3">
+        <Button label="Підтвердити" onClick={onConfirm} disabled={confirmDisabled} />
+        <Button label="Уточнити" onClick={onRefine} />
+      </div>
     </div>
   );
 }

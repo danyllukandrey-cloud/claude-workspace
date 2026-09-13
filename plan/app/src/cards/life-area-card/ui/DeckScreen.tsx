@@ -100,13 +100,21 @@ export function DeckScreen({
     };
   }, [loadCards, retryToken, onSessionExpired]);
 
+  // D-120: примітиви (Spinner/Banner/EmptyState/Button) уже самі стилізовані
+  // й не приймають className -- тут стилізуються лише обгорткові контейнери
+  // (тло сторінки, відступи, групування дій). Створити/Архів/Вийти лишаються
+  // в тому самому порядку й одним блоком (D-111 -- кнопки однієї дії поруч).
   if (state.status === 'loading') {
-    return <Spinner />;
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-bg px-4">
+        <Spinner />
+      </div>
+    );
   }
 
   if (state.status === 'error') {
     return (
-      <div>
+      <div className="flex min-h-screen flex-col justify-center gap-4 bg-bg px-4 py-8">
         <Banner variant="error" text={state.message} />
         <Button label="Спробувати ще раз" onClick={() => setRetryToken((token) => token + 1)} />
       </div>
@@ -115,21 +123,25 @@ export function DeckScreen({
 
   if (state.items.length === 0) {
     return (
-      <div>
+      <div className="flex min-h-screen flex-col gap-6 bg-bg px-4 py-8">
         <EmptyState message="Тут ще немає жодної картки" actionHint="Створіть першу картку, щоб почати" />
-        <Button label={CREATE_CARD_LABEL} onClick={onCreateCard} />
-        <Button label={OPEN_ARCHIVE_LABEL} onClick={onOpenArchive} />
-        <Button label={LOGOUT_LABEL} onClick={onLogout} />
+        <div className="mt-auto flex flex-col gap-3">
+          <Button label={CREATE_CARD_LABEL} onClick={onCreateCard} />
+          <Button label={OPEN_ARCHIVE_LABEL} onClick={onOpenArchive} />
+          <Button label={LOGOUT_LABEL} onClick={onLogout} />
+        </div>
       </div>
     );
   }
 
   return (
-    <div>
+    <div className="flex min-h-screen flex-col gap-6 bg-bg px-4 py-6">
       <DeckGrid items={state.items} onOpen={onOpenCard} />
-      <Button label={CREATE_CARD_LABEL} onClick={onCreateCard} />
-      <Button label={OPEN_ARCHIVE_LABEL} onClick={onOpenArchive} />
-      <Button label={LOGOUT_LABEL} onClick={onLogout} />
+      <div className="mt-auto flex flex-col gap-3">
+        <Button label={CREATE_CARD_LABEL} onClick={onCreateCard} />
+        <Button label={OPEN_ARCHIVE_LABEL} onClick={onOpenArchive} />
+        <Button label={LOGOUT_LABEL} onClick={onLogout} />
+      </div>
     </div>
   );
 }

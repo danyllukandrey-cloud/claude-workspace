@@ -7,10 +7,16 @@
 // тому майбутня задача T36 (режим "архів") зможе імпортувати цей самий
 // компонент без переписування, лише передавши інший items/onOpen.
 //
-// Правило залежностей (plan/app/CLAUDE.md): presentation-примітив зі
-// shared/ui (Button) -- жодного domain, жодного ports/app.
-
-import { Button } from '../../../shared/ui';
+// Правило залежностей (plan/app/CLAUDE.md): лише Tailwind-класи з токенів
+// D-120 (docs/app/theme.css) -- жодного domain, жодного ports/app.
+//
+// D-120: тайл колоди -- не CTA (shared Button свідомо лишається одним-єдиним
+// варіантом, Button.tsx §комент), а невелика матова rounded-card плитка з
+// shadow-soft -- сфумато-підкладка (CardShell) тут навмисно не потрібна:
+// важка для десятків плиток одночасно (нотатка кластеру "deck"). Тому тайл --
+// власний <button>, той самий підхід, що вже в ConfirmDialog.tsx для кнопки
+// "Скасувати" (Button не приймає className, і його єдиний стиль -- фірмовий
+// bg-accent CTA -- не пасує вигляду тайла).
 
 export interface DeckGridItem {
   /** Ідентифікатор картки -- прокидається в onOpen при кліку на тайл. */
@@ -28,9 +34,16 @@ export interface DeckGridProps {
 
 export function DeckGrid({ items, onOpen }: DeckGridProps): JSX.Element {
   return (
-    <div>
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
       {items.map((item) => (
-        <Button key={item.id} label={item.name} onClick={() => onOpen(item.id)} />
+        <button
+          key={item.id}
+          type="button"
+          onClick={() => onOpen(item.id)}
+          className="rounded-card bg-surface-solid px-4 py-6 text-left font-display text-sm font-semibold text-ink shadow-soft transition-opacity hover:opacity-90"
+        >
+          {item.name}
+        </button>
       ))}
     </div>
   );

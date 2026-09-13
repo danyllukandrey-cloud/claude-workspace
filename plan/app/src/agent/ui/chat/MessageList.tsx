@@ -18,7 +18,10 @@ export interface MessageListProps {
 
 export function MessageList({ messages }: MessageListProps): JSX.Element {
   return (
-    <div role="log">
+    <div
+      role="log"
+      className="flex max-h-[60vh] flex-col gap-2 overflow-y-auto rounded-card border border-border bg-surface p-3 shadow-soft backdrop-blur-xl"
+    >
       {messages.map((message) => (
         <MessageBubble key={message.id} message={message} />
       ))}

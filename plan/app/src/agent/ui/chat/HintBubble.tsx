@@ -16,9 +16,17 @@ export interface HintBubbleProps {
 
 export function HintBubble({ text, onDismiss }: HintBubbleProps): JSX.Element {
   return (
-    <div role="note">
-      <span>{text}</span>
-      <button type="button" aria-label="Закрити підказку" onClick={onDismiss}>
+    <div
+      role="note"
+      className="flex items-start gap-2 rounded-control border border-accent/25 bg-accent-soft px-3.5 py-2.5 text-sm text-accent"
+    >
+      <span className="flex-1">{text}</span>
+      <button
+        type="button"
+        aria-label="Закрити підказку"
+        onClick={onDismiss}
+        className="text-accent transition-opacity hover:opacity-70"
+      >
         ✕
       </button>
     </div>

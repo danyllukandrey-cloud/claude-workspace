@@ -60,17 +60,20 @@ export function Composer({ onSend, disabled = false }: ComposerProps): JSX.Eleme
   };
 
   return (
-    <div>
+    <div className="flex flex-col gap-2 rounded-card border border-border bg-surface-solid p-3 shadow-soft">
       <TextField label="Повідомлення" value={text} onChange={setText} placeholder="напиши або додай фото" />
-      <label>
-        Прикріпити фото
-        <input
-          type="file"
-          disabled={disabled}
-          onChange={(event) => setAttachment(event.target.files?.[0] ?? null)}
-        />
-      </label>
-      <Button label="Надіслати" onClick={handleSend} disabled={disabled || !canSend} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <label className="flex cursor-pointer items-center gap-1.5 text-xs font-medium text-ink-muted">
+          Прикріпити фото
+          <input
+            type="file"
+            disabled={disabled}
+            onChange={(event) => setAttachment(event.target.files?.[0] ?? null)}
+            className="max-w-[9.5rem] text-xs text-ink-muted file:mr-1.5 file:rounded-control file:border-0 file:bg-accent-soft file:px-2.5 file:py-1 file:text-xs file:font-semibold file:text-accent"
+          />
+        </label>
+        <Button label="Надіслати" onClick={handleSend} disabled={disabled || !canSend} />
+      </div>
     </div>
   );
 }
