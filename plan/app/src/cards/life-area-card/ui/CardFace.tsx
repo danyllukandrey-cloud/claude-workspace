@@ -45,7 +45,7 @@ export interface CardFaceProps {
   /**
    * Review 2026-09-07 C10 (AC-03): зберігає Опис і/чи позначку "заповнена"
    * (PATCH /cards/{id} description/markFilled -- update-card.ts, контракт
-   * уже готовий). Опційний, як onAddEntry в MetricBlockCard -- відсутній,
+   * уже готовий). Опційний, як onCreateMetricBlock в CardBack -- відсутній,
    * афорданс редагування Опису не рендериться.
    */
   onUpdateDescription?: (input: { description: string; markFilled: boolean }) => Promise<void>;

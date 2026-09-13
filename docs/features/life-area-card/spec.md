@@ -145,7 +145,7 @@ feature_size: "M"
 **When** the user tells the agent about a relevant event through direct input and confirms the agent's proposed record
 **Then** the system updates the card's tracked count and shows the new share of goal completion
 
-**Тимчасовий обхідний шлях ([D-110](../../DECISIONS.md#d-110)):** поки чат-інтерфейс агента (US-03, реальний спосіб внесення запису) не реалізований, `MetricBlockCard` несе тимчасову кнопку «+» (просте поле числа), що записує той самий `POST .../entries` напряму, без агента — щоб живо перевіряти цикл блок-метрика → запис → прогрес. Свідомо тимчасове, не постійний UX-шлях: прибрати, коли `agent`'s чат реалізований і бере на себе US-03.
+**([D-110](../../DECISIONS.md#d-110), виконано 2026-09-13):** тимчасова кнопка «+» на `MetricBlockCard`, що записувала той самий `POST .../entries` напряму, без агента, — прибрана тепер, коли чат-інтерфейс агента (US-03) реалізований і бере на себе внесення записів. Записи йдуть лише через чат.
 
 ### AC-02 (US-01) — error
 
@@ -173,9 +173,11 @@ feature_size: "M"
 
 ### AC-06 (US-07) — cross-context
 
-**Given** two changes to the same metric-block arrive close together in time from different devices
-**When** the system detects this near-simultaneous conflict
-**Then** the agent asks the user whether it's a duplicate or a genuinely separate entry before either one counts toward progress
+**Given** two changes to the same metric-block arrive close together in time
+**When** the system detects this near-simultaneous overlap
+**Then** both entries are held as pending review (never silently counted) until the user confirms via the existing history flag whether they're a duplicate or a genuinely separate entry
+
+**Note ([D-119](../../DECISIONS.md#d-119)):** originally scoped to "from different devices" — narrowed because no client-supplied device signal exists anywhere once the agent chat is the only entry channel (the temporary "+" button, D-110, was the one caller that ever sent a real per-device id). Deliberately broader than before: a legitimate quick re-entry of the same block can also land in review — accepted, because it's always recoverable and matches the card's own stated principle that conflicting close-in-time entries are never counted silently (§3).
 
 ### AC-07 (US-08)
 

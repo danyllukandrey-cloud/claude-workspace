@@ -80,8 +80,6 @@ export interface AppProps {
   archiveCard: (cardId: string) => Promise<void>;
   /** Створює блок-метрику обраної картки (POST /cards/{id}/metric-blocks, CardBack.onCreateMetricBlock, ISS-60). */
   createMetricBlock: (cardId: string, values: MetricBlockFormValues) => Promise<void>;
-  /** ТИМЧАСОВО (D-110, docs/DECISIONS.md) -- вносить запис для блоку обраної картки (POST .../metric-blocks/{id}/entries, CardBack.onAddEntry). */
-  addEntry: (cardId: string, metricBlockId: string, amount: number) => Promise<void>;
   /** Review C10 (AC-03) -- зберігає Опис/markFilled обраної картки (PATCH /cards/{id}, CardFace.onUpdateDescription). */
   onUpdateDescription: (cardId: string, input: { description: string; markFilled: boolean }) => Promise<void>;
   /** Review 2026-09-07 C11 (AC-12) -- позначає запис в історії обраної картки помилковим (PATCH /entries/{id}, CardBack.onFlagEntry) і повертає свіжий зворот. */
@@ -168,7 +166,6 @@ export function App({
   loadArchivedCardHistory,
   archiveCard,
   createMetricBlock,
-  addEntry,
   onUpdateDescription,
   onFlagEntry,
   loadStructure,
@@ -301,7 +298,6 @@ export function App({
             onArchive={() => archiveCard(screen.cardId)}
             onArchived={() => setScreen({ screen: 'deck' })}
             onCreateMetricBlock={(values) => createMetricBlock(screen.cardId, values)}
-            onAddEntry={(metricBlockId, amount) => addEntry(screen.cardId, metricBlockId, amount)}
             onUpdateDescription={(input) => onUpdateDescription(screen.cardId, input)}
             onFlagEntry={(entryId) => onFlagEntry(screen.cardId, entryId)}
           />
