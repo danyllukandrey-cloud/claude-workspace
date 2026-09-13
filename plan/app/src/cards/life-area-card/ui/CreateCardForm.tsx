@@ -88,18 +88,27 @@ export function CreateCardForm({ onCreate, onCancel }: CreateCardFormProps): JSX
   }
 
   return (
-    <form onSubmit={handleSubmit}>
-      <h2>Нова картка</h2>
-      {submitError && <Banner variant="error" text={submitError} />}
-      <TextField label="Назва" value={name} onChange={handleNameChange} error={validationError} />
-      {saving ? (
-        <Spinner />
-      ) : (
-        <>
-          <Button type="submit" label="Створити" />
-          {onCancel && <Button type="button" label="Скасувати" onClick={onCancel} />}
-        </>
-      )}
-    </form>
+    // D-120: TextField/Banner/Spinner/Button уже самі стилізовані й не
+    // приймають className -- тут стилізуються лише сторінка-обгортка, сама
+    // картка форми (той самий вигляд, що в ConfirmDialog.tsx) і групування
+    // кнопок "Створити"/"Скасувати" поряд (D-111).
+    <div className="flex min-h-screen flex-col bg-bg px-4 py-8">
+      <form
+        onSubmit={handleSubmit}
+        className="flex flex-col gap-5 rounded-card border border-border bg-surface-solid p-6 shadow-soft"
+      >
+        <h2 className="font-display text-lg font-bold text-ink">Нова картка</h2>
+        {submitError && <Banner variant="error" text={submitError} />}
+        <TextField label="Назва" value={name} onChange={handleNameChange} error={validationError} />
+        {saving ? (
+          <Spinner />
+        ) : (
+          <div className="flex flex-wrap gap-3">
+            <Button type="submit" label="Створити" />
+            {onCancel && <Button type="button" label="Скасувати" onClick={onCancel} />}
+          </div>
+        )}
+      </form>
+    </div>
   );
 }
