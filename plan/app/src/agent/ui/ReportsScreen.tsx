@@ -77,13 +77,17 @@ export function ReportsScreen({ loadReports }: ReportsScreenProps): JSX.Element 
   }, []);
 
   if (state.status === 'loading') {
-    return <Spinner />;
+    return (
+      <div className="flex justify-center px-6 py-10">
+        <Spinner />
+      </div>
+    );
   }
 
   if (state.status === 'error') {
     return (
-      <div>
-        <h1>Звіти активності</h1>
+      <div className="flex flex-col gap-4 p-4">
+        <h1 className="font-display text-xl font-bold text-ink">Звіти активності</h1>
         <Banner variant="error" text={state.message} />
       </div>
     );
@@ -91,8 +95,8 @@ export function ReportsScreen({ loadReports }: ReportsScreenProps): JSX.Element 
 
   if (state.reports.length === 0) {
     return (
-      <div>
-        <h1>Звіти активності</h1>
+      <div className="flex flex-col gap-4 p-4">
+        <h1 className="font-display text-xl font-bold text-ink">Звіти активності</h1>
         <EmptyState
           message="Ще немає жодного звіту"
           actionHint="Перший звіт з'явиться тут після завершення періоду (тижневого, місячного чи квартального)"
@@ -102,13 +106,16 @@ export function ReportsScreen({ loadReports }: ReportsScreenProps): JSX.Element 
   }
 
   return (
-    <div>
-      <h1>Звіти активності</h1>
-      <ul>
+    <div className="flex flex-col gap-4 p-4">
+      <h1 className="font-display text-xl font-bold text-ink">Звіти активності</h1>
+      <ul className="flex list-none flex-col gap-3">
         {state.reports.map((report) => (
-          <li key={report.id}>
-            <p>{report.periodLabel}</p>
-            <p>{report.summary}</p>
+          <li
+            key={report.id}
+            className="flex flex-col gap-2 rounded-card border border-border bg-surface-solid p-4 shadow-soft"
+          >
+            <p className="font-display text-sm font-bold text-ink">{report.periodLabel}</p>
+            <p className="text-sm text-ink-muted">{report.summary}</p>
             {report.status === 'dead_letter' && (
               <Banner
                 variant="error"
