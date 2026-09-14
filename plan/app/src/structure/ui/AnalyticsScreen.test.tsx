@@ -24,7 +24,7 @@
 // silently folded into the average or shown as zero -- their count is
 // always shown separately, even in the non-empty states.
 
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { AnalyticsScreen } from './AnalyticsScreen';
 import type { AnalyticsScreenState } from './AnalyticsScreen';
 
@@ -45,6 +45,8 @@ function baseState(overrides: Partial<AnalyticsScreenState> = {}): AnalyticsScre
 function baseProps(stateOverrides: Partial<AnalyticsScreenState> = {}) {
   return {
     loadAnalytics: vi.fn().mockResolvedValue(baseState(stateOverrides)),
+    // D-124 (живе тестування): "Архів" переїхав сюди з Колоди.
+    onOpenArchive: vi.fn(),
   };
 }
 
@@ -54,10 +56,20 @@ test('loading: показує Spinner, поки GET /structure/layout (анал�
     () => new Promise<AnalyticsScreenState>((resolve) => { resolveLoad = resolve; }),
   );
 
-  render(<AnalyticsScreen loadAnalytics={loadAnalytics} />);
+  render(<AnalyticsScreen loadAnalytics={loadAnalytics} onOpenArchive={vi.fn()} />);
 
   expect(screen.getByRole('status')).toBeTruthy();
   void resolveLoad;
+});
+
+test('D-124: кнопка "Архів" видима й викликає injected onOpenArchive', async () => {
+  const props = baseProps();
+  render(<AnalyticsScreen {...props} />);
+
+  await screen.findByText(/62%/);
+  fireEvent.click(screen.getByRole('button', { name: 'Архів' }));
+
+  expect(props.onOpenArchive).toHaveBeenCalledTimes(1);
 });
 
 test('default-logic (AC-01/AC-06): показує середній прогрес і, для кожної картки, ранг-розрив без вердикту', async () => {

@@ -18,7 +18,7 @@
 // кількість завжди показана окремо — і в порожньому, і в непорожньому стані.
 
 import { useEffect, useState } from 'react';
-import { Banner, Spinner } from '../../shared/ui';
+import { Banner, Button, Spinner } from '../../shared/ui';
 
 export type AnalyticsTrend = 'growing' | 'shrinking' | null;
 
@@ -43,6 +43,14 @@ export interface AnalyticsScreenState {
 export interface AnalyticsScreenProps {
   /** Завантажує прораховану аналітику. */
   loadAnalytics: () => Promise<AnalyticsScreenState>;
+  /**
+   * D-124 (живе тестування): кнопка "Архів" переїхала сюди з Колоди
+   * (life-area-card/DeckScreen.tsx) -- Андрій: "кнопку архів потрібно
+   * перенести на сторінку Літопис-Аналітика". App.tsx перемикає і `direction`
+   * ('cards'), і внутрішній Screen ('archive') одним викликом -- сам
+   * ArchiveScreen (SCR-07) лишається в модулі life-area-card без змін.
+   */
+  onOpenArchive: () => void;
 }
 
 function formatPercent(value: number | null): string | null {
@@ -56,7 +64,7 @@ function trendLabel(trend: AnalyticsTrend): string | null {
   return null;
 }
 
-export function AnalyticsScreen({ loadAnalytics }: AnalyticsScreenProps): JSX.Element {
+export function AnalyticsScreen({ loadAnalytics, onOpenArchive }: AnalyticsScreenProps): JSX.Element {
   const [loading, setLoading] = useState(true);
   const [state, setState] = useState<AnalyticsScreenState | null>(null);
 
@@ -130,6 +138,10 @@ export function AnalyticsScreen({ loadAnalytics }: AnalyticsScreenProps): JSX.El
           })}
         </ul>
       )}
+
+      {/* D-124: "Архів" -- переїхало сюди з Колоди, останнім елементом
+          (той самий "унизу" патерн, що мало в DeckScreen.tsx до переносу). */}
+      <Button label="Архів" onClick={onOpenArchive} />
     </div>
   );
 }

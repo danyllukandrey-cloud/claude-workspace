@@ -43,8 +43,8 @@ function baseProps() {
   return {
     readStoredSession: vi.fn().mockReturnValue(null),
     writeStoredSession: vi.fn(),
-    // ISS-58: кнопка "Вийти" (DeckScreen.onLogout) стирає сесію -- реальний
-    // localStorage.removeItem (main.tsx).
+    // ISS-58: кнопка "Вийти" (верхній бар, App.tsx -- переїхала з DeckScreen,
+    // D-124) стирає сесію -- реальний localStorage.removeItem (main.tsx).
     clearStoredSession: vi.fn(),
     loadCards: vi.fn().mockReturnValue(new Promise<DeckGridItem[]>(() => {})),
     requestSession: vi.fn(),
@@ -367,31 +367,30 @@ test('C11/AC-12: клік "виправити" в історії записів 
   expect(props.onFlagEntry).toHaveBeenCalledWith('card-1', 'entry-1');
 });
 
-// ISS-55, stage 3/3 (RED): App.tsx отримує четвертий екран 'archive' -- клік
-// на кнопку "Архів" у Колоді (DeckScreen.onOpenArchive, щойно доданий проп)
-// перемикає рендер на ArchiveScreen (T36, SCR-07), вже написаний і
-// протестований ізольовано, але досі нічим не досяжний з App. Обгортаю
+// ISS-55, stage 3/3: App.tsx отримує четвертий екран 'archive' -- клік на
+// кнопку "Архів" перемикає рендер на ArchiveScreen (T36, SCR-07). Обгортаю
 // ArchiveScreen тонкою "← Назад" кнопкою прямо в App.tsx -- ArchiveScreen сам
-// не має кнопки назад (фіксований контракт T36), і окремий файл-обгортка був
-// би зайвим для одного <button>. Повернення на 'deck' повторно викликає
-// loadCards (той самий стиль ремаунту, що раніше мав onBack у прибраному
-// CardDetailScreen, D-121).
+// не має кнопки назад (фіксований контракт T36). Повернення на 'deck'
+// повторно викликає loadCards (той самий стиль ремаунту, що раніше мав
+// onBack у прибраному CardDetailScreen, D-121).
+//
+// D-124 (живе тестування): "Архів" переїхав з Колоди на Літопис-Аналітику --
+// клік перемикає ОБИДВА рівні стану одразу (direction на 'cards' +
+// внутрішній Screen на 'archive'), тому тести нижче спершу переходять на
+// "Літопис-Аналітика", а не на "Картки".
 
-test('ISS-55 stage 3: клік "Архів" у Колоді перемикає екран на ArchiveScreen', async () => {
+test('ISS-55 stage 3+D-124: клік "Архів" на Літопис-Аналітиці перемикає екран на ArchiveScreen', async () => {
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
   props.loadArchivedCards.mockResolvedValue([{ id: 'card-2', name: 'Читання' }]);
 
   render(<App {...props} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
-
-  const archiveButton = await screen.findByRole('button', { name: 'Архів' });
-  fireEvent.click(archiveButton);
+  fireEvent.click(await screen.findByRole('button', { name: 'Літопис-Аналітика' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Архів' }));
 
   // ArchiveScreen (T36) рендерить архівовані тайли через DeckGrid -- "Читання"
-  // видиме, тоді як активна картка "Спорт" (Колода) більше не на екрані.
+  // видиме; direction тим часом перемкнувся назад на "Картки" (D-124).
   expect(await screen.findByText('Читання')).toBeTruthy();
-  expect(screen.queryByText('Спорт')).toBeNull();
   expect(props.loadArchivedCards).toHaveBeenCalledTimes(1);
 });
 
@@ -401,8 +400,7 @@ test('ISS-55 stage 3: кнопка "← Назад" в Архіві поверт
   props.loadArchivedCards.mockResolvedValue([]);
 
   render(<App {...props} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
-
+  fireEvent.click(await screen.findByRole('button', { name: 'Літопис-Аналітика' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Архів' }));
   await screen.findByText('Архів порожній');
 
@@ -421,8 +419,7 @@ test('ISS-55 stage 3: розархівування картки в Архіві 
   props.loadArchivedCards.mockResolvedValue([{ id: 'card-2', name: 'Читання' }]);
 
   render(<App {...props} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
-
+  fireEvent.click(await screen.findByRole('button', { name: 'Літопис-Аналітика' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Архів' }));
   fireEvent.click(await screen.findByText('Читання'));
   fireEvent.click(await screen.findByRole('button', { name: 'Розархівувати' }));
@@ -487,18 +484,18 @@ test('ISS-60: створення блоку-метрики на передній
   });
 });
 
-test('ISS-58: клік "Вийти" в Колоді стирає сесію і повертає на LoginScreen', async () => {
+test('D-124: клік "Вийти" у верхньому барі (поруч із шестернею) стирає сесію і повертає на LoginScreen', async () => {
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([]);
 
   render(<App {...props} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
-
+  // "Вийти" тепер у верхньому барі, поза перемикачем direction -- досяжна
+  // одразу, без навігації на жоден конкретний напрямок.
   fireEvent.click(await screen.findByRole('button', { name: 'Вийти' }));
 
   expect(props.clearStoredSession).toHaveBeenCalledTimes(1);
   // Той самий контракт, що тест "без токена в сховищі" вище -- LoginScreen
-  // єдиний, хто монтує GIS-кнопку; DeckScreen більше не на екрані.
+  // єдиний, хто монтує GIS-кнопку.
   await waitFor(() => expect(props.renderGoogleButton).toHaveBeenCalledTimes(1));
 });
 

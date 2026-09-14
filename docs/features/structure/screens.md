@@ -97,6 +97,8 @@ updated_at: "2026-08-24"
 
 ### SCR-03 — Літопис-Аналітика
 
+> ℹ️ **Доповнено 2026-09-14 ([D-124](../../DECISIONS.md#d-124)).** Кнопка «Архів» (відкриває список заархівованих карток, `life-area-card`'s SCR-07) переїхала сюди з Колоди — останній елемент екрана, під списком карток. Wireframe-и нижче — з часу перед цим доповненням, кнопку не показують; сам стан (`AnalyticsScreenProps.onOpenArchive`) уже в коді.
+
 | State | Trigger / condition | Components (from the inventory) | Source-ref |
 |---|---|---|---|
 | default-logic | розкладка «за логікою» — ранг проти прогресу, без вердикту (AC-01, AC-06) | `NEW: ProgressBar`, `NEW: GapList` (режим "ранг") | wireframe нижче |

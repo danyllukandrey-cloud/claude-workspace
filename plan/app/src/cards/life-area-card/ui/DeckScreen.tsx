@@ -21,8 +21,6 @@ import type { MetricBlockFormValues } from './MetricBlockForm';
 import type { CardBackData, CardFaceData } from './types';
 
 const CREATE_CARD_LABEL = '+ Створити картку';
-const OPEN_ARCHIVE_LABEL = 'Архів';
-const LOGOUT_LABEL = 'Вийти';
 
 export interface DeckScreenProps {
   /**
@@ -37,10 +35,6 @@ export interface DeckScreenProps {
   loadCards: () => Promise<DeckGridItem[]>;
   /** Викликається при кліку на кнопку "+ Створити картку" (ISS-55). */
   onCreateCard: () => void;
-  /** Викликається при кліку на кнопку "Архів" (ISS-55, stage 3). */
-  onOpenArchive: () => void;
-  /** Викликається при кліку на кнопку "Вийти" (ISS-58). */
-  onLogout: () => void;
   /**
    * Review 2026-09-07 C14 (AC-04): loadCards відхилено з AppError, чий
    * httpStatus === 401 (сесія протермінована/невалідна, main.tsx) --
@@ -72,8 +66,6 @@ const DEFAULT_ERROR_MESSAGE = 'Не вдалося завантажити кол
 export function DeckScreen({
   loadCards,
   onCreateCard,
-  onOpenArchive,
-  onLogout,
   onSessionExpired,
   loadCard,
   loadBack,
@@ -124,8 +116,15 @@ export function DeckScreen({
 
   // D-120: примітиви (Spinner/Banner/EmptyState/Button) уже самі стилізовані
   // й не приймають className -- тут стилізуються лише обгорткові контейнери
-  // (тло сторінки, відступи, групування дій). Створити/Архів/Вийти лишаються
-  // в тому самому порядку й одним блоком (D-111 -- кнопки однієї дії поруч).
+  // (тло сторінки, відступи, групування дій).
+  //
+  // D-124 (живе тестування): "Архів" переїхав на Літопис-Аналітику
+  // (structure/ui/AnalyticsScreen.tsx), "Вийти" -- у верхній бар (App.tsx,
+  // поруч із шестернею) -- обидва прибрано звідси. Лишається лише "+
+  // Створити картку", центрована й АВТОШИРИНИ (Андрій: "ширина... під текст,
+  // не на всю сторінку") -- `flex justify-center` замість колишнього
+  // `flex-col` (у колонці Button стретчився на всю ширину за замовчуванням
+  // flex-стиснення, не через власний CSS).
   //
   // D-121 фікс: `h-full` (не `min-h-screen`) на всіх станах -- той самий
   // фікс, що App.tsx вже отримав (`h-dvh`/`min-h-0`): DeckScreen тепер живе
@@ -153,10 +152,8 @@ export function DeckScreen({
     return (
       <div className="flex h-full flex-col gap-6 bg-bg px-4 py-8">
         <EmptyState message="Тут ще немає жодної картки" actionHint="Створіть першу картку, щоб почати" />
-        <div className="mt-auto flex flex-col gap-3">
+        <div className="mt-auto flex justify-center">
           <Button label={CREATE_CARD_LABEL} onClick={onCreateCard} />
-          <Button label={OPEN_ARCHIVE_LABEL} onClick={onOpenArchive} />
-          <Button label={LOGOUT_LABEL} onClick={onLogout} />
         </div>
       </div>
     );
@@ -180,10 +177,8 @@ export function DeckScreen({
           />
         )}
       />
-      <div className="mt-auto flex flex-col gap-3">
+      <div className="mt-auto flex justify-center">
         <Button label={CREATE_CARD_LABEL} onClick={onCreateCard} />
-        <Button label={OPEN_ARCHIVE_LABEL} onClick={onOpenArchive} />
-        <Button label={LOGOUT_LABEL} onClick={onLogout} />
       </div>
     </div>
   );

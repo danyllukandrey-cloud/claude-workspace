@@ -304,16 +304,24 @@ export function App({
             пункти, що раніше стояли рівноправно в нижньому нав-меню. */}
         <div className="relative flex items-center justify-between border-b border-border bg-surface-solid px-4 py-3 sm:px-6 md:col-start-2 md:row-start-1">
           <h1 className="font-display text-lg font-bold tracking-tight text-ink">ПЛАН</h1>
-          {/* D-123 (живе тестування): "виділи як кнопку" -- рамка/фон завжди
-              видимі, не лише на hover (дефолт IconButton -- прозорий у стані
-              спокою, тут цього замало: значок сам-один у шапці губився). */}
-          <IconButton
-            label={isSettingsMenuOpen ? 'Закрити меню налаштувань' : 'Меню налаштувань'}
-            onClick={() => setIsSettingsMenuOpen((prev) => !prev)}
-            className="border border-border bg-surface"
-          >
-            <GearIcon className="h-5 w-5" />
-          </IconButton>
+          {/* D-124 (живе тестування): "Вийти" переїхало сюди з Колоди
+              (life-area-card/DeckScreen.tsx) -- "поруч із шестернею, справа,
+              зверху в прикріпленому барі". Шестерня лишається крайньою
+              справа (та сама позиція, що D-123 уже закріпив), "Вийти" -- її
+              безпосередній сусід зліва в тому самому кластері. */}
+          <div className="flex items-center gap-2">
+            <Button label="Вийти" onClick={endSession} />
+            {/* D-123 (живе тестування): "виділи як кнопку" -- рамка/фон завжди
+                видимі, не лише на hover (дефолт IconButton -- прозорий у стані
+                спокою, тут цього замало: значок сам-один у шапці губився). */}
+            <IconButton
+              label={isSettingsMenuOpen ? 'Закрити меню налаштувань' : 'Меню налаштувань'}
+              onClick={() => setIsSettingsMenuOpen((prev) => !prev)}
+              className="border border-border bg-surface"
+            >
+              <GearIcon className="h-5 w-5" />
+            </IconButton>
+          </div>
           {isSettingsMenuOpen && (
             <div
               role="menu"
@@ -366,7 +374,19 @@ export function App({
               onCloseCard={onCloseCard}
             />
           )}
-          {direction === 'analytics' && <AnalyticsScreen loadAnalytics={loadAnalytics} />}
+          {direction === 'analytics' && (
+            <AnalyticsScreen
+              loadAnalytics={loadAnalytics}
+              // D-124 (живе тестування): "Архів" переїхав сюди з Колоди --
+              // перемикає ОБИДВА рівні стану одразу (direction на 'cards' +
+              // внутрішній Screen на 'archive'), бо сам ArchiveScreen (SCR-07)
+              // лишається під-навігацією "Картки", не власним напрямком.
+              onOpenArchive={() => {
+                setDirection('cards');
+                setScreen({ screen: 'archive' });
+              }}
+            />
+          )}
 
           {direction === 'agent-rules' && (
             <RuleSettingsScreen targetCards={ruleTargetCards} loadRules={loadRules} onSave={onSaveRule} />
@@ -407,8 +427,10 @@ export function App({
             <DeckScreen
               loadCards={loadCards}
               onCreateCard={() => setScreen({ screen: 'create' })}
-              onOpenArchive={() => setScreen({ screen: 'archive' })}
-              onLogout={endSession}
+              // D-124 (живе тестування): "Архів"/"Вийти" прибрано звідси --
+              // "Архів" переїхав на Літопис-Аналітику (AnalyticsScreen.onOpenArchive
+              // вище), "Вийти" -- у верхній бар (поруч із шестернею).
+              //
               // Review 2026-09-07 C14 (AC-04): 401 при завантаженні колоди --
               // той самий шлях, що ручний "Вийти" (сесія все одно недійсна,
               // тримати її в сховищі означає знову впертись у 401 наступного
