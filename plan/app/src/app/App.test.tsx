@@ -635,7 +635,7 @@ test('T24: клік "Картки" повертає на DeckScreen, під-на
 // ChatPanel ЗАВЖДИ змонтована одночасно з дефолтним напрямком (Картки), не
 // одне ЗАМІСТЬ іншого.
 
-test('T29+D-121: після входу видно і дефолтний екран Картки, і постійну ChatPanel, і 3 нових пункти меню одразу', async () => {
+test('T29+D-121+D-123: після входу видно і дефолтний екран Картки, і постійну ChatPanel, і 3 пункти меню шестерні досяжні', async () => {
   const props = validSessionProps();
 
   render(<App {...props} />);
@@ -648,12 +648,15 @@ test('T29+D-121: після входу видно і дефолтний екра
   // теж викликається одразу, ОДНОЧАСНО з loadChatHistory (не взаємовиключно).
   await waitFor(() => expect(props.loadCards).toHaveBeenCalledTimes(1));
 
-  expect(await screen.findByRole('button', { name: 'Налаштування правил' })).toBeTruthy();
-  expect(await screen.findByRole('button', { name: 'Звіти активності' })).toBeTruthy();
-  expect(await screen.findByRole('button', { name: 'Обліковий запис і дані' })).toBeTruthy();
+  // D-123: ці 3 пункти більше не в нижньому нав-меню одразу -- за значком
+  // шестерні (верхній бар) у меню, role="menu".
+  fireEvent.click(await screen.findByRole('button', { name: 'Меню налаштувань' }));
+  expect(await screen.findByRole('menuitem', { name: 'Налаштування правил' })).toBeTruthy();
+  expect(await screen.findByRole('menuitem', { name: 'Звіти активності' })).toBeTruthy();
+  expect(await screen.findByRole('menuitem', { name: 'Обліковий запис і дані' })).toBeTruthy();
 });
 
-test('T29: клік "Налаштування правил" перемикає екран на RuleSettingsScreen (loadRules/loadRuleTargetCards)', async () => {
+test('T29+D-123: клік "Налаштування правил" у меню шестерні перемикає екран на RuleSettingsScreen (loadRules/loadRuleTargetCards)', async () => {
   const props = validSessionProps();
   props.loadRuleTargetCards.mockResolvedValue([{ cardId: 'card-1', cardTitle: 'Спорт' }]);
   props.loadRules.mockResolvedValue([
@@ -661,7 +664,8 @@ test('T29: клік "Налаштування правил" перемикає �
   ]);
 
   render(<App {...props} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Налаштування правил' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Меню налаштувань' }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Налаштування правил' }));
 
   expect(await screen.findByRole('heading', { name: 'Налаштування правил' })).toBeTruthy();
   await waitFor(() => expect(props.loadRules).toHaveBeenCalledWith(null));
@@ -673,25 +677,27 @@ test('T29: клік "Налаштування правил" перемикає �
   expect(await screen.findByRole('option', { name: 'Спорт' })).toBeTruthy();
 });
 
-test('T29: клік "Звіти активності" перемикає екран на ReportsScreen (loadReports)', async () => {
+test('T29+D-123: клік "Звіти активності" у меню шестерні перемикає екран на ReportsScreen (loadReports)', async () => {
   const props = validSessionProps();
   props.loadReports.mockResolvedValue([{ id: 'report-1', periodLabel: 'Тижневий, 01.09–07.09', summary: 'Підсумок тижня', status: 'generated' }]);
 
   render(<App {...props} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Звіти активності' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Меню налаштувань' }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Звіти активності' }));
 
   expect(await screen.findByRole('heading', { name: 'Звіти активності' })).toBeTruthy();
   expect(await screen.findByText('Підсумок тижня')).toBeTruthy();
   expect(props.loadReports).toHaveBeenCalledTimes(1);
 });
 
-test('T29: клік "Обліковий запис і дані" перемикає екран на AccountScreen (loadSyncResources) і онDeleted завершує сесію', async () => {
+test('T29+D-123: клік "Обліковий запис і дані" у меню шестерні перемикає екран на AccountScreen (loadSyncResources) і онDeleted завершує сесію', async () => {
   const props = validSessionProps();
   props.loadSyncResources.mockResolvedValue([]);
   props.onDeleteAccount.mockResolvedValue(undefined);
 
   render(<App {...props} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Обліковий запис і дані' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Меню налаштувань' }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Обліковий запис і дані' }));
 
   expect(await screen.findByRole('heading', { name: 'Обліковий запис і дані' })).toBeTruthy();
   expect(props.loadSyncResources).toHaveBeenCalledTimes(1);

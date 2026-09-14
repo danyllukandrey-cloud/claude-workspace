@@ -15,16 +15,26 @@ export interface IconButtonProps {
   onClick?: () => void;
   type?: 'button' | 'submit';
   disabled?: boolean;
+  /**
+   * D-123 (живе тестування): опційне розширення базового вигляду -- дефолт
+   * (без рамки, фон лише на hover) підходить композеру чату (значки вже
+   * всередині власного бордера-рядка), але значок-кнопка САМА ПО СОБІ
+   * (шестерня у верхньому барі) губиться без видимої межі в стані спокою.
+   * Додається ПІСЛЯ базових класів (className рядком, не заміна) -- Tailwind
+   * бере останній конфліктний клас, тож викликач може лише ДОДАВАТИ вигляд,
+   * не випадково зламати базовий (h-9/w-9/rounded-control лишаються завжди).
+   */
+  className?: string;
 }
 
-export function IconButton({ label, children, onClick, type = 'button', disabled = false }: IconButtonProps): JSX.Element {
+export function IconButton({ label, children, onClick, type = 'button', disabled = false, className }: IconButtonProps): JSX.Element {
   return (
     <button
       type={type}
       aria-label={label}
       onClick={onClick}
       disabled={disabled}
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-accent-soft hover:text-accent disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-ink-muted"
+      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-accent-soft hover:text-accent disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-ink-muted${className ? ` ${className}` : ''}`}
     >
       {children}
     </button>

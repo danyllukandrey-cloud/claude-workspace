@@ -36,7 +36,7 @@ import type {
   RuleSettingsScreenTargetCard,
   SendMessageResult,
 } from '../agent';
-import { Button } from '../shared/ui';
+import { Button, GearIcon, IconButton } from '../shared/ui';
 import { LoginScreen } from './LoginScreen';
 import type { SessionResult } from './LoginScreen';
 
@@ -142,16 +142,20 @@ type Screen = { screen: 'deck' } | { screen: 'create' } | { screen: 'archive' };
 
 // T24 (sad.md §5 "Навігація (чотири напрямки)") + T29 (агент, D-25 "єдиний
 // канал прямого вводу"): постійне нижнє нав-меню, незалежне від Screen
-// (Screen лишається під-навігацією "Картки" -- deck/create/detail/archive,
-// той самий стан переживає перехід на інший напрямок і назад -- тест "клік
-// Картки повертає на DeckScreen"). Три нові напрямки -- Налаштування
-// правил/Звіти активності/Обліковий запис і дані -- один екран кожен, без
-// власної під-навігації (на відміну від "cards").
+// (Screen лишається під-навігацією "Картки" -- deck/create/archive, D-122
+// прибрав 'detail' -- той самий стан переживає перехід на інший напрямок і
+// назад -- тест "клік Картки повертає на DeckScreen"). Три напрямки --
+// Налаштування правил/Звіти активності/Обліковий запис і дані -- один екран
+// кожен, без власної під-навігації (на відміну від "cards"); D-123 переніс
+// доступ до них із нав-меню в меню шестерні верхнього бару, самі напрямки
+// (Direction) не змінились -- лише ЗВІДКИ до них можна дійти.
 //
 // D-121 (docs/app-shell.md): "agent-chat" ТУТ БІЛЬШЕ НЕМАЄ -- Чат перестав
 // бути напрямком контентної зони, тепер постійна ChatPanel нижче, видима на
-// всіх напрямках одночасно. Ієрархія цих 7 напрямків (що головне, що
-// другорядне) лишається невирішеною -- ISS-117, не цей коміт.
+// всіх напрямках одночасно. D-123: ще 3 напрямки прибрано з рівного списку
+// нижнього нав-меню (переїхали під шестерню) -- перший крок ієрархії,
+// решта (4 напрямки нижче) досі рівний список без пріоритету, ISS-117
+// лишається відкритим не повністю закритим цим комітом.
 type Direction = 'cards' | 'declaration' | 'layout' | 'analytics' | 'agent-rules' | 'agent-reports' | 'agent-account';
 
 function isSessionValid(session: StoredSession | null, now: () => Date): boolean {
@@ -209,6 +213,13 @@ export function App({
   // зону при вході. Дефолт контентної зони -- Картки (найбільш змістовний
   // напрямок за замовчуванням).
   const [direction, setDirection] = useState<Direction>('cards');
+  // D-123 (живе тестування): меню налаштувань у верхньому барі -- три
+  // напрямки (agent-rules/agent-account/agent-reports), що ISS-117 називав
+  // "другорядними", переїхали з рівного нижнього нав-меню сюди, під значок
+  // шестерні. Той самий локальний toggle-стан, що CardFace.tsx's isMenuOpen
+  // (меню "...") -- немає click-outside-close, лише клік по шестерні знову
+  // або вибір пункту (той самий мінімалізм, що вже усталений патерн).
+  const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);
   const [ruleTargetCards, setRuleTargetCards] = useState<RuleSettingsScreenTargetCard[]>([]);
 
   // AC-12 (RuleSettingsScreen card-override): картки завантажуються лише
@@ -286,9 +297,64 @@ export function App({
       // без React узагалі). Фолбек `20%` спрацьовує сам, поки не було жодного
       // перетягування -- ініціалізувати змінну на монтуванні не треба.
       <main className="grid h-dvh grid-cols-1 grid-rows-[auto_minmax(0,1fr)_auto_auto] bg-bg font-sans text-ink md:grid-cols-[var(--chat-width,25%)_1fr] md:grid-rows-[auto_minmax(0,1fr)_auto]">
-        <h1 className="border-b border-border bg-surface-solid px-4 py-3 font-display text-lg font-bold tracking-tight text-ink sm:px-6 md:col-start-2 md:row-start-1">
-          ПЛАН
-        </h1>
+        {/* D-123 (живе тестування): шестерня -- ЛИШЕ значок, без підпису
+            "Налаштування" (Андрій: "не пишемо в ній налаштування, а просто
+            шестерню"), у верхньому пінned барі справа. Клік розгортає меню
+            (role="menu", той самий патерн, що CardFace.tsx's "..."): три
+            пункти, що раніше стояли рівноправно в нижньому нав-меню. */}
+        <div className="relative flex items-center justify-between border-b border-border bg-surface-solid px-4 py-3 sm:px-6 md:col-start-2 md:row-start-1">
+          <h1 className="font-display text-lg font-bold tracking-tight text-ink">ПЛАН</h1>
+          {/* D-123 (живе тестування): "виділи як кнопку" -- рамка/фон завжди
+              видимі, не лише на hover (дефолт IconButton -- прозорий у стані
+              спокою, тут цього замало: значок сам-один у шапці губився). */}
+          <IconButton
+            label={isSettingsMenuOpen ? 'Закрити меню налаштувань' : 'Меню налаштувань'}
+            onClick={() => setIsSettingsMenuOpen((prev) => !prev)}
+            className="border border-border bg-surface"
+          >
+            <GearIcon className="h-5 w-5" />
+          </IconButton>
+          {isSettingsMenuOpen && (
+            <div
+              role="menu"
+              className="absolute right-4 top-full z-10 mt-1 flex w-56 flex-col gap-0.5 rounded-control border border-border bg-surface-solid p-1.5 shadow-soft sm:right-6"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setDirection('agent-rules');
+                  setIsSettingsMenuOpen(false);
+                }}
+                className="w-full rounded-control px-3 py-2 text-left text-sm font-medium text-ink transition-colors hover:bg-border"
+              >
+                Налаштування правил
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setDirection('agent-account');
+                  setIsSettingsMenuOpen(false);
+                }}
+                className="w-full rounded-control px-3 py-2 text-left text-sm font-medium text-ink transition-colors hover:bg-border"
+              >
+                Обліковий запис і дані
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setDirection('agent-reports');
+                  setIsSettingsMenuOpen(false);
+                }}
+                className="w-full rounded-control px-3 py-2 text-left text-sm font-medium text-ink transition-colors hover:bg-border"
+              >
+                Звіти активності
+              </button>
+            </div>
+          )}
+        </div>
 
         <div className="min-h-0 overflow-y-auto px-4 py-4 sm:px-6 md:col-start-2 md:row-start-2">
           {direction === 'declaration' && <DeclarationScreen loadStructure={loadStructure} onSave={onSaveDeclaration} />}
@@ -372,8 +438,12 @@ export function App({
             (flex-wrap), щоб на вузькому екрані (~360-400px) вони НЕ виходили
             за межі екрана й не змушували сторінку скролитись горизонтально.
             D-121: "Чат" звідси прибрано -- він більше не напрямок (ChatPanel
-            нижче, поза цим <nav>). 7 пунктів, що лишились, стоять рівним
-            списком без ієрархії -- саме це ISS-117 називає відкритим.
+            нижче, поза цим <nav>). D-123 (живе тестування): ще 3 пункти
+            (Налаштування правил/Звіти активності/Обліковий запис і дані)
+            переїхали в меню шестерні верхнього бару -- перший крок ієрархії,
+            яку ISS-117 називав відкритою (не закриває питання повністю: 4
+            пункти нижче лишаються рівним списком, який ще потребує
+            власного рішення про пріоритет).
             D-121 (широкий екран, живе тестування -- уточнено): нав на md+
             стоїть ЛИШЕ під шапкою+контентом (колонка 2) -- чат-бічка (колонка
             1) тягнеться на всю висоту екрана (ChatPanel.tsx `row-span-3`) і
@@ -383,9 +453,6 @@ export function App({
             це один код без дублювання, а не тим, що нав завжди на всю ширину
             фізично. */}
         <nav className="flex flex-wrap justify-center gap-2 border-t border-border bg-surface-solid px-3 py-3 sm:gap-3 sm:px-4 md:col-start-2 md:row-start-3">
-          <Button label="Налаштування правил" onClick={() => setDirection('agent-rules')} />
-          <Button label="Звіти активності" onClick={() => setDirection('agent-reports')} />
-          <Button label="Обліковий запис і дані" onClick={() => setDirection('agent-account')} />
           <Button label="Декларація" onClick={() => setDirection('declaration')} />
           <Button label="Схема" onClick={() => setDirection('layout')} />
           <Button label="Літопис-Аналітика" onClick={() => setDirection('analytics')} />
