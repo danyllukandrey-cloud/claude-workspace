@@ -13,8 +13,19 @@ export interface MessageBubbleProps {
 }
 
 // D-120: user/agent -- дві різні матові поверхні, не фірмовий колір і
-// нейтраль впереміш -- user (акцентний тінт, праворуч) відрізняється від
-// agent (суцільна нейтральна поверхня, ліворуч) з першого погляду.
+// нейтраль впереміш -- відрізняються кольором (user -- акцентний тінт, agent
+// -- нейтральна поверхня), той самий підхід, що й раніше.
+//
+// D-121 (широкий екран, живе тестування -- двічі уточнено): перший прохід
+// прибрав позиційний зсув повністю (`w-full`, ніякого iMessage-стилю) -- у
+// вузькій 20%-колонці великий зсув (`max-w-[85%]`, до ~15% порожнечі з
+// одного боку) робив бульбашки непропорційними. Другий прохід повернув
+// зсув, але НЕВЕЛИКИЙ -- `calc(100%-0.5rem)` (0.5rem ~ ширина однієї букви
+// тексту), не 85%: бульбашка й далі займає майже всю ширину, лише невеликий
+// проміжок з протилежного від ролі боку (`justify-end`+відступ справа для
+// user, `justify-start`+відступ зліва для agent) підказує напрямок.
+// Вирівнювання ТЕКСТУ всередині (`text-right`/`text-left`) -- окрема вісь
+// від позиції самої бульбашки, обидві тепер узгоджені з роллю.
 export function MessageBubble({ message }: MessageBubbleProps): JSX.Element {
   const isUser = message.role === 'user';
   return (
@@ -22,8 +33,8 @@ export function MessageBubble({ message }: MessageBubbleProps): JSX.Element {
       <div
         className={
           isUser
-            ? 'max-w-[85%] rounded-control bg-accent-soft px-3.5 py-2.5 text-sm text-ink'
-            : 'max-w-[85%] rounded-control bg-surface-solid px-3.5 py-2.5 text-sm text-ink shadow-soft'
+            ? 'w-[calc(100%-0.5rem)] break-words rounded-control bg-accent-soft px-3.5 py-2.5 text-right text-sm text-ink'
+            : 'w-[calc(100%-0.5rem)] break-words rounded-control bg-surface-solid px-3.5 py-2.5 text-left text-sm text-ink shadow-soft'
         }
       >
         {message.content}

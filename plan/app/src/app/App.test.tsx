@@ -101,10 +101,10 @@ function baseProps() {
     // що loadLayout/onMoveCard вище.
     loadCloseCardOptions: vi.fn().mockResolvedValue({ metricBlocks: [], targetCards: [] }),
     onCloseCard: vi.fn().mockResolvedValue(undefined),
-    // T29 (агент, D-25 "єдиний канал прямого вводу"): Чат стає дефолтним
-    // напрямком (DoD T29) -- baseProps резолвить ці три одразу (не pending
-    // Promise), щоб ChatScreen не залишав жоден тест підвислим на Spinner,
-    // коли тест сам не про Чат.
+    // D-121: ChatPanel монтується ЗАВЖДИ (постійна, поза перемикачем
+    // direction) -- тож ці три мають резолвитись одразу (не pending Promise)
+    // у КОЖНОМУ тесті, не лише тих, що самі про Чат, інакше кожен тест
+    // застрягає на фоновому Spinner всередині панелі.
     loadChatHistory: vi.fn().mockResolvedValue([] as ChatMessage[]),
     loadChatOnboarding: vi.fn().mockResolvedValue({ welcomeShown: true, message: null }),
     loadActiveChatProposal: vi.fn().mockResolvedValue(null as ChatProposal | null),
@@ -165,11 +165,12 @@ test('з валідним (не протермінованим) токеном �
 
   render(<App {...props} />);
 
-  // T29: дефолтний напрямок -- Чат, не Картки, тож loadCards НЕ викликається
-  // одразу при вході -- лише коли користувач сам відкриє "Картки".
+  // D-121: дефолтний напрямок контентної зони -- Картки (Чат більше не
+  // напрямок, він постійна ChatPanel поза цим перемикачем) -- loadCards
+  // викликається одразу при вході, без кліку.
   expect(props.renderGoogleButton).not.toHaveBeenCalled();
-  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
-  expect(props.loadCards).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(props.loadCards).toHaveBeenCalledTimes(1));
+  expect(await screen.findByRole('button', { name: 'Картки' })).toBeTruthy();
 });
 
 test('успішний обмін credential у LoginScreen пише сесію в сховище і перемикає рендер на DeckScreen (ADR-0006, крок 3)', async () => {
@@ -194,18 +195,16 @@ test('успішний обмін credential у LoginScreen пише сесію 
   capturedOnCredential?.('fake-google-id-token');
 
   // Після успішного обміну -- сесія (token+expiresAt, той самий формат, що
-  // читає readStoredSession) пишеться в сховище, і екран перемикається (T29:
-  // на нав-меню з дефолтним напрямком Чат, не одразу DeckScreen).
-  expect(await screen.findByRole('heading', { name: 'Чат' })).toBeTruthy();
+  // читає readStoredSession) пишеться в сховище, і екран перемикається на
+  // нав-меню застосунку (D-121: дефолтний напрямок -- Картки, тож loadCards
+  // викликається одразу, без кліку).
+  expect(await screen.findByRole('button', { name: 'Картки' })).toBeTruthy();
+  await waitFor(() => expect(props.loadCards).toHaveBeenCalledTimes(1));
 
   expect(props.writeStoredSession).toHaveBeenCalledWith({
     token: sessionResult.token,
     expiresAt: sessionResult.expiresAt,
   });
-
-  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
-  await screen.findByRole('status'); // Spinner DeckScreen -- loadCards ще не резолвнувся (pending Promise з baseProps).
-  expect(props.loadCards).toHaveBeenCalledTimes(1);
 });
 
 // ISS-55 (RED, stage 1/3): App.tsx отримує третій екран 'create' -- клік на
@@ -220,8 +219,7 @@ test('ISS-55: клік "+ Створити картку" в Колоді пер�
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
 
   render(<App {...props} />);
-  // T29: дефолтний напрямок -- Чат, тож спершу переходимо на Картки.
-  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
+  // D-121: дефолтний напрямок -- уже Картки, окремий клік не потрібен.
 
   const createButton = await screen.findByRole('button', { name: '+ Створити картку' });
   fireEvent.click(createButton);
@@ -561,8 +559,7 @@ test('T24: після входу видно нижнє нав-меню з 4 пу
   props.loadCards.mockResolvedValue([]);
 
   render(<App {...props} />);
-  // T29: дефолтний напрямок тепер Чат (D-25), не Картки -- перевіряємо DeckScreen явним переходом.
-  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
+  // D-121: дефолтний напрямок -- знову Картки (Чат більше не "напрямок").
 
   await screen.findByText('Тут ще немає жодної картки');
 
@@ -635,8 +632,7 @@ test('T24: клік "Картки" повертає на DeckScreen, під-на
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
 
   render(<App {...props} />);
-  // T29: дефолтний напрямок тепер Чат -- відкриваємо Картки явно першим кроком.
-  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
+  // D-121: дефолтний напрямок -- уже Картки.
   await screen.findByText('Спорт');
 
   // Переходимо на інший напрямок і повертаємось -- "Картки" має відновити ту саму DeckScreen-навігацію.
@@ -651,23 +647,30 @@ test('T24: клік "Картки" повертає на DeckScreen, під-на
   expect(await screen.findByRole('heading', { name: 'Нова картка' })).toBeTruthy();
 });
 
-// T29 (агент, D-25 "агент -- єдиний канал прямого вводу продукту ПЛАН",
-// tasks.json DoD: "App boots with Чат as the default screen plus nav entries
-// for Налаштування правил / Звіти активності / Обліковий запис і дані"):
+// T29 (агент, D-25 "агент -- єдиний канал прямого вводу продукту ПЛАН") --
 // той самий self-check дух, що review 2026-09-11 MUST-FIX 4/5 для Структури
 // -- ці тести пінять РЕАЛЬНУ досяжність з App, не лише факт, що компонент
 // написаний і протестований ізольовано (agent/ui/*.test.tsx).
+//
+// D-121 (docs/app-shell.md) замінює T29 DoD "App boots with Чат as the
+// default screen" -- Чат більше не "напрямок" контентної зони, тож ця
+// частина DoD більше не застосовна буквально: перевіряємо натомість, що
+// ChatPanel ЗАВЖДИ змонтована одночасно з дефолтним напрямком (Картки), не
+// одне ЗАМІСТЬ іншого.
 
-test('T29: після входу дефолтний екран -- Чат (не Картки), і всі 4 нових пункти меню видно одразу', async () => {
+test('T29+D-121: після входу видно і дефолтний екран Картки, і постійну ChatPanel, і 3 нових пункти меню одразу', async () => {
   const props = validSessionProps();
 
   render(<App {...props} />);
 
-  expect(await screen.findByRole('heading', { name: 'Чат' })).toBeTruthy();
+  // ChatPanel -- більше не має власного заголовка-сторінки (D-121); досяжність
+  // через сам композер, завжди видимий незалежно від розгорнута/згорнута.
+  expect(await screen.findByLabelText('Повідомлення')).toBeTruthy();
   expect(props.loadChatHistory).toHaveBeenCalledTimes(1);
-  expect(props.loadCards).not.toHaveBeenCalled();
+  // D-121: Картки -- знову дефолтний напрямок контентної зони, тож loadCards
+  // теж викликається одразу, ОДНОЧАСНО з loadChatHistory (не взаємовиключно).
+  await waitFor(() => expect(props.loadCards).toHaveBeenCalledTimes(1));
 
-  expect(await screen.findByRole('button', { name: 'Чат' })).toBeTruthy();
   expect(await screen.findByRole('button', { name: 'Налаштування правил' })).toBeTruthy();
   expect(await screen.findByRole('button', { name: 'Звіти активності' })).toBeTruthy();
   expect(await screen.findByRole('button', { name: 'Обліковий запис і дані' })).toBeTruthy();
@@ -732,7 +735,7 @@ test('T29: надсилання повідомлення в Чаті викли�
   props.sendChatMessage.mockResolvedValue({ reply: 'Записав: пробіг 5 км', proposal: null });
 
   render(<App {...props} />);
-  await screen.findByRole('heading', { name: 'Чат' });
+  await screen.findByLabelText('Повідомлення'); // D-121: ChatPanel завжди змонтована, без переходу на "Чат".
 
   fireEvent.change(screen.getByLabelText('Повідомлення'), { target: { value: 'пробіг 5 км' } });
   fireEvent.click(screen.getByRole('button', { name: 'Надіслати' }));

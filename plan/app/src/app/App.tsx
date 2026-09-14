@@ -21,7 +21,9 @@ import type {
 // T29 -- реєстрація агента в app-shell (D-25 "агент -- єдиний канал прямого
 // вводу продукту ПЛАН"). Імпортується ЛИШЕ через ../agent's index.ts
 // (правило залежностей, plan/app/CLAUDE.md) -- ніколи напряму з agent/ui/.
-import { AccountScreen, ChatScreen, ReportsScreen, RuleSettingsScreen } from '../agent';
+// D-121 (docs/app-shell.md): ChatPanel (колишній ChatScreen) рендериться
+// нижче ЯВНО ПОЗА перемикачем `direction` -- постійна панель, не напрямок.
+import { AccountScreen, ChatPanel, ReportsScreen, RuleSettingsScreen } from '../agent';
 import type {
   AccountScreenResource,
   ChatMessage,
@@ -105,15 +107,15 @@ export interface AppProps {
   onCloseCard?: (input: { cardId: string; metricTransfers: CloseCardMetricTransferInput[] }) => Promise<void>;
 
   // --- Агент (T29, contracts/openapi.yaml) -------------------------------
-  /** GET /api/v1/messages (ChatScreen.loadHistory). */
+  /** GET /api/v1/messages (ChatPanel.loadHistory). */
   loadChatHistory: () => Promise<ChatMessage[]>;
-  /** GET /api/v1/onboarding (ChatScreen.loadOnboarding, AC-13). */
+  /** GET /api/v1/onboarding (ChatPanel.loadOnboarding, AC-13). */
   loadChatOnboarding: () => Promise<OnboardingResult>;
-  /** GET /api/v1/proposals/active (ChatScreen.loadActiveProposal). */
+  /** GET /api/v1/proposals/active (ChatPanel.loadActiveProposal). */
   loadActiveChatProposal: () => Promise<ChatProposal | null>;
-  /** POST /api/v1/messages (ChatScreen.sendMessage, AC-01/AC-10/AC-19). */
+  /** POST /api/v1/messages (ChatPanel.sendMessage, AC-01/AC-10/AC-19). */
   sendChatMessage: (input: ComposerSendInput) => Promise<SendMessageResult>;
-  /** POST /api/v1/proposals/{id}/confirm (ChatScreen.confirmProposal, AC-02). */
+  /** POST /api/v1/proposals/{id}/confirm (ChatPanel.confirmProposal, AC-02). */
   confirmChatProposal: (proposalId: string) => Promise<void>;
   /** GET /api/v1/cards, звужений до {cardId,cardTitle} (RuleSettingsScreen.targetCards, AC-12). */
   loadRuleTargetCards: () => Promise<RuleSettingsScreenTargetCard[]>;
@@ -139,10 +141,15 @@ type Screen = { screen: 'deck' } | { screen: 'create' } | { screen: 'detail'; ca
 // канал прямого вводу"): постійне нижнє нав-меню, незалежне від Screen
 // (Screen лишається під-навігацією "Картки" -- deck/create/detail/archive,
 // той самий стан переживає перехід на інший напрямок і назад -- тест "клік
-// Картки повертає на DeckScreen"). Чотири нові напрямки -- Чат/Налаштування
+// Картки повертає на DeckScreen"). Три нові напрямки -- Налаштування
 // правил/Звіти активності/Обліковий запис і дані -- один екран кожен, без
 // власної під-навігації (на відміну від "cards").
-type Direction = 'cards' | 'declaration' | 'layout' | 'analytics' | 'agent-chat' | 'agent-rules' | 'agent-reports' | 'agent-account';
+//
+// D-121 (docs/app-shell.md): "agent-chat" ТУТ БІЛЬШЕ НЕМАЄ -- Чат перестав
+// бути напрямком контентної зони, тепер постійна ChatPanel нижче, видима на
+// всіх напрямках одночасно. Ієрархія цих 7 напрямків (що головне, що
+// другорядне) лишається невирішеною -- ISS-117, не цей коміт.
+type Direction = 'cards' | 'declaration' | 'layout' | 'analytics' | 'agent-rules' | 'agent-reports' | 'agent-account';
 
 function isSessionValid(session: StoredSession | null, now: () => Date): boolean {
   if (!session) return false;
@@ -191,11 +198,14 @@ export function App({
 }: AppProps): JSX.Element {
   const [session, setSession] = useState<StoredSession | null>(() => readStoredSession());
   const [screen, setScreen] = useState<Screen>({ screen: 'deck' });
-  // T29 DoD ("App boots with Чат as the default screen") -- D-25 "агент --
-  // єдиний канал прямого вводу продукту ПЛАН": Чат замінює Картки як перший
-  // екран, що бачить щойно увійшовший користувач. Картки й решта напрямків
-  // лишаються рівноправно досяжні з нав-меню нижче, лише більше не дефолтні.
-  const [direction, setDirection] = useState<Direction>('agent-chat');
+  // D-121 (docs/app-shell.md) замінює T29 DoD ("App boots with Чат as the
+  // default screen"): Чат більше не "напрямок" контентної зони -- він
+  // постійна ChatPanel, видима одночасно з БУДЬ-яким напрямком (нижче), тож
+  // сама ідея "дефолтний напрямок = агент" (D-25) тепер задоволена сильніше
+  // (завжди на екрані, не лише як стартовий) без потреби займати контентну
+  // зону при вході. Дефолт контентної зони -- Картки (найбільш змістовний
+  // напрямок за замовчуванням).
+  const [direction, setDirection] = useState<Direction>('cards');
   const [ruleTargetCards, setRuleTargetCards] = useState<RuleSettingsScreenTargetCard[]>([]);
 
   // AC-12 (RuleSettingsScreen card-override): картки завантажуються лише
@@ -247,12 +257,42 @@ export function App({
       // vh -- враховує мобільні адресні панелі), а не `position: fixed`, щоб
       // нав-меню ніколи не перекривало контент, скільки б рядків воно не
       // зайняло при переносі (flex-wrap) на вузькому екрані.
-      <main className="flex min-h-dvh flex-col bg-bg font-sans text-ink">
-        <h1 className="border-b border-border bg-surface-solid px-4 py-3 font-display text-lg font-bold tracking-tight text-ink sm:px-6">
+      //
+      // D-121 фікс: `h-dvh` (фіксована висота), не лише `min-h-dvh` --
+      // раніше main МІГ вирости вище за viewport на довгому вмісті (список
+      // карток тощо), і тоді скролилась уся сторінка разом із шапкою/нав-меню/
+      // чат-панеллю -- саме те, чого "прикріплений бар" не повинен робити.
+      // `h-dvh` жорстко стелить висоту viewport; `min-h-0` на контентному div
+      // (нижче) -- обов'язкова пара до grid-рядка: без нього grid-дитина не
+      // стискається нижче висоти свого вмісту, і `overflow-y-auto` просто
+      // ніколи не спрацьовує (та сама пастка, що у flexbox).
+      //
+      // D-121 (широкий екран, живе тестування, уточнено): CSS Grid, не
+      // flex-колонка -- на мобільному 1 колонка/4 рядки (шапка/контент/нав/
+      // чат), на md+ 2 колонки (чат 20% зліва | шапка+контент справа) і 3
+      // рядки. Чат-колонка -- на всю висоту (row-span-3, ChatPanel.tsx), нав
+      // -- лише під шапкою+контентом (колонка 2, row-start-3), НЕ заходить
+      // під чат: межа між колонками лишається рівною лінією зверху донизу,
+      // а не переривається нав-рядком знизу-зліва. Один і той самий набір
+      // елементів (DOM не дублюється) -- лише явне розміщення
+      // (`md:col-start-*`/`md:row-start-*`/`md:row-span-*`) міняє їхнє місце
+      // в сітці залежно від брейкпоінта; на мобільному спрацьовує звичайний
+      // порядок DOM (auto-placement), явних класів там не треба.
+      // D-121 (живе тестування -- тягти мишкою праву межу чату): ширина лівої
+      // колонки -- CSS-змінна `--chat-width` (дефолт 25%, `var(..., 25%)`
+      // всередині arbitrary-класу нижче), не хардкод. ChatPanel.tsx сам пише
+      // в цю змінну на document.documentElement під час перетягування
+      // хендла -- пряма мутація DOM в обхід React-стану, свідомо (кожен
+      // mousemove передзвонював би useState -> зайвий re-render усього
+      // App.tsx на кожен піксель руху миші; CSS-змінна оновлюється браузером
+      // без React узагалі). Фолбек `20%` спрацьовує сам, поки не було жодного
+      // перетягування -- ініціалізувати змінну на монтуванні не треба.
+      <main className="grid h-dvh grid-cols-1 grid-rows-[auto_minmax(0,1fr)_auto_auto] bg-bg font-sans text-ink md:grid-cols-[var(--chat-width,25%)_1fr] md:grid-rows-[auto_minmax(0,1fr)_auto]">
+        <h1 className="border-b border-border bg-surface-solid px-4 py-3 font-display text-lg font-bold tracking-tight text-ink sm:px-6 md:col-start-2 md:row-start-1">
           ПЛАН
         </h1>
 
-        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+        <div className="min-h-0 overflow-y-auto px-4 py-4 sm:px-6 md:col-start-2 md:row-start-2">
           {direction === 'declaration' && <DeclarationScreen loadStructure={loadStructure} onSave={onSaveDeclaration} />}
           {direction === 'layout' && (
             <LayoutBoard
@@ -264,15 +304,6 @@ export function App({
           )}
           {direction === 'analytics' && <AnalyticsScreen loadAnalytics={loadAnalytics} />}
 
-          {direction === 'agent-chat' && (
-            <ChatScreen
-              loadHistory={loadChatHistory}
-              loadOnboarding={loadChatOnboarding}
-              loadActiveProposal={loadActiveChatProposal}
-              sendMessage={sendChatMessage}
-              confirmProposal={confirmChatProposal}
-            />
-          )}
           {direction === 'agent-rules' && (
             <RuleSettingsScreen targetCards={ruleTargetCards} loadRules={loadRules} onSave={onSaveRule} />
           )}
@@ -337,16 +368,26 @@ export function App({
           )}
         </div>
 
-        {/* T24 (sad.md §5): постійне нижнє нав-меню -- видиме на всіх 4
+        {/* T24 (sad.md §5): постійне нижнє нав-меню -- видиме на всіх
             напрямках, не лише на "Картки". "Картки" не скидає під-навігацію
             create/detail/archive -- лише перемикає direction, Screen
             лишається як був (тест "клік Картки повертає на DeckScreen").
             D-111: усі пункти -- одного класу дії (навігація між напрямками)
             -- лишаються згруповані в одному <nav>, тепер з переносом рядків
             (flex-wrap), щоб на вузькому екрані (~360-400px) вони НЕ виходили
-            за межі екрана й не змушували сторінку скролитись горизонтально. */}
-        <nav className="flex flex-wrap justify-center gap-2 border-t border-border bg-surface-solid px-3 py-3 sm:gap-3 sm:px-4">
-          <Button label="Чат" onClick={() => setDirection('agent-chat')} />
+            за межі екрана й не змушували сторінку скролитись горизонтально.
+            D-121: "Чат" звідси прибрано -- він більше не напрямок (ChatPanel
+            нижче, поза цим <nav>). 7 пунктів, що лишились, стоять рівним
+            списком без ієрархії -- саме це ISS-117 називає відкритим.
+            D-121 (широкий екран, живе тестування -- уточнено): нав на md+
+            стоїть ЛИШЕ під шапкою+контентом (колонка 2) -- чат-бічка (колонка
+            1) тягнеться на всю висоту екрана (ChatPanel.tsx `row-span-3`) і
+            нав під неї не заходить, межа лишається рівною вертикальною лінією
+            зверху донизу. На мобільному (де бічки взагалі нема) нав і так на
+            всю ширину -- "той самий бар для обох версій" виконується тим, що
+            це один код без дублювання, а не тим, що нав завжди на всю ширину
+            фізично. */}
+        <nav className="flex flex-wrap justify-center gap-2 border-t border-border bg-surface-solid px-3 py-3 sm:gap-3 sm:px-4 md:col-start-2 md:row-start-3">
           <Button label="Налаштування правил" onClick={() => setDirection('agent-rules')} />
           <Button label="Звіти активності" onClick={() => setDirection('agent-reports')} />
           <Button label="Обліковий запис і дані" onClick={() => setDirection('agent-account')} />
@@ -355,6 +396,22 @@ export function App({
           <Button label="Літопис-Аналітика" onClick={() => setDirection('analytics')} />
           <Button label="Картки" onClick={() => setDirection('cards')} />
         </nav>
+
+        {/* D-121 (docs/app-shell.md): чат-панель -- ПОСТІЙНА, поза перемикачем
+            `direction` вище, видима на всіх 7 напрямках одночасно (не лише
+            "Картки"). Композер завжди на екрані; сама переписка розгортається
+            на 30vh лише коли користувач сам натисне хендл (ChatPanel.tsx).
+            На широкому екрані (md+) ChatPanel сам перемикається на лівий
+            бічний стовпчик 20% на всю висоту шапки+контенту -- власна
+            grid-розстановка й приховування хендла-тумблера всередині
+            ChatPanel.tsx, тут виклик не змінюється. */}
+        <ChatPanel
+          loadHistory={loadChatHistory}
+          loadOnboarding={loadChatOnboarding}
+          loadActiveProposal={loadActiveChatProposal}
+          sendMessage={sendChatMessage}
+          confirmProposal={confirmChatProposal}
+        />
       </main>
     );
   }

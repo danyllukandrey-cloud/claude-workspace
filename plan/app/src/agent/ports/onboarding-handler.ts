@@ -20,7 +20,7 @@
 //
 // Review 2026-09-12 (race fix): раніше тут був check-then-insert
 // (hasAnyChatMessage -> insertChatMessage) як два окремі round trip без
-// жодної гарантії унікальності -- ChatScreen.tsx викликає GET /onboarding у
+// жодної гарантії унікальності -- ChatPanel.tsx викликає GET /onboarding у
 // тому самому Promise.all, що й loadHistory/loadActiveProposal на кожному
 // монтуванні екрана (і React StrictMode монтує двічі в dev), тож два
 // одночасні виклики могли обидва побачити "повідомлень ще нема" між своєю

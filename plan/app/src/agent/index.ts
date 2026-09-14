@@ -15,8 +15,11 @@
 // src/app/main.tsx/App.tsx нижче -- src/agent/index.test.tsx пінить саме
 // досяжність (реальний рендер через ці двері), не лише факт експорту.
 
-export { ChatScreen, CONFIRMED_HINT_TEXT } from './ui/ChatScreen';
-export type { ChatScreenProps, SendMessageResult, OnboardingResult } from './ui/ChatScreen';
+// D-121 (docs/app-shell.md): ChatScreen перейменовано на ChatPanel -- це вже
+// не "напрямок"-екран, а постійна прикріплена панель (App.tsx монтує її поза
+// перемикачем direction).
+export { ChatPanel, CONFIRMED_HINT_TEXT } from './ui/ChatPanel';
+export type { ChatPanelProps, SendMessageResult, OnboardingResult } from './ui/ChatPanel';
 
 export { RuleSettingsScreen } from './ui/RuleSettingsScreen';
 export type {

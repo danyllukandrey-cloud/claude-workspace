@@ -12,6 +12,12 @@
 // зʼявляється, якщо в поле не заходили. Дозволяється дизайном D-112: закрита
 // хмаринка НЕ зʼявляється знову для цього монтування поля, навіть якщо
 // користувач вийде й зайде в порожнє поле повторно.
+//
+// D-121 (docs/app-shell.md): `hideLabel` -- підпис лишається в DOM (`sr-only`,
+// той самий accessible name через getByLabelText), лише візуально прихований.
+// Потрібно чат-композеру -- значки замінюють видимий текстовий підпис
+// (docs/app-shell.md §Значки композера), але поле без ЖОДНОГО імені для
+// читалки з екрана неприпустимо.
 
 import { useState } from 'react';
 
@@ -30,6 +36,8 @@ export interface TextFieldProps {
   required?: boolean;
   /** D-112: приклад і навіщо (1-2 речення); відсутній — хмаринки не буде взагалі. */
   hint?: string;
+  /** D-121: підпис лишається accessible name (sr-only), візуально не показаний. */
+  hideLabel?: boolean;
 }
 
 export function TextField({
@@ -40,6 +48,7 @@ export function TextField({
   placeholder,
   required,
   hint,
+  hideLabel,
 }: TextFieldProps): JSX.Element {
   const [isFocused, setIsFocused] = useState(false);
   const [isHintDismissed, setIsHintDismissed] = useState(false);
@@ -51,7 +60,7 @@ export function TextField({
           accessible name поля (getByLabelText), домішувати туди текст
           підказки не можна -- зламає зв'язок підпис<->поле. */}
       <label className="flex flex-col gap-1.5 text-sm font-medium text-ink">
-        {label}
+        <span className={hideLabel ? 'sr-only' : undefined}>{label}</span>
         <input
           type="text"
           value={value}

@@ -1239,7 +1239,7 @@ function toChatProposal(proposal: AgentProposalDto | null): ChatProposal | null 
   return proposal ? { id: proposal.id, proposedSummary: proposal.proposedSummary } : null;
 }
 
-/** GET /api/v1/messages -- повна історія (ChatScreen.loadHistory). MessagePage.items -- та сама форма, що ChatMessage. */
+/** GET /api/v1/messages -- повна історія (ChatPanel.loadHistory). MessagePage.items -- та сама форма, що ChatMessage. */
 async function loadChatHistory(): Promise<ChatMessage[]> {
   const response = await fetch('/api/v1/messages', { headers: authHeaders() });
 
@@ -1252,7 +1252,7 @@ async function loadChatHistory(): Promise<ChatMessage[]> {
   return page.items;
 }
 
-/** GET /api/v1/onboarding -- вітальне повідомлення на перший виклик (ChatScreen.loadOnboarding, AC-13). */
+/** GET /api/v1/onboarding -- вітальне повідомлення на перший виклик (ChatPanel.loadOnboarding, AC-13). */
 async function loadChatOnboarding(): Promise<OnboardingResult> {
   const response = await fetch('/api/v1/onboarding', { headers: authHeaders() });
 
@@ -1265,7 +1265,7 @@ async function loadChatOnboarding(): Promise<OnboardingResult> {
   return { welcomeShown: status.welcomeShown, message: status.message };
 }
 
-/** GET /api/v1/proposals/active -- чи є пропозиція, що чекає підтвердження (ChatScreen.loadActiveProposal). */
+/** GET /api/v1/proposals/active -- чи є пропозиція, що чекає підтвердження (ChatPanel.loadActiveProposal). */
 async function loadActiveChatProposal(): Promise<ChatProposal | null> {
   const response = await fetch('/api/v1/proposals/active', { headers: authHeaders() });
 
@@ -1305,7 +1305,7 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-/** POST /api/v1/messages -- одне повідомлення/вкладення (ChatScreen.sendMessage, AC-01/AC-10/AC-19). */
+/** POST /api/v1/messages -- одне повідомлення/вкладення (ChatPanel.sendMessage, AC-01/AC-10/AC-19). */
 async function sendChatMessage(input: ComposerSendInput): Promise<SendMessageResult> {
   const attachment = input.attachment
     ? { mediaType: input.attachment.type, base64Data: await fileToBase64(input.attachment) }
@@ -1319,7 +1319,7 @@ async function sendChatMessage(input: ComposerSendInput): Promise<SendMessageRes
 
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
-    // 422/429/503 -- ChatScreen розрізняє через AppError-подібну форму (code+message), Banner-повідомлення.
+    // 422/429/503 -- ChatPanel розрізняє через AppError-подібну форму (code+message), Banner-повідомлення.
     throw new AppError(body?.code ?? 'agent.message_failed', body?.message ?? 'Не вдалося надіслати повідомлення', response.status);
   }
 
@@ -1327,7 +1327,7 @@ async function sendChatMessage(input: ComposerSendInput): Promise<SendMessageRes
   return { reply: turn.reply, proposal: toChatProposal(turn.proposal) };
 }
 
-/** POST /api/v1/proposals/{id}/confirm -- підтвердження пропозиції (ChatScreen.confirmProposal, AC-02). */
+/** POST /api/v1/proposals/{id}/confirm -- підтвердження пропозиції (ChatPanel.confirmProposal, AC-02). */
 async function confirmChatProposal(proposalId: string): Promise<void> {
   const response = await fetch(`/api/v1/proposals/${proposalId}/confirm`, {
     method: 'POST',

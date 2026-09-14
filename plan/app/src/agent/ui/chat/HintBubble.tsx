@@ -5,7 +5,7 @@
 //
 // Правило залежностей (plan/app/CLAUDE.md): чистий presentation-примітив,
 // без domain/ports -- жодних імпортів поза React. Дисмісятиметься ЗВІДКИ
-// (клік ✕ тут, чи фокус Composer) вирішує викликач (ChatScreen, AC-16b) --
+// (клік ✕ тут, чи фокус Composer) вирішує викликач (ChatPanel, AC-16b) --
 // цей компонент лише рендерить сам собою і повідомляє про клік по ✕.
 
 export interface HintBubbleProps {
