@@ -20,7 +20,7 @@ import type { DeckGridItem } from './DeckGrid';
 import type { MetricBlockFormValues } from './MetricBlockForm';
 import type { CardBackData, CardFaceData } from './types';
 
-const CREATE_CARD_LABEL = '+ Створити картку';
+const CREATE_CARD_LABEL = 'Створити картку';
 
 export interface DeckScreenProps {
   /**
@@ -33,7 +33,7 @@ export interface DeckScreenProps {
    * функція (нова лямбда щорендера) спричинить цикл повторних запитів.
    */
   loadCards: () => Promise<DeckGridItem[]>;
-  /** Викликається при кліку на кнопку "+ Створити картку" (ISS-55). */
+  /** Викликається при кліку на кнопку "Створити картку" (ISS-55). */
   onCreateCard: () => void;
   /**
    * Review 2026-09-07 C14 (AC-04): loadCards відхилено з AppError, чий
@@ -120,11 +120,23 @@ export function DeckScreen({
   //
   // D-124 (живе тестування): "Архів" переїхав на Літопис-Аналітику
   // (structure/ui/AnalyticsScreen.tsx), "Вийти" -- у верхній бар (App.tsx,
-  // поруч із шестернею) -- обидва прибрано звідси. Лишається лише "+
-  // Створити картку", центрована й АВТОШИРИНИ (Андрій: "ширина... під текст,
-  // не на всю сторінку") -- `flex justify-center` замість колишнього
-  // `flex-col` (у колонці Button стретчився на всю ширину за замовчуванням
-  // flex-стиснення, не через власний CSS).
+  // поруч із шестернею) -- обидва прибрано звідси. Лишається лише "Створити
+  // картку" (без "+", наступний прохід живого тестування прибрав), центрована
+  // й АВТОШИРИНИ -- `flex justify-center` замість колишнього `flex-col` (у
+  // колонці Button стретчився на всю ширину за замовчуванням flex-стиснення,
+  // не через власний CSS).
+  //
+  // D-125 (живе тестування): "усе пропорційно" -- відступ кнопки від нижньої
+  // панелі має дорівнювати власному відступу самої панелі (py-3, App.tsx's
+  // <nav>) зверху від її кнопок. Раніше тут стояли ВЛАСНІ px-4/py-6/gap-6 --
+  // ЗАЙВІ поверх px-4/py-3, які контентна зона (App.tsx) вже додає навколо
+  // будь-якого напрямку -- подвійний відступ (16+24=40px знизу) не мав
+  // нічого спільного з py-3 (12px) нав-меню. Прибрано власні px-4/py-6
+  // повністю (контентна зона App.tsx вже дає симетричний відступ на всіх
+  // чотирьох станах нижче), gap-6 -> gap-3 (та сама відстань, що від кнопки
+  // до низу) -- і колода, і стрілки ‹/›, і кнопка тепер на ОДНІЙ спільній
+  // одиниці відступу. Картка сама виросла пропорційно (DeckGrid's
+  // `flex-1 min-h-0`, D-122) -- звільнене місце дісталось саме їй.
   //
   // D-121 фікс: `h-full` (не `min-h-screen`) на всіх станах -- той самий
   // фікс, що App.tsx вже отримав (`h-dvh`/`min-h-0`): DeckScreen тепер живе
@@ -150,7 +162,7 @@ export function DeckScreen({
 
   if (state.items.length === 0) {
     return (
-      <div className="flex h-full flex-col gap-6 bg-bg px-4 py-8">
+      <div className="flex h-full flex-col gap-3 bg-bg">
         <EmptyState message="Тут ще немає жодної картки" actionHint="Створіть першу картку, щоб почати" />
         <div className="mt-auto flex justify-center">
           <Button label={CREATE_CARD_LABEL} onClick={onCreateCard} />
@@ -160,7 +172,7 @@ export function DeckScreen({
   }
 
   return (
-    <div className="flex h-full flex-col gap-6 bg-bg px-4 py-6">
+    <div className="flex h-full flex-col gap-3 bg-bg">
       <DeckGrid
         items={state.items}
         renderFront={(item) => (

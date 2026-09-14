@@ -78,7 +78,10 @@ export function DeckGrid({ items, renderFront }: DeckGridProps): JSX.Element {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-xs min-h-0 flex-1 flex-col items-center gap-4">
+    // D-125 (живе тестування): gap-3 (не gap-4) -- та сама одиниця відступу,
+    // що DeckScreen.tsx тепер використовує скрізь (картка/стрілки ‹›/кнопка/
+    // нав-меню -- один спільний ритм, "усе пропорційно").
+    <div className="mx-auto flex w-full max-w-xs min-h-0 flex-1 flex-col items-center gap-3">
       {/* D-121 (живе тестування): 85% висоти видимої зони контенту (батько --
           DeckScreen.tsx, `h-full` замість `min-h-screen`, і сам flex-1 вище)
           -- не фіксований aspect-ratio, як було, картка автоматично

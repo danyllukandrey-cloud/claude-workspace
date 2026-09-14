@@ -208,20 +208,20 @@ test('успішний обмін credential у LoginScreen пише сесію 
 });
 
 // ISS-55 (RED, stage 1/3): App.tsx отримує третій екран 'create' -- клік на
-// кнопку "+ Створити картку" (DeckScreen.onCreateCard, щойно доданий проп)
+// кнопку "Створити картку" (DeckScreen.onCreateCard, щойно доданий проп)
 // перемикає рендер із DeckScreen на CreateCardForm; успішне збереження
 // викликає ін'єктований createCard і повертає назад на 'deck' з повторним
 // GET /cards (loadCards має бути викликаний ще раз -- DeckScreen.loadCards'
 // референційна стабільність, docs у DeckScreen.tsx).
 
-test('ISS-55: клік "+ Створити картку" в Колоді перемикає екран на форму створення картки', async () => {
+test('ISS-55: клік "Створити картку" в Колоді перемикає екран на форму створення картки', async () => {
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
 
   render(<App {...props} />);
   // D-121: дефолтний напрямок -- уже Картки, окремий клік не потрібен.
 
-  const createButton = await screen.findByRole('button', { name: '+ Створити картку' });
+  const createButton = await screen.findByRole('button', { name: 'Створити картку' });
   fireEvent.click(createButton);
 
   // CreateCardForm (T27) -- єдиний, хто рендерить поле "Назва" з написом
@@ -238,7 +238,7 @@ test('ISS-55: успішне створення картки викликає in
   render(<App {...props} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
-  const createButton = await screen.findByRole('button', { name: '+ Створити картку' });
+  const createButton = await screen.findByRole('button', { name: 'Створити картку' });
   fireEvent.click(createButton);
 
   const nameField = await screen.findByLabelText('Назва');
@@ -268,9 +268,9 @@ test('D-121: передня картка колоди одразу показу�
   fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
   // CardFace (T26) -- єдиний, хто рендерить назву картки як <h2>; кнопка
-  // "+ Створити картку" (DeckScreen-специфічна) лишається поряд, не зникає.
+  // "Створити картку" (DeckScreen-специфічна) лишається поряд, не зникає.
   expect(await screen.findByRole('heading', { name: 'Спорт' })).toBeTruthy();
-  expect(screen.getByRole('button', { name: '+ Створити картку' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Створити картку' })).toBeTruthy();
   expect(props.loadCard).toHaveBeenCalledWith('card-1');
 });
 
@@ -377,7 +377,7 @@ test('C11/AC-12: клік "виправити" в історії записів 
 // D-124 (живе тестування): "Архів" переїхав з Колоди на Літопис-Аналітику --
 // клік перемикає ОБИДВА рівні стану одразу (direction на 'cards' +
 // внутрішній Screen на 'archive'), тому тести нижче спершу переходять на
-// "Літопис-Аналітика", а не на "Картки".
+// "Аналітика", а не на "Картки".
 
 test('ISS-55 stage 3+D-124: клік "Архів" на Літопис-Аналітиці перемикає екран на ArchiveScreen', async () => {
   const props = validSessionProps();
@@ -385,7 +385,7 @@ test('ISS-55 stage 3+D-124: клік "Архів" на Літопис-Аналі
   props.loadArchivedCards.mockResolvedValue([{ id: 'card-2', name: 'Читання' }]);
 
   render(<App {...props} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Літопис-Аналітика' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Аналітика' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Архів' }));
 
   // ArchiveScreen (T36) рендерить архівовані тайли через DeckGrid -- "Читання"
@@ -400,7 +400,7 @@ test('ISS-55 stage 3: кнопка "← Назад" в Архіві поверт
   props.loadArchivedCards.mockResolvedValue([]);
 
   render(<App {...props} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Літопис-Аналітика' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Аналітика' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Архів' }));
   await screen.findByText('Архів порожній');
 
@@ -419,7 +419,7 @@ test('ISS-55 stage 3: розархівування картки в Архіві 
   props.loadArchivedCards.mockResolvedValue([{ id: 'card-2', name: 'Читання' }]);
 
   render(<App {...props} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Літопис-Аналітика' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Аналітика' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Архів' }));
   fireEvent.click(await screen.findByText('Читання'));
   fireEvent.click(await screen.findByRole('button', { name: 'Розархівувати' }));
@@ -528,7 +528,7 @@ test('C14/AC-04: 401 (AppError, httpStatus 401) з loadCards стирає сес
 // специфічне для того екрана (текст/поле, унікальне для DeclarationScreen /
 // LayoutBoard / AnalyticsScreen), клік на "Картки" повертає на DeckScreen.
 
-test('T24: після входу видно нижнє нав-меню з 4 пунктами (Декларація/Схема/Літопис-Аналітика/Картки)', async () => {
+test('T24: після входу видно нижнє нав-меню з 4 пунктами (Декларація/Схема/Аналітика/Картки)', async () => {
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([]);
 
@@ -539,7 +539,7 @@ test('T24: після входу видно нижнє нав-меню з 4 пу
 
   expect(await screen.findByRole('button', { name: 'Декларація' })).toBeTruthy();
   expect(await screen.findByRole('button', { name: 'Схема' })).toBeTruthy();
-  expect(await screen.findByRole('button', { name: 'Літопис-Аналітика' })).toBeTruthy();
+  expect(await screen.findByRole('button', { name: 'Аналітика' })).toBeTruthy();
   expect(await screen.findByRole('button', { name: 'Картки' })).toBeTruthy();
 });
 
@@ -588,13 +588,13 @@ test('T24: клік "Схема" в нав-меню перемикає екра�
   expect(props.loadLayout).toHaveBeenCalledTimes(1);
 });
 
-test('T24: клік "Літопис-Аналітика" в нав-меню перемикає екран на AnalyticsScreen (loadAnalytics)', async () => {
+test('T24: клік "Аналітика" в нав-меню перемикає екран на AnalyticsScreen (loadAnalytics)', async () => {
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([]);
 
   render(<App {...props} />);
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Літопис-Аналітика' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Аналітика' }));
 
   // AnalyticsScreen.tsx -- унікальний рядок "N картки виключено з середнього".
   expect(await screen.findByText('0 картки виключено з середнього (немає метрики)')).toBeTruthy();
@@ -617,7 +617,7 @@ test('T24: клік "Картки" повертає на DeckScreen, під-на
   expect(await screen.findByRole('heading', { name: 'Спорт' })).toBeTruthy();
 
   // Під-навігація "Картки" (create) все ще досяжна під тим самим нав-меню.
-  fireEvent.click(await screen.findByRole('button', { name: '+ Створити картку' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Створити картку' }));
   expect(await screen.findByRole('heading', { name: 'Нова картка' })).toBeTruthy();
 });
 

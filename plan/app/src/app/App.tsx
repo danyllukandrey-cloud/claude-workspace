@@ -364,7 +364,11 @@ export function App({
           )}
         </div>
 
-        <div className="min-h-0 overflow-y-auto px-4 py-4 sm:px-6 md:col-start-2 md:row-start-2">
+        {/* D-125 (живе тестування): py-3 (не py-4) -- узгоджено з <nav>'s
+            власним py-3 нижче ("усе пропорційно": відступ контентної зони
+            від сусідніх панелей дорівнює власному внутрішньому відступу
+            панелей від їхніх кнопок, та сама одиниця виміру скрізь). */}
+        <div className="min-h-0 overflow-y-auto px-4 py-3 sm:px-6 md:col-start-2 md:row-start-2">
           {direction === 'declaration' && <DeclarationScreen loadStructure={loadStructure} onSave={onSaveDeclaration} />}
           {direction === 'layout' && (
             <LayoutBoard
@@ -477,7 +481,10 @@ export function App({
         <nav className="flex flex-wrap justify-center gap-2 border-t border-border bg-surface-solid px-3 py-3 sm:gap-3 sm:px-4 md:col-start-2 md:row-start-3">
           <Button label="Декларація" onClick={() => setDirection('declaration')} />
           <Button label="Схема" onClick={() => setDirection('layout')} />
-          <Button label="Літопис-Аналітика" onClick={() => setDirection('analytics')} />
+          {/* D-125 (живе тестування): "Літопис-Аналітика" -> "Аналітика" --
+              коротший підпис, той самий напрямок ('analytics') і той самий
+              AnalyticsScreen під ним, назва напрямку в коді не змінилась. */}
+          <Button label="Аналітика" onClick={() => setDirection('analytics')} />
           <Button label="Картки" onClick={() => setDirection('cards')} />
         </nav>
 

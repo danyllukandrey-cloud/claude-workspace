@@ -85,19 +85,19 @@ test('error: реджект без Error-повідомлення падає н�
   expect(await screen.findByText('Не вдалося завантажити колоду карток')).toBeTruthy();
 });
 
-test('ISS-55: empty-стан показує кнопку "+ Створити картку", клік викликає onCreateCard', async () => {
+test('ISS-55: empty-стан показує кнопку "Створити картку", клік викликає onCreateCard', async () => {
   const onCreateCard = vi.fn();
   const props = baseProps({ loadCards: vi.fn().mockResolvedValue([]), onCreateCard });
 
   render(<DeckScreen {...props} />);
 
   await screen.findByText('Тут ще немає жодної картки');
-  fireEvent.click(screen.getByRole('button', { name: '+ Створити картку' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Створити картку' }));
 
   expect(onCreateCard).toHaveBeenCalledTimes(1);
 });
 
-test('ISS-55: default-стан (DeckGrid з картками) показує кнопку "+ Створити картку" поряд з переднью карткою', async () => {
+test('ISS-55: default-стан (DeckGrid з картками) показує кнопку "Створити картку" поряд з переднью карткою', async () => {
   const items = [{ id: 'card-1', name: 'Спорт' }];
   const onCreateCard = vi.fn();
   const props = baseProps({ loadCards: vi.fn().mockResolvedValue(items), onCreateCard });
@@ -105,7 +105,7 @@ test('ISS-55: default-стан (DeckGrid з картками) показує к�
   render(<DeckScreen {...props} />);
 
   await screen.findByRole('heading', { name: 'Спорт' });
-  fireEvent.click(screen.getByRole('button', { name: '+ Створити картку' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Створити картку' }));
 
   expect(onCreateCard).toHaveBeenCalledTimes(1);
 });
@@ -115,14 +115,14 @@ test('ISS-55: default-стан (DeckGrid з картками) показує к�
 // (App.test.tsx). Колишні ISS-55 stage 3 / ISS-58 тести тут прибрано --
 // DeckScreen більше не рендерить ці кнопки взагалі.
 
-test('D-124: єдина кнопка внизу ("+ Створити картку") -- автоширини, не на всю сторінку', async () => {
+test('D-124: єдина кнопка внизу ("Створити картку") -- автоширини, не на всю сторінку', async () => {
   const items = [{ id: 'card-1', name: 'Спорт' }];
   const props = baseProps({ loadCards: vi.fn().mockResolvedValue(items) });
 
   render(<DeckScreen {...props} />);
 
   await screen.findByRole('heading', { name: 'Спорт' });
-  const button = screen.getByRole('button', { name: '+ Створити картку' });
+  const button = screen.getByRole('button', { name: 'Створити картку' });
 
   // Автоширини -- обгортка `flex justify-center`, НЕ `flex-col` (де flex
   // за замовчуванням стретчив би дитину на всю ширину колонки). Пінимо сам
