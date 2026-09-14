@@ -26,6 +26,13 @@ export interface MessageBubbleProps {
 // user, `justify-start`+відступ зліва для agent) підказує напрямок.
 // Вирівнювання ТЕКСТУ всередині (`text-right`/`text-left`) -- окрема вісь
 // від позиції самої бульбашки, обидві тепер узгоджені з роллю.
+//
+// `whitespace-pre-line` (D-121, живе тестування -- заміна вітального тексту,
+// onboarding-handler.ts): звичайний HTML/CSS за замовчуванням схлопує `\n`
+// у пробіл -- багатоабзацний вітальний текст (порожні рядки між абзацами)
+// без цього показав би однією суцільною лінією. Не `pre-wrap` -- зайві
+// послідовні пробіли (якщо колись трапляться у вмісті) і далі схлопуються,
+// зберігаються лише самі переноси рядків.
 export function MessageBubble({ message }: MessageBubbleProps): JSX.Element {
   const isUser = message.role === 'user';
   return (
@@ -33,8 +40,8 @@ export function MessageBubble({ message }: MessageBubbleProps): JSX.Element {
       <div
         className={
           isUser
-            ? 'w-[calc(100%-0.5rem)] break-words rounded-control bg-accent-soft px-3.5 py-2.5 text-right text-sm text-ink'
-            : 'w-[calc(100%-0.5rem)] break-words rounded-control bg-surface-solid px-3.5 py-2.5 text-left text-sm text-ink shadow-soft'
+            ? 'w-[calc(100%-0.5rem)] whitespace-pre-line break-words rounded-control bg-accent-soft px-3.5 py-2.5 text-right text-sm text-ink'
+            : 'w-[calc(100%-0.5rem)] whitespace-pre-line break-words rounded-control bg-surface-solid px-3.5 py-2.5 text-left text-sm text-ink shadow-soft'
         }
       >
         {message.content}
