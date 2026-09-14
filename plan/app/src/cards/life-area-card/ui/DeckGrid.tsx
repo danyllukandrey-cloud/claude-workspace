@@ -2,18 +2,25 @@
 // банківські картки перелистуються в додатках"). Підтверджено раніше
 // (docs/z-archive/life-area-card-design-review.md, ескіз №3 "Стос карток зі
 // свайпом") -- сам концепт лишався незреалізованим, доки живе тестування
-// сьогодні (2026-09-13) не показало, що замість нього стоїть звичайна сітка.
+// 2026-09-13 не показало, що замість нього стоїть звичайна сітка.
 //
-// Передня картка -- на весь розмір, клікабельна (відкриває картку). Позаду
-// визирають ще до MAX_PEEK карток, кожна зсунута по діагоналі й трохи менша
-// -- клік по будь-якій з них не відкриває картку, а лише переносить її
-// наперед (той самий жест, що "перегорнути колоду"). Кнопки ‹/› -- те саме
-// перемикання без свайпу (доступність, клавіатура, тести).
+// Позаду передньої визирають ще до MAX_PEEK карток, кожна зсунута по
+// діагоналі й трохи менша -- клік по будь-якій з них не відкриває картку, а
+// лише переносить її наперед (той самий жест, що "перегорнути колоду").
+// Кнопки ‹/› -- те саме перемикання без свайпу (доступність, клавіатура,
+// тести). Кругова 3D-розкладка (D-121, "картки мають літати по колу навколо
+// горизонтальної осі") -- ОКРЕМИЙ наступний крок, тут лишається попередній
+// діагональний зсув.
 //
-// Навмисно узагальнений компонент (ISS-46): нічого не знає про статус картки
-// (активна / архівна) -- лише рендерить items стосом і повідомляє про клік
-// через onOpen(id). Яку саме колекцію показати вирішує виклик пропами
-// items/onOpen, а не сам DeckGrid.
+// D-121 (живе тестування): передня картка більше НЕ кнопка-назва, що
+// "відкриває" картку окремим екраном -- Андрій прямо сказав, цей крок
+// зайвий. Замість `onOpen` -- render-prop `renderFront`: DeckGrid сам не
+// знає, ЩО саме показати для передньої картки (ISS-46, "нічого не знає про
+// статус картки" -- той самий принцип узагальненості тепер поширюється й на
+// вміст переднього шару). DeckScreen.tsx передає сюди DeckFrontCard (повний
+// CardShell, перевертається на місці); ArchiveScreen.tsx і далі передає
+// просту кнопку-назву (`onOpen`-подібну поведінку тримає сам виклик, не
+// DeckGrid) -- обидва лишаються сумісні з тим самим компонентом.
 //
 // Правило залежностей (plan/app/CLAUDE.md): лише Tailwind-класи з токенів
 // D-120 (plan/app/src/app/theme.css) -- жодного domain, жодного ports/app.
@@ -21,33 +28,39 @@
 // обчислюється з індексу картки в стосі, Tailwind не виражає довільних чисел.
 
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 
 export interface DeckGridItem {
-  /** Ідентифікатор картки -- прокидається в onOpen при кліку на передню картку. */
+  /** Ідентифікатор картки -- прокидається в renderFront для передньої картки. */
   id: string;
-  /** Назва картки -- підпис картки в стосі. */
+  /** Назва картки -- підпис картки в стосі (завжди видима на задніх шарах, D-121 п.4). */
   name: string;
 }
 
 export interface DeckGridProps {
   /** Картки для показу стосом. Порожній масив -- відповідальність виклику (EmptyState), не DeckGrid. */
   items: DeckGridItem[];
-  /** Викликається з id картки, коли користувач відкриває ПЕРЕДНЮ картку. */
-  onOpen: (id: string) => void;
+  /**
+   * Рендерить вміст ПЕРЕДНЬОЇ картки для даного item. DeckGrid сам не знає,
+   * що це -- кнопка-назва (ArchiveScreen) чи повний CardShell (DeckScreen,
+   * D-121) -- лишається узагальненим компонентом (ISS-46).
+   */
+  renderFront: (item: DeckGridItem) => ReactNode;
 }
 
 /** Скільки карток позаду передньої ще визирають (сам скетч показує 3). */
 const MAX_PEEK = 3;
 
-export function DeckGrid({ items, onOpen }: DeckGridProps): JSX.Element {
+export function DeckGrid({ items, renderFront }: DeckGridProps): JSX.Element {
   const [frontIndex, setFrontIndex] = useState(0);
 
   if (items.length === 0) {
     return <></>;
   }
 
-  // Клемп на випадок, якщо items став коротшим ззовні (напр. архівація)
-  // під час перегляду стосу, а frontIndex лишився вказувати за межі.
+  // Клемп на випадок, якщо items став коротшим ззовні (напр. архівація
+  // передньої картки, D-121 -- DeckFrontCard.onArchived перезавантажує
+  // колоду) під час перегляду стосу, а frontIndex лишився вказувати за межі.
   const safeFront = Math.min(frontIndex, items.length - 1);
 
   const layerCount = Math.min(items.length, MAX_PEEK + 1);
@@ -65,16 +78,33 @@ export function DeckGrid({ items, onOpen }: DeckGridProps): JSX.Element {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-xs flex-col items-center gap-4">
-      <div className="relative aspect-[3/4] w-full">
+    <div className="mx-auto flex w-full max-w-xs min-h-0 flex-1 flex-col items-center gap-4">
+      {/* D-121 (живе тестування): 85% висоти видимої зони контенту (батько --
+          DeckScreen.tsx, `h-full` замість `min-h-screen`, і сам flex-1 вище)
+          -- не фіксований aspect-ratio, як було, картка автоматично
+          підлаштовується під висоту сторінки. */}
+      <div className="relative h-[85%] w-full">
         {/* Задні картки першими в DOM -- передня (layer 0) малюється останньою, зверху. */}
         {[...layers].reverse().map(({ layer, item }) => {
           const isFront = layer === 0;
+
+          if (isFront) {
+            // D-121: передня картка -- це те, що повернув renderFront (повний
+            // CardShell чи кнопка-назва залежно від виклику), не власна кнопка
+            // DeckGrid. key={item.id} на цьому wrapper -- React ремонтує
+            // DeckFrontCard при кожній зміні передньої картки (скидає `side`).
+            return (
+              <div key={item.id} style={{ zIndex: layerCount }} className="absolute inset-0">
+                {renderFront(item)}
+              </div>
+            );
+          }
+
           return (
             <button
               key={item.id}
               type="button"
-              onClick={() => (isFront ? onOpen(item.id) : setFrontIndex(items.indexOf(item)))}
+              onClick={() => setFrontIndex(items.indexOf(item))}
               style={{
                 transform: `translate(${layer * 10}px, ${-layer * 12}px) scale(${1 - layer * 0.05})`,
                 zIndex: layerCount - layer,

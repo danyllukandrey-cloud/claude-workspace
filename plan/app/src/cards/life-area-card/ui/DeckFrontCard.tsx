@@ -1,0 +1,96 @@
+// Передня картка колоди -- ПОВНИЙ CardShell (лицьова/зворот) на місці, без
+// окремого екрана "відкрити картку" (D-121, живе тестування: "Картка в
+// колоді має одразу бути готова так ніби вона відкрита, і перевертатись на
+// протилежний бік також"). Раніше цю композицію ніс окремий CardDetailScreen
+// (ISS-55) -- прибраний разом із цією зміною; App.tsx більше не має стану
+// 'detail', DeckGrid рендерить цей компонент прямо для передньої картки
+// (DeckGrid.tsx, `renderFront`).
+//
+// Ключується по cardId у DeckGrid (`key={item.id}` на батьківському елементі
+// шару) -- React сам ремонтує цей компонент при зміні передньої картки, тож
+// `side` (лицьова/зворот) щоразу стартує заново з 'face' без явного ефекту
+// скидання (той самий трюк, що React docs "resetting state with a key").
+//
+// ISS-45/DI (plan/app/CLAUDE.md "Правило залежностей"): жодного fetch тут --
+// loadCard/loadBack і опційні дії -- ін'єктовані пропи-функції, ЗВ'ЯЗАНІ з
+// cardId (той самий контракт, що AppProps уже визначає -- App.tsx раніше сам
+// прив'язував screen.cardId, тепер це робить цей компонент).
+import { useCallback, useState } from 'react';
+import { CardShell } from '../../../shared/ui';
+import { CardBack } from './CardBack';
+import { CardFace } from './CardFace';
+import type { MetricBlockFormValues } from './MetricBlockForm';
+import type { CardBackData, CardFaceData } from './types';
+
+export interface DeckFrontCardProps {
+  cardId: string;
+  /** Завантажує дані лицьової сторони цієї картки. */
+  loadCard: (cardId: string) => Promise<CardFaceData>;
+  /** Завантажує дані звороту цієї картки. */
+  loadBack: (cardId: string) => Promise<CardBackData>;
+  /** Зберігає нову назву картки (AC-19). */
+  onRename: (cardId: string, name: string) => Promise<void>;
+  /** ISS-56: підтверджує архівацію картки. */
+  onArchive: (cardId: string) => Promise<void>;
+  /**
+   * ISS-56 (перенесено з App.tsx): картку архівовано -- раніше сигнал ішов
+   * "іди до Колоди" (окремий екран зникав сам собою); тепер картки й так
+   * немає куди "йти" -- сигнал переадресовано батькові (DeckScreen) як
+   * "перезавантаж колоду", щойно заархівована картка зникає зі стосу.
+   */
+  onArchived: () => void;
+  /** Review C10 (AC-03): зберігає Опис/markFilled -- опційно, як і в CardFace. */
+  onUpdateDescription?: (cardId: string, input: { description: string; markFilled: boolean }) => Promise<void>;
+  /** AC-12: позначити запис історії помилковим -- опційно, як і в CardBack. */
+  onFlagEntry?: (cardId: string, entryId: string) => Promise<CardBackData>;
+  /** ISS-60: створює новий блок-метрику -- опційно, як і в CardBack. */
+  onCreateMetricBlock?: (cardId: string, values: MetricBlockFormValues) => Promise<void>;
+}
+
+type Side = 'face' | 'back';
+
+export function DeckFrontCard({
+  cardId,
+  loadCard,
+  loadBack,
+  onRename,
+  onArchive,
+  onArchived,
+  onUpdateDescription,
+  onFlagEntry,
+  onCreateMetricBlock,
+}: DeckFrontCardProps): JSX.Element {
+  const [side, setSide] = useState<Side>('face');
+
+  // Референційна стабільність (Review 2026-09-07 E, той самий контракт, що
+  // App.tsx раніше тримав для CardDetailScreen -- loadCardForDetail/
+  // loadBackForDetail) -- CardFace/CardBack перезапускають свій
+  // завантажувальний ефект на КОЖНУ зміну посилання loadCard/loadBack, тож
+  // нестабільна функція (нова лямбда щорендера) спричинила б зайві запити.
+  const loadFrontCard = useCallback(() => loadCard(cardId), [cardId, loadCard]);
+  const loadFrontBack = useCallback(() => loadBack(cardId), [cardId, loadBack]);
+
+  return (
+    <CardShell
+      isFlipped={side === 'back'}
+      front={
+        <CardFace
+          loadCard={loadFrontCard}
+          onFlip={() => setSide('back')}
+          onRename={(name) => onRename(cardId, name)}
+          onArchive={() => onArchive(cardId)}
+          onArchived={onArchived}
+          onUpdateDescription={onUpdateDescription ? (input) => onUpdateDescription(cardId, input) : undefined}
+        />
+      }
+      back={
+        <CardBack
+          loadBack={loadFrontBack}
+          onFlip={() => setSide('face')}
+          onFlagEntry={onFlagEntry ? (entryId) => onFlagEntry(cardId, entryId) : undefined}
+          onCreateMetricBlock={onCreateMetricBlock ? (values) => onCreateMetricBlock(cardId, values) : undefined}
+        />
+      }
+    />
+  );
+}

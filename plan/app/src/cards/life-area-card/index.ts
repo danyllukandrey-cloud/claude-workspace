@@ -13,8 +13,10 @@ export type { DeckGridItem } from './ui/DeckGrid';
 export { CreateCardForm } from './ui/CreateCardForm';
 export type { CreateCardFormProps, CreateCardFormInput } from './ui/CreateCardForm';
 
-export { CardDetailScreen } from './ui/CardDetailScreen';
-export type { CardDetailScreenProps } from './ui/CardDetailScreen';
+// D-121 (живе тестування): CardDetailScreen прибрано -- окремий екран
+// "відкрити картку" скасовано, DeckFrontCard.tsx (внутрішня деталь
+// DeckScreen/DeckGrid, публічно не експортується) несе ту саму композицію
+// прямо всередині передньої картки колоди.
 export type { CardBackData, CardFaceData, EntryViewModel, MetricBlockViewModel } from './ui/types';
 export type { MetricBlockFormValues } from './ui/MetricBlockForm';
 

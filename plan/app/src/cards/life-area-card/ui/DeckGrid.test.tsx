@@ -1,14 +1,27 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { DeckGrid } from './DeckGrid';
 
-test('DeckGrid рендерить тайл для кожної картки й викликає onOpen з її id при кліку на передню картку', () => {
+// D-121 (живе тестування): renderFront замінює колишній onOpen -- DeckGrid
+// сам не знає, що показати для передньої картки (ISS-46, узагальненість),
+// тому тести рендерять просту кнопку через renderFront, той самий підхід,
+// що ArchiveScreen.tsx реально використовує (DeckScreen.tsx передає
+// DeckFrontCard, окремо протестований у DeckFrontCard.test.tsx).
+function nameButtonRenderFront(onOpen: (id: string) => void) {
+  return (item: { id: string; name: string }) => (
+    <button type="button" onClick={() => onOpen(item.id)}>
+      {item.name}
+    </button>
+  );
+}
+
+test('DeckGrid рендерить renderFront для передньої картки й підпис-тайл для задніх', () => {
   const items = [
     { id: 'card-1', name: 'Спорт' },
     { id: 'card-2', name: 'Навчання' },
   ];
   const onOpen = vi.fn();
 
-  render(<DeckGrid items={items} onOpen={onOpen} />);
+  render(<DeckGrid items={items} renderFront={nameButtonRenderFront(onOpen)} />);
 
   expect(screen.getByText('Спорт')).toBeTruthy();
   expect(screen.getByText('Навчання')).toBeTruthy();
@@ -19,20 +32,18 @@ test('DeckGrid рендерить тайл для кожної картки й �
   expect(onOpen).toHaveBeenCalledWith('card-1');
 });
 
-// Генералізація (ISS-46): T36 перевикористає цей самий DeckGrid для архіву,
-// лише передавши інші items/onOpen -- сам компонент не знає про статус картки.
+// Генералізація (ISS-46): T36/D-121 -- той самий DeckGrid для архіву й для
+// повного CardFace/CardBack DeckScreen, лише передавши інший renderFront.
 test('DeckGrid не рендерить жодного тайла для порожнього items', () => {
-  const onOpen = vi.fn();
-
-  render(<DeckGrid items={[]} onOpen={onOpen} />);
+  render(<DeckGrid items={[]} renderFront={nameButtonRenderFront(vi.fn())} />);
 
   expect(screen.queryByRole('button')).toBeNull();
 });
 
 // Стос зі свайпом (Андрій, скетч "як банківські картки перелистуються") --
 // клік по картці, що ВИЗИРАЄ позаду передньої, переносить її наперед, а НЕ
-// відкриває картку -- це окремий жест від відкриття.
-test('клік по картці позаду передньої переносить її наперед і НЕ викликає onOpen', () => {
+// рендерить renderFront для неї -- це окремий жест від "стати передньою".
+test('клік по картці позаду передньої переносить її наперед, не рендерить для неї renderFront', () => {
   const items = [
     { id: 'card-1', name: 'Спорт' },
     { id: 'card-2', name: 'Навчання' },
@@ -40,25 +51,25 @@ test('клік по картці позаду передньої перенос�
   ];
   const onOpen = vi.fn();
 
-  render(<DeckGrid items={items} onOpen={onOpen} />);
+  render(<DeckGrid items={items} renderFront={nameButtonRenderFront(onOpen)} />);
 
   fireEvent.click(screen.getByText('Навчання'));
 
   expect(onOpen).not.toHaveBeenCalled();
 
-  // "Навчання" тепер передня -- клік по ній відкриває картку.
+  // "Навчання" тепер передня -- клік по ній тепер іде через renderFront.
   fireEvent.click(screen.getByText('Навчання'));
   expect(onOpen).toHaveBeenCalledWith('card-2');
 });
 
-test('кнопки ‹/› перегортають колоду по колу без виклику onOpen', () => {
+test('кнопки ‹/› перегортають колоду по колу', () => {
   const items = [
     { id: 'card-1', name: 'Спорт' },
     { id: 'card-2', name: 'Навчання' },
   ];
   const onOpen = vi.fn();
 
-  render(<DeckGrid items={items} onOpen={onOpen} />);
+  render(<DeckGrid items={items} renderFront={nameButtonRenderFront(onOpen)} />);
 
   fireEvent.click(screen.getByRole('button', { name: 'Наступна картка' }));
   // "Навчання" тепер передня.
@@ -77,7 +88,7 @@ test('кнопки ‹/› перегортають колоду по колу �
 test('кнопки перегортання не рендеряться, коли картка лише одна', () => {
   const items = [{ id: 'card-1', name: 'Спорт' }];
 
-  render(<DeckGrid items={items} onOpen={vi.fn()} />);
+  render(<DeckGrid items={items} renderFront={nameButtonRenderFront(vi.fn())} />);
 
   expect(screen.queryByRole('button', { name: 'Наступна картка' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Попередня картка' })).toBeNull();

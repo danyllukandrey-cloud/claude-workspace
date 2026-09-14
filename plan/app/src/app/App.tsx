@@ -6,7 +6,7 @@
 // localStorage['plan.jwt'] і Date.now() (composition root -- main.tsx).
 
 import { useCallback, useEffect, useState } from 'react';
-import { ArchiveScreen, CardDetailScreen, CreateCardForm, DeckScreen } from '../cards/life-area-card';
+import { ArchiveScreen, CreateCardForm, DeckScreen } from '../cards/life-area-card';
 import type { CardBackData, CardFaceData, DeckGridItem, EntryViewModel, MetricBlockFormValues } from '../cards/life-area-card';
 import { AnalyticsScreen, DeclarationScreen, LayoutBoard } from '../structure';
 import type {
@@ -135,7 +135,10 @@ export interface AppProps {
   onDeleteAccount: (confirmed: boolean) => Promise<void>;
 }
 
-type Screen = { screen: 'deck' } | { screen: 'create' } | { screen: 'detail'; cardId: string } | { screen: 'archive' };
+// D-121 (живе тестування): 'detail' прибрано -- відкриття картки окремим
+// екраном скасоване, передня картка в DeckScreen/DeckGrid сама несе повний
+// вміст (CardFace/CardBack) на місці. CardDetailScreen.tsx видалено.
+type Screen = { screen: 'deck' } | { screen: 'create' } | { screen: 'archive' };
 
 // T24 (sad.md §5 "Навігація (чотири напрямки)") + T29 (агент, D-25 "єдиний
 // канал прямого вводу"): постійне нижнє нав-меню, незалежне від Screen
@@ -224,17 +227,12 @@ export function App({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [direction]);
 
-  // Review 2026-09-07 E (T52): "loadCard/loadBack порушують задокументований
-  // контракт референційної стабільності" (той самий контракт, що
-  // DeckScreen.loadCards уже документує -- DeckScreen.tsx, "Контракт: має
-  // бути референційно стабільною"). Інлайн-лямбди `() => loadCard(screen.cardId)`
-  // прямо в JSX перестворювались щорендера App -- CardFace/CardBack
-  // перезапускали свій useEffect(..., [loadCard]) на КОЖНУ таку зміну
-  // посилання, не лише при реальній навігації на іншу картку. useCallback,
-  // ключ -- сам cardId (з'явиться поза 'detail' -- undefined, стабільно).
-  const detailCardId = screen.screen === 'detail' ? screen.cardId : undefined;
-  const loadCardForDetail = useCallback(() => loadCard(detailCardId as string), [detailCardId, loadCard]);
-  const loadBackForDetail = useCallback(() => loadBack(detailCardId as string), [detailCardId, loadBack]);
+  // D-121 (живе тестування): Review 2026-09-07 E's "loadCard/loadBack
+  // референційна стабільність" фікс переїхав разом із композицією -- App.tsx
+  // більше не прив'язує loadCard/loadBack до жодного cardId сам (не було
+  // жодного окремого "екрана деталей" з одним обраним screen.cardId).
+  // DeckScreen/DeckFrontCard.tsx тепер самі відповідають за useCallback,
+  // ключ -- cardId ПЕРЕДНЬОЇ картки колоди (там і напис "той самий контракт").
 
   // Review 2026-09-07, post-ship follow-up review (E, referential stability):
   // onLogout/onSessionExpired do the exact same thing (clear session, reset
@@ -329,19 +327,6 @@ export function App({
               onCancel={() => setScreen({ screen: 'deck' })}
             />
           )}
-          {direction === 'cards' && screen.screen === 'detail' && (
-            <CardDetailScreen
-              loadCard={loadCardForDetail}
-              loadBack={loadBackForDetail}
-              onRename={(name) => onRename(screen.cardId, name)}
-              onBack={() => setScreen({ screen: 'deck' })}
-              onArchive={() => archiveCard(screen.cardId)}
-              onArchived={() => setScreen({ screen: 'deck' })}
-              onCreateMetricBlock={(values) => createMetricBlock(screen.cardId, values)}
-              onUpdateDescription={(input) => onUpdateDescription(screen.cardId, input)}
-              onFlagEntry={(entryId) => onFlagEntry(screen.cardId, entryId)}
-            />
-          )}
           {direction === 'cards' && screen.screen === 'archive' && (
             <div className="flex flex-col gap-4">
               <Button label="← Назад" onClick={() => setScreen({ screen: 'deck' })} />
@@ -355,7 +340,6 @@ export function App({
           {direction === 'cards' && screen.screen === 'deck' && (
             <DeckScreen
               loadCards={loadCards}
-              onOpenCard={(cardId) => setScreen({ screen: 'detail', cardId })}
               onCreateCard={() => setScreen({ screen: 'create' })}
               onOpenArchive={() => setScreen({ screen: 'archive' })}
               onLogout={endSession}
@@ -364,6 +348,17 @@ export function App({
               // тримати її в сховищі означає знову впертись у 401 наступного
               // разу).
               onSessionExpired={endSession}
+              // D-121 (живе тестування): ті самі cardId-параметризовані
+              // AppProps, що раніше йшли лише в окремий CardDetailScreen
+              // (прибраний), тепер прокидаються прямо сюди без обгортання --
+              // DeckScreen/DeckFrontCard самі в'яжуть їх до передньої картки.
+              loadCard={loadCard}
+              loadBack={loadBack}
+              onRename={onRename}
+              onArchive={archiveCard}
+              onUpdateDescription={onUpdateDescription}
+              onFlagEntry={onFlagEntry}
+              onCreateMetricBlock={createMetricBlock}
             />
           )}
         </div>

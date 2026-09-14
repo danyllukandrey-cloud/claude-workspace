@@ -2,8 +2,13 @@
 // перегляд однієї архівованої картки з можливістю розархівувати (AC-17).
 //
 // default стан ПЕРЕВИКОРИСТОВУЄ наявний DeckGrid (T25, ISS-46) у режимі
-// "архів" -- DeckGrid навмисно узагальнений (items+onOpen, нічого не знає
-// про статус картки), тож нової сітки тайлів тут не пишемо. card-view --
+// "архів" -- DeckGrid навмисно узагальнений (items+renderFront, нічого не
+// знає про статус картки), тож нової сітки тайлів тут не пишемо. D-121
+// (живе тестування): передня картка в основній колоді (DeckScreen.tsx)
+// перестала бути кнопкою-назвою, що "відкриває" картку окремим екраном --
+// але Архів свідомо НЕ зачіпається цим рішенням (Андрій: "поки не чіпаю"),
+// тож тут renderFront і далі повертає просту кнопку-назву з тим самим
+// onOpen-подібним кліком, що раніше ніс сам DeckGrid. card-view --
 // CardShell (shared/ui) + Button "Розархівувати" (AC-17) + read-only історія
 // записів (AC-18: "історія записів видима"); поки картка не розархівована,
 // новий запис на ній недоступний (тут немає жодної дії його додати), і сама
@@ -212,7 +217,18 @@ export function ArchiveScreen({
   return (
     <div className="flex flex-col gap-4 p-4">
       <h1 className="font-display text-xl font-bold text-ink">Архів карток</h1>
-      <DeckGrid items={items} onOpen={handleOpen} />
+      <DeckGrid
+        items={items}
+        renderFront={(item) => (
+          <button
+            type="button"
+            onClick={() => handleOpen(item.id)}
+            className="absolute inset-0 flex items-start rounded-card border border-border bg-surface-solid p-5 text-left font-display text-lg font-semibold text-ink shadow-soft transition-transform hover:-translate-y-0.5"
+          >
+            {item.name}
+          </button>
+        )}
+      />
     </div>
   );
 }
