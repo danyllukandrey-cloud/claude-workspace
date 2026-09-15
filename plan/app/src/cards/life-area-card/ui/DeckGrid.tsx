@@ -111,11 +111,15 @@ export function DeckGrid({ items, renderFront }: DeckGridProps): JSX.Element {
             <div
               key={item.id}
               style={{
-                transform: `translate(${layer * 10}px, ${-layer * 12}px) scale(${1 - layer * 0.05})`,
+                // Живе тестування (Андрій): попередні зсуви (10px/12px/5%)
+                // були настільки дрібні, що анімація перемикання читалась як
+                // "смикання", не як реальний рух картки -- збільшено, щоб
+                // політ під низ колоди був видимим неозброєним оком.
+                transform: `translate(${layer * 26}px, ${-layer * 30}px) scale(${1 - layer * 0.09})`,
                 zIndex: layerCount - layer,
                 opacity: 1 - layer * 0.16,
               }}
-              className="absolute inset-0 transition-[transform,opacity] duration-300 ease-out"
+              className="absolute inset-0 transition-[transform,opacity] duration-500 ease-out"
             >
               {isFront ? (
                 // D-121: передня картка -- це те, що повернув renderFront
