@@ -236,6 +236,11 @@ export function App({
   // екрані: пережити перемикання екранів. Найновіший запис -- ПЕРШИЙ
   // (AnalyticsScreen.tsx показує його зверху, скролить туди при появі).
   const [analyticsReportEntries, setAnalyticsReportEntries] = useState<string[]>([]);
+  // Живе тестування (Андрій, перевірка порядку): однаковий текст "звіт за
+  // запитом" на кожному записі унеможливлював переконатись оком, який саме
+  // запис свіжіший -- лічильник (з 1) робить записи розрізненими без вигадки
+  // реальних даних (Андрій ще опише справжню логіку звіту пізніше).
+  const analyticsReportCountRef = useRef(0);
   // D-123 (живе тестування): меню налаштувань у верхньому барі -- три
   // напрямки (agent-rules/agent-account/agent-log), що ISS-117 називав
   // "другорядними", переїхали з рівного нижнього нав-меню сюди, під значок
@@ -455,7 +460,10 @@ export function App({
                 setScreen({ screen: 'archive', from: 'analytics' });
               }}
               reportEntries={analyticsReportEntries}
-              onAddReportEntry={() => setAnalyticsReportEntries((prev) => ['звіт за запитом', ...prev])}
+              onAddReportEntry={() => {
+                analyticsReportCountRef.current += 1;
+                setAnalyticsReportEntries((prev) => [`звіт за запитом №${analyticsReportCountRef.current}`, ...prev]);
+              }}
             />
           )}
 
