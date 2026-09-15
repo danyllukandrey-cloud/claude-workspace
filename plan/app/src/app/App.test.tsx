@@ -420,6 +420,27 @@ test('Задача 13: кнопка "← Назад" в Архіві, відкр
   expect(props.loadAnalytics).toHaveBeenCalledTimes(2);
 });
 
+// Живе тестування (Андрій): "При натисканні на картки я попадаю в архів
+// чомусь" -- "Картки" раніше лише перемикав direction, а Screen лишався
+// 'archive' (D-111: навмисно, "Картки не скидає під-навігацію create/detail/
+// archive"), тому клік із Архіву повертав в Архів. Тепер "Картки" ЗАВЖДИ
+// скидає й Screen на 'deck' -- цей тест пінить саме реальний баг-сценарій.
+test('живе тестування: клік "Картки" з Архіву (відкритого з Аналітики) веде на Колоду, не лишає в Архіві', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
+  props.loadArchivedCards.mockResolvedValue([]);
+
+  render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Аналітика' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Архів' }));
+  await screen.findByText('Архів порожній');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Картки' }));
+
+  expect(await screen.findByRole('heading', { name: 'Спорт' })).toBeTruthy();
+  expect(screen.queryByText('Архів порожній')).toBeNull();
+});
+
 test('ISS-55 stage 3: розархівування картки в Архіві викликає injected onRestoreCard(cardId)', async () => {
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([]);

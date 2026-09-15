@@ -74,7 +74,7 @@ test('D-124: кнопка "Архів" видима й викликає injected
   expect(props.onOpenArchive).toHaveBeenCalledTimes(1);
 });
 
-test('вимога 16/18: "Архів" і "Звіт" плавають знизу зліва, поза звичайним потоком (не на всю ширину)', async () => {
+test('вимога 16/18: "Архів" і "Звіт" плавають знизу справа, поза звичайним потоком (не на всю ширину)', async () => {
   const props = baseProps();
   render(<AnalyticsScreen {...props} />);
 
@@ -90,22 +90,26 @@ test('вимога 16/18: "Архів" і "Звіт" плавають знизу
   // елемент flex-колонки (там кнопка розтяглась би на всю ширину).
   expect(floatingWrapper?.className).toMatch(/\babsolute\b/);
   expect(floatingWrapper?.className).toMatch(/\bbottom-4\b/);
-  expect(floatingWrapper?.className).toMatch(/\bleft-4\b/);
+  expect(floatingWrapper?.className).toMatch(/\bright-4\b/);
 });
 
-test('вимога 18: клік по "Звіт" показує заглушку "звіт за запитом"', async () => {
+test('живе тестування: кожен клік по "Звіт" ДОДАЄ новий запис у стрічку Зони 3, не замінює попередній', async () => {
   const props = baseProps();
   render(<AnalyticsScreen {...props} />);
 
   await screen.findByText(/62%/);
 
   expect(screen.queryByText(/звіт за запитом/i)).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Звіт' }));
-  expect(screen.getByText(/звіт за запитом/i)).toBeTruthy();
 
-  // Повторний клік ховає заглушку назад.
   fireEvent.click(screen.getByRole('button', { name: 'Звіт' }));
-  expect(screen.queryByText(/звіт за запитом/i)).toBeNull();
+  expect(screen.getAllByText(/звіт за запитом/i)).toHaveLength(1);
+
+  // Другий клік -- ДРУГИЙ запис поруч із першим (не приховує перший).
+  fireEvent.click(screen.getByRole('button', { name: 'Звіт' }));
+  expect(screen.getAllByText(/звіт за запитом/i)).toHaveLength(2);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Звіт' }));
+  expect(screen.getAllByText(/звіт за запитом/i)).toHaveLength(3);
 });
 
 test('вимога 17: третя зона ("звіти") -- чесний порожній стан, без вигаданих записів', async () => {

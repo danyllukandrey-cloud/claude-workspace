@@ -88,10 +88,13 @@ const ZONE_LABEL_CLASS = 'font-display text-sm font-bold uppercase tracking-wide
 export function AnalyticsScreen({ loadAnalytics, onOpenArchive }: AnalyticsScreenProps): JSX.Element {
   const [loading, setLoading] = useState(true);
   const [state, setState] = useState<AnalyticsScreenState | null>(null);
-  // Задача 18: "Звіт" -- заглушка. Клік перемикає видимість статичного
-  // тексту "звіт за запитом" -- жодної реальної логіки поки що (Андрій
-  // опише її пізніше).
-  const [showReportStub, setShowReportStub] = useState(false);
+  // Живе тестування (Андрій): "Звіт" -- заглушка, але тепер КОЖЕН клік
+  // додає НОВИЙ запис у стрічку Зони 3 (не замінює/не ховає попередній) --
+  // перший клік показує перше повідомлення, другий клік додає наступне
+  // поруч із першим, з'єднані лінією. Досі жодної реальної логіки/даних --
+  // лише той самий текст-заглушка, повторений стільки разів, скільки
+  // натиснуто (Андрій опише реальну логіку пізніше).
+  const [reportEntries, setReportEntries] = useState<string[]>([]);
 
   useEffect(() => {
     loadAnalytics().then((result) => {
@@ -193,36 +196,56 @@ export function AnalyticsScreen({ loadAnalytics, onOpenArchive }: AnalyticsScree
           під дві верхні зони й займає решту висоти, зі своїм скролом
           (flex-1 + min-h-0 + overflow-y-auto -- той самий патерн, що зона 2
           вище). Хронологічна "стрічка" (крапка + лінія між записами) --
-          навмисно НЕ реалізована як фейкові дані: сам формат запису "звіту"
-          (що це, звідки дані) Андрій ще не описав. Тут -- чесний порожній
-          стан, готовий приймати список, коли з'явиться джерело даних
-          (окреме від ReportsScreen.tsx "Звіти активності", agent/ui). */}
+          реальний формат запису "звіту" (що це, звідки дані) Андрій ще не
+          описав, тож поки що кожен запис -- та сама текст-заглушка,
+          додана кліком по "Звіт" нижче (не фейкові дані, а справжній,
+          хай і поки штучний, ввід користувача). */}
       <div className="flex min-h-0 flex-1 flex-col gap-2">
         <h2 className={ZONE_LABEL_CLASS}>Звіти</h2>
         <div className="min-h-0 flex-1 overflow-y-auto pb-16">
-          <p className="px-2 py-8 text-center text-sm text-ink-muted">Звітів поки немає</p>
+          {reportEntries.length === 0 ? (
+            <p className="px-2 py-8 text-center text-sm text-ink-muted">Звітів поки немає</p>
+          ) : (
+            <ul className="flex flex-col">
+              {reportEntries.map((text, index) => {
+                const isLast = index === reportEntries.length - 1;
+                return (
+                  <li key={index} className={`relative flex gap-3 ${isLast ? '' : 'pb-5'}`}>
+                    <div className="relative flex w-2.5 shrink-0 flex-col items-center">
+                      <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-good" />
+                      {/* Лінія хронології -- "світло-зелена", від крапки цього
+                          запису вниз до крапки наступного (Андрій: "точка з
+                          ліва... а в низ лінія до наступної точки"). Останній
+                          запис лінії вниз не має -- йому нема з чим з'єднуватись. */}
+                      {!isLast && <span className="absolute top-4 bottom-0 w-px bg-good/40" />}
+                    </div>
+                    <p className="pt-1 text-sm text-ink">{text}</p>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       </div>
 
-      {/* Задача 16/18: "Архів" (D-124) і "Звіт" -- плаваючі, знизу зліва
-          екрана Аналітики, звичайного розміру (поза flex-потоком через
-          `absolute` -- на відміну від старого місця в кінці `flex flex-col`,
-          де кнопка розтягувалась на всю ширину за замовчуванням align-items:
+      {/* Задача 16/18: "Архів" (D-124) і "Звіт" -- плаваючі, знизу СПРАВА
+          екрана Аналітики (живе тестування -- Андрій уточнив: не зліва),
+          звичайного розміру (поза flex-потоком через `absolute` -- на
+          відміну від старого місця в кінці `flex flex-col`, де кнопка
+          розтягувалась на всю ширину за замовчуванням align-items:
           stretch), над контентом (z-20) незалежно від того, скільки записів/
           карток знизу -- контент скролиться у своїх зонах вище, самі кнопки
           лишаються "приклеєні" в одному місці (absolute відносно кореневого
           relative-контейнера, який завжди дорівнює видимій висоті екрана
           Аналітики -- h-full вище), не зникають під скролом і не зсуваються
           нижче видимої області. */}
-      <div className="absolute bottom-4 left-4 z-20 flex items-center gap-2">
+      <div className="absolute bottom-4 right-4 z-20 flex items-center gap-2">
         <Button label="Архів" onClick={onOpenArchive} />
-        <Button label="Звіт" onClick={() => setShowReportStub((prev) => !prev)} />
+        <Button
+          label="Звіт"
+          onClick={() => setReportEntries((prev) => [...prev, 'звіт за запитом'])}
+        />
       </div>
-      {showReportStub && (
-        <div className="absolute bottom-16 left-4 z-20 max-w-xs">
-          <Banner variant="info" text="звіт за запитом" />
-        </div>
-      )}
     </div>
   );
 }

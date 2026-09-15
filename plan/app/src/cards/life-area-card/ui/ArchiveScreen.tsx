@@ -135,7 +135,7 @@ export function ArchiveScreen({
     const handleBack = (): void => setState({ status: 'list', items });
 
     return (
-      <div className="flex flex-col gap-4 p-4">
+      <div className="flex h-full min-h-0 flex-col gap-4 p-4 pb-20">
         <h1 className="font-display text-xl font-bold text-ink">Архів карток</h1>
         <CardShell
           isFlipped={false}
@@ -180,7 +180,7 @@ export function ArchiveScreen({
 
   if (state.items.length === 0) {
     return (
-      <div className="flex flex-col gap-4 p-4">
+      <div className="flex h-full min-h-0 flex-col gap-4 p-4 pb-20">
         <h1 className="font-display text-xl font-bold text-ink">Архів карток</h1>
         <EmptyState message="Архів порожній" actionHint="Заархівовані картки з'являться тут після архівації" />
       </div>
@@ -220,7 +220,7 @@ export function ArchiveScreen({
   };
 
   return (
-    <div className="flex flex-col gap-4 p-4">
+    <div className="flex h-full min-h-0 flex-col gap-4 p-4 pb-20">
       <h1 className="font-display text-xl font-bold text-ink">Архів карток</h1>
       <DeckGrid
         items={items}
@@ -228,7 +228,7 @@ export function ArchiveScreen({
           <button
             type="button"
             onClick={() => handleOpen(item.id)}
-            className="absolute inset-0 flex items-start rounded-card border border-border bg-surface-solid p-5 text-left font-display text-lg font-semibold text-ink shadow-soft transition-transform hover:-translate-y-0.5"
+            className="absolute inset-0 flex items-start overflow-hidden rounded-card border border-border bg-surface-solid p-5 text-left font-display text-lg font-semibold text-ink shadow-soft transition-transform hover:-translate-y-0.5 break-words"
           >
             {item.name}
           </button>

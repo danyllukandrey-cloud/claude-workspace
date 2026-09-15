@@ -476,24 +476,29 @@ export function App({
             />
           )}
           {direction === 'cards' && screen.screen === 'archive' && (
-            <div className="flex flex-col gap-4">
-              <Button
-                label="← Назад"
-                onClick={() => {
-                  // Задача 13: повертаємось туди, звідки відкрили архів
-                  // (screen.from -- напр. 'analytics'), не завжди на 'cards'
-                  // -- раніше цей клік вів на Картки навіть коли користувач
-                  // прийшов із Аналітики, бо direction лишався 'cards' з
-                  // моменту onOpenArchive.
-                  setDirection(screen.from);
-                  setScreen({ screen: 'deck' });
-                }}
-              />
+            // Живе тестування (Андрій): "Назад" -- плаваюча, знизу справа,
+            // поверх контенту (той самий патерн, що Архів/Звіт на
+            // AnalyticsScreen.tsx) -- не суцільна смуга зверху, як було.
+            <div className="relative flex h-full min-h-0 flex-col">
               <ArchiveScreen
                 loadArchivedCards={loadArchivedCards}
                 onRestoreCard={onRestoreCard}
                 loadArchivedCardHistory={loadArchivedCardHistory}
               />
+              <div className="absolute bottom-4 right-4 z-20">
+                <Button
+                  label="← Назад"
+                  onClick={() => {
+                    // Задача 13: повертаємось туди, звідки відкрили архів
+                    // (screen.from -- напр. 'analytics'), не завжди на 'cards'
+                    // -- раніше цей клік вів на Картки навіть коли користувач
+                    // прийшов із Аналітики, бо direction лишався 'cards' з
+                    // моменту onOpenArchive.
+                    setDirection(screen.from);
+                    setScreen({ screen: 'deck' });
+                  }}
+                />
+              </div>
             </div>
           )}
           {direction === 'cards' && screen.screen === 'deck' && (
@@ -555,7 +560,19 @@ export function App({
               коротший підпис, той самий напрямок ('analytics') і той самий
               AnalyticsScreen під ним, назва напрямку в коді не змінилась. */}
           <Button label="Аналітика" onClick={() => setDirection('analytics')} />
-          <Button label="Картки" onClick={() => setDirection('cards')} />
+          {/* Живе тестування (Андрій): "Картки" тепер ЗАВЖДИ веде на саму
+              колоду, навіть якщо перед цим був відкритий архів чи форма
+              створення -- раніше кнопка лише перемикала direction, а Screen
+              лишався як був (навмисно, D-111 вище), тому клік із Архіву
+              повертав в Архів замість Колоди -- це виглядало як баг, не як
+              "запам'ятало місце". */}
+          <Button
+            label="Картки"
+            onClick={() => {
+              setDirection('cards');
+              setScreen({ screen: 'deck' });
+            }}
+          />
         </nav>
 
         {/* D-121 (docs/app-shell.md): чат-панель -- ПОСТІЙНА, поза перемикачем
