@@ -8,8 +8,10 @@
 // D-120 -- ЗВІРИТИ з docs/DECISIONS.md, суперечність лишена видимою навмисно
 // (не переписано мовчки, docs/CLAUDE.md "Правило єдиного джерела"): D-120
 // початково казав "тут немає готового дискретного статусу -- нейтральний
-// accent/ink, БЕЗ світлофора (good/warn/bad), той зарезервовано для
-// EntryHistoryList, де є справжній entry.status". Компактний рестайл нижче
+// ink, БЕЗ світлофора (good/warn/bad), той зарезервовано для
+// EntryHistoryList, де є справжній entry.status" (оновлено -- фірмового
+// accent-кольору більше немає взагалі, лишився лише нейтральний ink).
+// Компактний рестайл нижче
 // (задача 7) додав кольорову рамку САМЕ за порогом progress.share -- це
 // точнісінько "вигаданий поріг", який D-120 називав НЕ підставою для
 // світлофора. Лишено як є за прямою інструкцією; хтось має звірити це з
@@ -65,7 +67,7 @@ export function MetricBlockCard({ block, onDelete }: MetricBlockCardProps): JSX.
         <>
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-sm font-medium text-ink">{block.label}</span>
-            <span className="font-display text-sm font-semibold text-accent">
+            <span className="font-display text-sm font-semibold text-ink">
               {progress.accumulated} {block.unit}
             </span>
           </div>

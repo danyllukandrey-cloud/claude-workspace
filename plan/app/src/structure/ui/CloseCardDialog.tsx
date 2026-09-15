@@ -165,7 +165,7 @@ export function CloseCardDialog({
             type="button"
             onClick={submit}
             disabled={submitting}
-            className="rounded-control bg-accent px-4 py-2.5 text-sm font-bold text-accent-ink shadow-btn transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+            className="rounded-control border border-border bg-surface px-4 py-2.5 text-sm font-bold text-ink shadow-btn backdrop-blur-xl transition-colors enabled:hover:bg-border disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
           >
             Закрити без переносу
           </button>
@@ -194,7 +194,7 @@ export function CloseCardDialog({
                   aria-label="Перенести"
                   checked={row.transferring}
                   onChange={() => toggleTransfer(mb.metricBlockId)}
-                  className="h-4 w-4 accent-accent"
+                  className="h-4 w-4 accent-ink"
                 />
               </label>
               <span className="text-sm font-medium text-ink">{mb.label}</span>
@@ -205,7 +205,7 @@ export function CloseCardDialog({
                   aria-label={`Куди перенести «${mb.label}»`}
                   value={row.targetCardId}
                   onChange={(event) => setTarget(mb.metricBlockId, event.target.value)}
-                  className="rounded-control border border-border bg-surface-solid px-3.5 py-2.5 text-sm text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-soft"
+                  className="rounded-control border border-border bg-surface-solid px-3.5 py-2.5 text-sm text-ink focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
                 >
                   <option value="">--</option>
                   {targetCards.map((card) => (
@@ -239,7 +239,7 @@ export function CloseCardDialog({
           type="button"
           onClick={submit}
           disabled={submitting}
-          className="rounded-control bg-accent px-4 py-2.5 text-sm font-bold text-accent-ink shadow-btn transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+          className="rounded-control border border-border bg-surface px-4 py-2.5 text-sm font-bold text-ink shadow-btn backdrop-blur-xl transition-colors enabled:hover:bg-border disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
         >
           {needsRename ? 'Продовжити' : 'Закрити'}
         </button>

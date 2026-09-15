@@ -264,13 +264,14 @@ export function AccountScreen({
           onChange={setConfirmationInput}
         />
 
-        {/* D-120: справжня незворотна дія -- матовий суцільний bad (той самий
-            стиль, що ConfirmDialog.tsx), не .chip-gloss (глянець лишається
-            лише за світлофором статусу виміру). "Скасувати" -- нейтральна
-            другорядна дія (border-border/text-ink), той самий підхід, що
-            кнопка "Скасувати" в ConfirmDialog.tsx -- Button-примітив свідомо
-            має лише один (фірмовий) варіант, поділ на головну/другорядну дію
-            навмисно лишено кроку стилізації екрана (коментар у Button.tsx). */}
+        {/* D-120 (оновлено): справжня незворотна дія -- матовий суцільний bad
+            (той самий стиль, що ConfirmDialog.tsx), не .chip-gloss (глянець
+            лишається лише за світлофором статусу виміру). "Скасувати" --
+            нейтральна другорядна дія (border-border/text-ink), той самий
+            підхід, що кнопка "Скасувати" в ConfirmDialog.tsx -- Button-
+            примітив свідомо має лише один (прозорий з рамкою) варіант, поділ
+            на головну/другорядну дію навмисно лишено кроку стилізації екрана
+            (коментар у Button.tsx). */}
         <div className="flex flex-wrap justify-end gap-3">
           <button
             type="button"
@@ -283,7 +284,7 @@ export function AccountScreen({
             type="button"
             onClick={handleConfirmDeleteAccount}
             disabled={!canDelete || deleting}
-            className="rounded-control bg-bad px-4 py-3 text-sm font-bold text-accent-ink shadow-btn transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+            className="rounded-control bg-bad px-4 py-3 text-sm font-bold text-ink shadow-btn transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
           >
             Видалити
           </button>

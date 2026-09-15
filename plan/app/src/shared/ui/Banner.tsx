@@ -12,12 +12,14 @@ export interface BannerProps {
   text: string;
 }
 
-// D-120: матовий тон, розбавлений семантичним кольором — не суцільна заливка
-// (глянець лишається виключно за світлофором статусу виміру, `.chip-gloss`).
+// D-120 (оновлено): матовий тон, розбавлений семантичним кольором — не
+// суцільна заливка (глянець лишається виключно за світлофором статусу
+// виміру, `.chip-gloss`). "info" більше не фірмовий accent-колір — нейтральний
+// ink-тон, той самий прийом (border/bg/10/text), просто без кольору.
 const VARIANT_STYLES: Record<BannerVariant, string> = {
   success: 'border-good/25 bg-good/10 text-good',
   error: 'border-bad/25 bg-bad/10 text-bad',
-  info: 'border-accent/25 bg-accent/10 text-accent',
+  info: 'border-ink/25 bg-ink/10 text-ink',
 };
 
 export function Banner({ variant, text }: BannerProps): JSX.Element {

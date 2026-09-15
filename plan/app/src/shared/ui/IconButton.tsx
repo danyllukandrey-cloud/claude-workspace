@@ -34,7 +34,7 @@ export function IconButton({ label, children, onClick, type = 'button', disabled
       aria-label={label}
       onClick={onClick}
       disabled={disabled}
-      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-accent-soft hover:text-accent disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-ink-muted${className ? ` ${className}` : ''}`}
+      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-border hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-ink-muted${className ? ` ${className}` : ''}`}
     >
       {children}
     </button>

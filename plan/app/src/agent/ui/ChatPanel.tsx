@@ -316,7 +316,7 @@ export function ChatPanel({
         aria-label={expanded ? 'Згорнути переписку' : 'Розгорнути переписку'}
         aria-expanded={expanded}
         onClick={() => setExpanded((prev) => !prev)}
-        className="flex h-5 w-full shrink-0 items-center justify-center text-ink-faint transition-colors hover:text-accent md:hidden"
+        className="flex h-5 w-full shrink-0 items-center justify-center text-ink-faint transition-colors hover:text-ink md:hidden"
       >
         <ChevronIcon className={`h-4 w-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
       </button>

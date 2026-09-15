@@ -321,7 +321,7 @@ export function RuleSettingsScreen({ targetCards, loadRules, onSave }: RuleSetti
             type="checkbox"
             checked={isCardScope}
             onChange={handleToggleCardScope}
-            className="h-4 w-4 accent-accent"
+            className="h-4 w-4 accent-ink"
           />
           Перевизначити для конкретної картки
         </label>
@@ -331,7 +331,7 @@ export function RuleSettingsScreen({ targetCards, loadRules, onSave }: RuleSetti
             aria-label="Картка"
             value={scopeCardId ?? ''}
             onChange={(event) => handleCardChange(event.target.value)}
-            className="rounded-control border border-border bg-surface-solid px-3.5 py-2.5 text-sm font-medium text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-soft"
+            className="rounded-control border border-border bg-surface-solid px-3.5 py-2.5 text-sm font-medium text-ink focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
           >
             {targetCards.map((card) => (
               <option key={card.cardId} value={card.cardId}>
@@ -363,7 +363,7 @@ export function RuleSettingsScreen({ targetCards, loadRules, onSave }: RuleSetti
                 checked={isActive || selectedCategories.has(option.value)}
                 disabled={isActive}
                 onChange={() => toggleCategory(option.value)}
-                className="h-4 w-4 accent-accent disabled:cursor-not-allowed"
+                className="h-4 w-4 accent-ink disabled:cursor-not-allowed"
               />
               {option.label}
             </label>

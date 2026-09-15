@@ -68,7 +68,7 @@ export function TextField({
           onChange={(event) => onChange(event.target.value)}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
-          className="rounded-control border border-border bg-surface-solid px-3.5 py-2.5 font-sans text-sm font-normal text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-soft"
+          className="rounded-control border border-border bg-surface-solid px-3.5 py-2.5 font-sans text-sm font-normal text-ink placeholder:text-ink-faint focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
         />
         {error && (
           <p role="alert" className="text-xs font-semibold text-bad">
@@ -82,13 +82,13 @@ export function TextField({
           className="mt-1.5 flex items-start gap-2 rounded-control border border-border bg-surface-solid px-3.5 py-2.5 shadow-soft"
         >
           <div className="flex-1">
-            <span className="text-xs font-bold text-accent">{required ? 'Обовʼязково' : 'Необовʼязково'}</span>
+            <span className="text-xs font-bold text-ink">{required ? 'Обовʼязково' : 'Необовʼязково'}</span>
             <p className="mt-0.5 text-xs text-ink-muted">{hint}</p>
           </div>
           <button
             type="button"
             aria-label={`Закрити підказку: ${label}`}
-            className="text-ink-faint transition-colors hover:text-accent"
+            className="text-ink-faint transition-colors hover:text-ink"
             // Review 2026-09-07 E (T52): без preventDefault тут mousedown на цій
             // кнопці спершу відводить фокус з інпута (реальний браузер) -> onBlur
             // ставить isFocused=false -> хмаринка (разом із цією кнопкою)

@@ -18,14 +18,14 @@ export function HintBubble({ text, onDismiss }: HintBubbleProps): JSX.Element {
   return (
     <div
       role="note"
-      className="flex items-start gap-2 rounded-control border border-accent/25 bg-accent-soft px-3.5 py-2.5 text-sm text-accent"
+      className="flex items-start gap-2 rounded-control border border-border bg-surface-solid px-3.5 py-2.5 text-sm text-ink"
     >
       <span className="flex-1">{text}</span>
       <button
         type="button"
         aria-label="Закрити підказку"
         onClick={onDismiss}
-        className="text-accent transition-opacity hover:opacity-70"
+        className="text-ink transition-opacity hover:opacity-70"
       >
         ✕
       </button>
