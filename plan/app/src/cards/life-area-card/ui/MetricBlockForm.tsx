@@ -157,7 +157,7 @@ export function MetricBlockForm({ initialValues, onSubmit }: MetricBlockFormProp
               type="date"
               value={targetDate ?? ''}
               onChange={(event) => setTargetDate(event.target.value === '' ? null : event.target.value)}
-              className="rounded-control border border-border bg-surface-solid px-3.5 py-2.5 text-sm font-normal text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-soft"
+              className="rounded-control border border-border bg-surface-solid px-3.5 py-2.5 text-sm font-normal text-ink focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
             />
           </label>
         )}

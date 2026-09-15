@@ -159,7 +159,7 @@ export function DeclarationScreen({ loadStructure, onSave }: DeclarationScreenPr
           value={declaration}
           onChange={(event) => setDeclaration(event.target.value)}
           rows={5}
-          className="min-h-32 resize-y rounded-control border border-border bg-surface-solid px-3.5 py-2.5 font-sans text-sm font-normal text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-soft"
+          className="min-h-32 resize-y rounded-control border border-border bg-surface-solid px-3.5 py-2.5 font-sans text-sm font-normal text-ink placeholder:text-ink-faint focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
         />
       </label>
 
@@ -173,8 +173,8 @@ export function DeclarationScreen({ loadStructure, onSave }: DeclarationScreenPr
               key={option.value}
               className={`flex cursor-pointer items-center gap-2 rounded-control border px-3.5 py-2.5 text-sm font-medium transition-colors ${
                 isSelected
-                  ? 'border-accent bg-accent-soft text-accent'
-                  : 'border-border bg-surface-solid text-ink-muted hover:border-accent/40'
+                  ? 'border-ink bg-ink/10 text-ink'
+                  : 'border-border bg-surface-solid text-ink-muted hover:border-ink/40'
               }`}
             >
               <input
@@ -182,7 +182,7 @@ export function DeclarationScreen({ loadStructure, onSave }: DeclarationScreenPr
                 name="layoutMode"
                 checked={isSelected}
                 onChange={() => handleLayoutModeChange(option.value)}
-                className="h-4 w-4 accent-accent"
+                className="h-4 w-4 accent-ink"
               />
               {option.label}
             </label>
@@ -199,8 +199,8 @@ export function DeclarationScreen({ loadStructure, onSave }: DeclarationScreenPr
                 key={option.value}
                 className={`flex cursor-pointer items-center gap-2 rounded-control border px-3.5 py-2.5 text-sm font-medium transition-colors ${
                   isSelected
-                    ? 'border-accent bg-accent-soft text-accent'
-                    : 'border-border bg-surface-solid text-ink-muted hover:border-accent/40'
+                    ? 'border-ink bg-ink/10 text-ink'
+                    : 'border-border bg-surface-solid text-ink-muted hover:border-ink/40'
                 }`}
               >
                 <input
@@ -208,7 +208,7 @@ export function DeclarationScreen({ loadStructure, onSave }: DeclarationScreenPr
                   name="logicVariant"
                   checked={isSelected}
                   onChange={() => setLogicVariant(option.value)}
-                  className="h-4 w-4 accent-accent"
+                  className="h-4 w-4 accent-ink"
                 />
                 {option.label}
               </label>

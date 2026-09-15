@@ -81,7 +81,7 @@ export function Composer({ onSend, disabled = false }: ComposerProps): JSX.Eleme
             вибір файла без jsID-звʼязку; sr-only текст усередині лейбла -- те саме
             джерело accessible name, що TextField.hideLabel (не aria-hidden окремо
             від контролу -- лейбл і контрол лишаються ОДНИМ вузлом accessible-дерева). */}
-        <label className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-accent-soft hover:text-accent">
+        <label className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-border hover:text-ink">
           <span className="sr-only">Прикріпити фото</span>
           <AttachIcon className="h-5 w-5" />
           <input

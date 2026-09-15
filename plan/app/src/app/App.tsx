@@ -346,7 +346,7 @@ export function App({
               всередині h-9 w-9 кнопки): трохи більший за значок шестерні,
               бо це лого, але явно менший за повнорозмірний варіант входу. */}
           <h1 className="flex items-center gap-2 font-display text-lg font-bold tracking-tight text-ink">
-            <Logo className="h-6 w-6 text-accent" />
+            <Logo className="h-6 w-6 text-ink" />
             ПЛАН
           </h1>
           {/* D-124 (живе тестування): "Вийти" переїхало сюди з Колоди

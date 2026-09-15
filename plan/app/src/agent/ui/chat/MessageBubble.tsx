@@ -12,9 +12,10 @@ export interface MessageBubbleProps {
   message: ChatMessage;
 }
 
-// D-120: user/agent -- дві різні матові поверхні, не фірмовий колір і
-// нейтраль впереміш -- відрізняються кольором (user -- акцентний тінт, agent
-// -- нейтральна поверхня), той самий підхід, що й раніше.
+// D-120 (оновлено): user/agent -- дві різні матові поверхні, БЕЗ фірмового
+// кольору -- відрізняються не кольором, а тоном/насиченістю (user --
+// приглушений ink-тінт, agent -- звичайна нейтральна поверхня), той самий
+// принцип відмінності, що й раніше, лише без оранжевого.
 //
 // D-121 (широкий екран, живе тестування -- двічі уточнено): перший прохід
 // прибрав позиційний зсув повністю (`w-full`, ніякого iMessage-стилю) -- у
@@ -40,7 +41,7 @@ export function MessageBubble({ message }: MessageBubbleProps): JSX.Element {
       <div
         className={
           isUser
-            ? 'w-[calc(100%-0.5rem)] whitespace-pre-line break-words rounded-control bg-accent-soft px-3.5 py-2.5 text-right text-sm text-ink'
+            ? 'w-[calc(100%-0.5rem)] whitespace-pre-line break-words rounded-control bg-ink/10 px-3.5 py-2.5 text-right text-sm text-ink'
             : 'w-[calc(100%-0.5rem)] whitespace-pre-line break-words rounded-control bg-surface-solid px-3.5 py-2.5 text-left text-sm text-ink shadow-soft'
         }
       >

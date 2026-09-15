@@ -118,7 +118,7 @@ export function ConfirmDialog({
                   onConfirm();
                 }
               }}
-              className="rounded-control border border-border bg-surface-solid px-3.5 py-2.5 font-sans text-sm font-normal text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-soft"
+              className="rounded-control border border-border bg-surface-solid px-3.5 py-2.5 font-sans text-sm font-normal text-ink placeholder:text-ink-faint focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
             />
           </label>
         )}
@@ -135,7 +135,7 @@ export function ConfirmDialog({
             type="button"
             onClick={onConfirm}
             disabled={isConfirmDisabled}
-            className="rounded-control bg-bad px-4 py-2.5 text-sm font-bold text-accent-ink shadow-btn transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+            className="rounded-control bg-bad px-4 py-2.5 text-sm font-bold text-ink shadow-btn transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
           >
             {confirmLabel}
           </button>

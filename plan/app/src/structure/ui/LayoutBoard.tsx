@@ -175,7 +175,7 @@ export function LayoutBoard({
           type="button"
           aria-label={`Закрити напрямок «${card.cardTitle}»`}
           onClick={() => openCloseDialog(card)}
-          className="text-[11px] font-medium text-ink-faint transition-colors hover:text-accent"
+          className="text-[11px] font-medium text-ink-faint transition-colors hover:text-ink"
         >
           Закрити напрямок
         </button>
