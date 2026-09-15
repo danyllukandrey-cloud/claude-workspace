@@ -100,7 +100,6 @@ function makeSharedFakeDb() {
       owner_user_id: OWNER,
       declaration: null as string | null,
       layout_mode: 'free' as const,
-      logic_variant: null as string | null,
       created_at: new Date('2026-01-01T00:00:00Z'),
       updated_at: new Date('2026-01-01T00:00:00Z'),
     },

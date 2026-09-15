@@ -2,13 +2,13 @@
 status: Draft
 owner: "Андрій"
 reviewers: ["<implementing engineer>", "Tech Lead"]
-updated_at: "2026-08-27"
+updated_at: "2026-09-15"
 feature_size: "M"
 ---
 
 # Test plan — structure
 
-Структура тримає декларацію картини світу окремо від Опису кожної картки, розкладку карток за одним із трьох варіантів групування, і зведену аналітику — чесний розрив між заявленим і фактичним, без вердикту ([`spec.md §2`](spec.md#2-goals)).
+Структура тримає декларацію картини світу окремо від Опису кожної картки, розкладку карток за одним із п'яти рівноправних способів групування (вимоги 14/15, плоска модель — [`spec.md §2`](spec.md#2-goals)), і зведену аналітику — чесний розрив між заявленим і фактичним, без вердикту.
 
 ## Levels
 
@@ -42,8 +42,11 @@ feature_size: "M"
 | AC-12 happy | closing an overlapping card offers per-metric transfer | integration | closure recorded as a history event; declined metrics stay behind |
 | AC-13 domain invariant | non-computable cards are excluded from the average, counted separately | unit | excluded count shown, average unaffected by them |
 | AC-15 happy | a rename or logic-layout move is recorded as a history event | integration | timestamped event written to the history log table |
-| AC-16 happy | picking a logic-layout subvariant applies its grid and root-card rule | integration | subvariant's cell scheme and root-card marking applied |
-| AC-16b happy | switching subvariant resets cards to a fixed base order | integration | every card moved to base order, new subvariant grid shown, atomically (same mechanism as AC-11b) |
+| AC-16 happy | picking a grid-based mode directly applies its grid and root-card rule | integration | mode's cell scheme and root-card marking applied |
+| AC-17 restored-card | archive restore leaves a card without a cell | integration | card lands in the tray, no cell assigned |
+| AC-18 happy | "staging" places new/reset cards in the tray, never auto-assigns a cell | integration | card has no cell while this mode is active, even with free cells available |
+
+<!-- AC-16b скасовано (вимоги 14/15, плоска модель) -- злито в AC-11b: перемикання між будь-якими двома з 5 режимів, зокрема між колишніми підвидами напряму, тепер один механізм. -->
 
 ## Edge cases / error paths
 
@@ -53,7 +56,7 @@ feature_size: "M"
 
 ## Test data
 
-- Seed strategy: factories matching `data-model.md` entities (`structure` — including `logicVariant`, [D-83](../../DECISIONS.md#d-83) — `structure_layout_position`, `structure_history_event`) — same shape as the fixtures `life-area-card` already builds (`buildCard`, `buildMetricBlock`, `buildEntry`), reused across both features' integration suites since aggregation reads `life-area-card`'s own domain.
+- Seed strategy: factories matching `data-model.md` entities (`structure` — one flat `layoutMode` field, 5 values, вимоги 14/15 — `structure_layout_position`, `structure_history_event`) — same shape as the fixtures `life-area-card` already builds (`buildCard`, `buildMetricBlock`, `buildEntry`), reused across both features' integration suites since aggregation reads `life-area-card`'s own domain.
 - Integration dependency: one ephemeral real dependency — the shared backend Postgres (structure, layout, and the history log all in the same database, [D-113](../../DECISIONS.md#d-113)) — NOT mocked; each suite spins it up fresh.
 - Cleanup boundary: per-test — Structure is a singleton per user, so tests must reset both stores between runs or a stale row from a previous test silently satisfies a "lazy-create" assertion that should have failed.
 

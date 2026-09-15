@@ -44,7 +44,6 @@ import { defaultPositionForNewCard } from '../src/structure/domain/layout';
 // застосунку. Той самий клас дефекту, що A2/B5 вище.
 import * as structureHandlers from '../src/structure/ports/structure-handlers';
 import * as layoutHandlers from '../src/structure/ports/layout-handlers';
-import { LayoutValidationError } from '../src/structure/domain/layout';
 // T29 -- порти фічі `agent` (contracts/openapi.yaml). Той самий урок, що
 // MUST-FIX 1 вище: написані й покриті тестами порти лишаються 404, якщо їх
 // тут ніхто не монтує -- server/app.test.ts нижче пінить КОЖЕН із 9 шляхів.
@@ -794,25 +793,17 @@ export function createApp(deps: AppDeps): express.Express {
       res.status(422).json({ code: err.code, message: err.message });
       return;
     }
-    // Review 2026-09-11 (Частина 2): те саме для домену Структури --
-    // LayoutValidationError (src/structure/domain/layout.ts) теж навмисно НЕ
-    // AppError. До цього фіксу будь-яка доменна помилка розкладки падала в
-    // generic 500 нижче: зокрема PATCH /structure зі зміною підвиду "за
-    // логікою" на структурі, що вже не в режимі 'logic' (switchLogicVariant),
-    // хоча контракт документує тут 422.
-    //
-    // На відміну від card-домену, LayoutValidationError поки не несе власного
-    // `code` (його додання -- зміна domain/layout.ts, поза скоупом цього
-    // фіксу), а єдина така помилка, що реально доходить до транспорту, -- саме
-    // інваріант AC-16 "підвид лише в режимі logic": колізію клітинки
-    // (assertCellAvailable) app/move-card.ts уже перегортає в AppError 409 до
-    // того, як вона сюди дійде. Тому код нижче -- контрактний
-    // structure.logic_variant_requires_logic_mode; щойно домен почне нести
-    // власний `code`, ця гілка мусить пропускати його, як робить гілка вище.
-    if (err instanceof LayoutValidationError) {
-      res.status(422).json({ code: 'structure.logic_variant_requires_logic_mode', message: err.message });
-      return;
-    }
+    // Review 2026-09-11 (Частина 2), знято вимогами 14/15 (плоска модель
+    // layoutMode, logicVariant прибраний): раніше тут мапився
+    // LayoutValidationError (src/structure/domain/layout.ts) на 422
+    // structure.logic_variant_requires_logic_mode -- ЄДИНИЙ інваріант, що
+    // його породжував (AC-16 "підвид лише в режимі logic"), зник разом з
+    // logicVariant. Колізія клітинки (assertCellAvailable) лишається --
+    // app/move-card.ts вже перегортає її в AppError 409 ДО того, як вона
+    // сюди дійде, тож domain/layout.ts більше нічого не кидає, що реально
+    // доходить до цього middleware. Якщо це знову стане не так -- гілка
+    // повертається як AppError-обгортка в самому use-case (той самий підхід,
+    // що move-card.ts), а не тут генерично.
     // Review 2026-09-07, post-ship follow-up review ("Express 5 req.body ->
     // 500"): T50 handled req.body===undefined, але зіпсований JSON
     // (entity.parse.failed) чи завеликий (entity.too.large) -- окрема

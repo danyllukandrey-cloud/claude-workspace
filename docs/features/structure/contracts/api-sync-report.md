@@ -59,3 +59,20 @@
 **Sequence gap, зафіксовано чесно, не приховано:** `sad.md` "Critical flow 6" (AC-12/AC-15) не малює окрему `alt`-гілку на цю колізію — постумова лише текстом каже "перенос метрик лишається доменною логікою life-area-card". Save-as-OQ, власник — `/sdd:sequences structure`, due — до наступного `/sdd:review`: додати `alt`-гілку 409 у Critical flow 6, якщо колись знадобиться перемалювати цю діаграму; не блокує контракт зараз (код і так коректно повертає 409, діаграма лише не показує чому).
 
 0 core-помилок цього прогону. `info.version` не піднімав (правило skill — вручну, окремим CHANGELOG-рядком, коли буде реліз).
+
+---
+
+## Reconcile — 2026-09-15 (вимоги 14/15, Андрій, чат — плоска модель)
+
+Ручне реконсилювання поруч зі зміною коду (не окремий запуск `/sdd:api --reconcile`) — контракт, `data-model.md` і код мінялись разом, тим самим коммітом-набором.
+
+**Зміна:** `Structure.layoutMode` + `Structure.logicVariant` (два поля, друге мало сенс лише при `layoutMode = 'logic'`) злиті в ОДНЕ поле `layoutMode` з 5 значеннями (`balance`/`focus`/`cause_effect`/`free`/`staging`). `single` ("одна картка") скасований повністю. `logicVariant` прибраний зі схеми `Structure` і `StructureUpdate` повністю — більше не існує ні як поле запиту, ні як поле відповіді.
+
+Наслідки для Section A/B вище (історичні записи там НЕ переписані — цей запис їх доповнює, не замінює):
+
+- Section A, рядок `Structure.logicVariant` → **прибраний** (поля більше нема).
+- Section A, рядок `Structure.layoutMode` → `origin` лишається `data-model.md → structure.layout_mode`, лише enum тепер 5 значень замість 3.
+- Section B п.3 (Validation ↔ constraint) → `logicVariant` enum і крос-польовий інваріант `logic_variant IS NULL` — обидва прибрані разом зі стовпцем; `structure.logic_variant_requires_logic_mode` (422) видалений з контракту, лишається лише `structure.invalid_layout_mode`.
+- Section B п.4 (OpenAPI ↔ sequence) → примітка про відсутню окрему діаграму US-12/AC-16/AC-16b втрачає предмет: US-12 злитий у US-02, AC-16b злитий у AC-11b (`spec.md`) — нема більше окремого механізму, про який могло бракувати діаграми.
+
+0 core-помилок цього прогону.

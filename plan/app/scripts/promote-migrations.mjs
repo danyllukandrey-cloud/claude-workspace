@@ -66,6 +66,10 @@ const TO_PROMOTE = [
   // вже промоучений app_user) -- жодних крос-фічевих залежностей, тож у
   // самому кінці, як і 08 вище.
   { slug: 'agent', staged: '12_create_action_log', name: 'create-action-log' },
+  // Вимоги 14/15 (Андрій, чат): 'single' скасовується, три підвиди "за логікою"
+  // (D-83) стають топ-рівневими режимами, додається новий 'staging' -- layout_mode
+  // + logic_variant (два поля) зливаються в ОДИН layout_mode із 5 значеннями.
+  { slug: 'structure', staged: 'backend/07_flatten_layout_mode', name: 'flatten-layout-mode' },
 ];
 
 function readReadme() {

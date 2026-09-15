@@ -2,7 +2,7 @@
 status: Draft
 owner: "Андрій Данилюк"
 reviewers: []
-updated_at: "2026-09-11"
+updated_at: "2026-09-15"
 feature_size: "M"
 ---
 
@@ -26,7 +26,6 @@ erDiagram
         uuid owner_user_id
         text declaration
         text layout_mode
-        text logic_variant
         timestamptz created_at
         timestamptz updated_at
     }
@@ -52,14 +51,13 @@ erDiagram
 | `id` | UUID | PK, app-generated | `crypto.randomUUID()` |
 | `owner_user_id` | UUID | NOT NULL, UNIQUE, FK → `app_user(id)` ON DELETE CASCADE | singleton на користувача (AC-03) — UNIQUE забезпечує «рівно одна Структура на власника». FK додано 2026-08-29, міграція 03 — `agent`'s `app_user` (migration 01) тепер існує. Закриває TBD від 2026-08-24; вмикає каскадне видалення акаунта (agent AC-17, D-89) |
 | `declaration` | TEXT | NULL | картина світу / навіщо / пріоритет, вільний текст (AC-10); NULL, доки не написано |
-| `layout_mode` | TEXT | NULL, CHECK (`layout_mode` IN ('single','free','logic')) | один із трьох варіантів групування (D-29); **NULL = ще не обрано** — саме так реалізовано AC-09 («не блокує вибором режиму») |
-| `logic_variant` | TEXT | NULL, CHECK (`logic_variant` IN ('balance','focus','cause_effect')) | підвид розкладки «за логікою» ([D-83](../../DECISIONS.md#d-83), AC-16) — `balance` = баланс навколо ядра, `focus` = фокус і спостереження, `cause_effect` = причина і наслідок. Має сенс лише коли `layout_mode = 'logic'`; NULL і при інших `layout_mode`, і поки підвид ще не обрано (той самий принцип «NULL = не обрано», що й у `layout_mode`) |
+| `layout_mode` | TEXT | NULL, CHECK (`layout_mode` IN ('balance','focus','cause_effect','free','staging')) | **Плоска модель, вимоги 14/15 (Андрій, чат), staged-міграція `07_flatten_layout_mode`.** Раніше — два поля: `layout_mode IN ('single','free','logic')` + окремий `logic_variant IN ('balance','focus','cause_effect')`, що мав сенс лише коли `layout_mode = 'logic'` ([D-83](../../DECISIONS.md#d-83)). Тепер — ОДНЕ поле, 5 рівноправних значень: `balance` = баланс навколо ядра, `focus` = фокус і спостереження, `cause_effect` = причина і наслідок (ті самі три, що раніше жили в `logic_variant`, тепер топ-рівневі), `free` = вільна розкладка (перейменування підпису колишнього `free`, та сама поведінка), `staging` = готово до розкладання (**НОВИЙ** — картки з'являються внизу екрана без клітинки, користувач розкладає сам; `defaultPositionForNewCard`, domain/layout.ts, свідомо НЕ дає нову клітинку автоматично, поки цей режим активний). `single` («одна картка») **скасований повністю** — навіщо режим «одна картка», якщо картку й так можна створити рівно одну. **NULL = ще не обрано** — той самий принцип, що раніше (AC-09) |
 | `created_at` | timestamptz | NOT NULL DEFAULT now() | |
 | `updated_at` | timestamptz | NOT NULL DEFAULT now() | джерело часової мітки для last-write-wins при офлайн-конфлікті (ADR-0002) |
 
 **Aggregate root:** root.
 **Access patterns:** читання/запис Структури власника (AC-03, кожен запит) → UNIQUE-індекс на `owner_user_id` (створюється автоматично разом з обмеженням).
-**Constraints:** UNIQUE на `owner_user_id`; CHECK на `layout_mode`; CHECK на `logic_variant`. Немає CHECK-обмеження рівня БД, що змушує `logic_variant IS NULL` при `layout_mode != 'logic'` — узгодженість цієї пари полів тримає app-шар (T4/T11), той самий підхід, що вже прийнятий для решти доменних правил цієї таблиці.
+**Constraints:** UNIQUE на `owner_user_id`; CHECK на `layout_mode` (5 значень). Колишній окремий CHECK на `logic_variant` і колишня app-шар-звірка «`logic_variant` має сенс лише при `layout_mode = 'logic'`» (T4/T11) прибрані разом зі стовпцем — плоска модель не має пари полів, яку треба узгоджувати.
 
 #### `structure_layout_position`
 
@@ -131,7 +129,7 @@ erDiagram
 
 ## Test fixtures
 
-- `buildStructure({ ownerUserId, declaration, layoutMode, logicVariant })` — Структура з дефолтним власником `user-<uuid>@example.test`; `logicVariant` — тільки коли `layoutMode: 'logic'` ([D-83](../../DECISIONS.md#d-83)).
+- `buildStructure({ ownerUserId, declaration, layoutMode })` — Структура з дефолтним власником `user-<uuid>@example.test`; `layoutMode` — одне з 5 плоских значень або `null` (вимоги 14/15; колишній окремий `logicVariant`-параметр прибраний разом зі стовпцем).
 - `buildLayoutPosition({ structureId, cardId, cellIndex, status })` — позиція розкладки, за замовчуванням `status: 'active'`.
 - `buildStructureHistoryEvent({ structureId, cardId, eventType, detail })` — подія літопису для тестів AC-07/AC-12/AC-15.
 

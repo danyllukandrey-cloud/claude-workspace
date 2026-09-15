@@ -902,36 +902,51 @@ describe('structure T1/T2/T26 (D-103, промоучено позачергов�
   });
 });
 
-describe('migration 04_add_logic_variant (T27, AC-16, D-83/ISS-7) — проти реальної Neon', () => {
-  it('structure.logic_variant приймає balance/focus/cause_effect і NULL, але не інше значення (CHECK)', async () => {
+// Migration 04_add_logic_variant (T27, AC-16, D-83/ISS-7) додала окрему
+// колонку logic_variant. Migration 07_flatten_layout_mode (вимоги 14/15,
+// Андрій, чат) її ПОВНІСТЮ прибрала — підвиди стали топ-рівневими
+// значеннями layout_mode, 'single' скасований, з'явився 'staging'. Тест на
+// 04 нижче замінений тестом на 07: перевіряти окрему logic_variant більше
+// нема сенсу (колонки не існує), а 5-значний layout_mode покриває той самий
+// клас гарантії (CHECK на рівні БД, не лише в UI/use-case).
+describe('migration 07_flatten_layout_mode (вимоги 14/15) — проти реальної Neon', () => {
+  it('structure.layout_mode приймає лише 5 плоских значень і NULL; logic_variant більше не існує', async () => {
     const client = new Client({ connectionString: process.env.DATABASE_URL });
     await client.connect();
     try {
       const ownerId = crypto.randomUUID();
       await client.query('INSERT INTO app_user (id, google_sub, email) VALUES ($1, $2, $3)', [
         ownerId,
-        `test-structure-t27-${ownerId}`,
-        'structure-t27@example.test',
+        `test-structure-t07flat-${ownerId}`,
+        'structure-t07flat@example.test',
       ]);
       try {
         const structureId = crypto.randomUUID();
         await client.query('INSERT INTO structure (id, owner_user_id) VALUES ($1, $2)', [structureId, ownerId]);
 
-        // NULL -- дозволено (D-83: "ще не обрано", той самий принцип, що і layout_mode).
-        const { rows: nullRow } = await client.query('SELECT logic_variant FROM structure WHERE id = $1', [structureId]);
-        expect(nullRow[0].logic_variant).toBeNull();
+        // NULL -- дозволено ("ще не обрано", той самий принцип, що й раніше).
+        const { rows: nullRow } = await client.query('SELECT layout_mode FROM structure WHERE id = $1', [structureId]);
+        expect(nullRow[0].layout_mode).toBeNull();
 
-        // Кожне з трьох дозволених значень реально приймається на рівні БД.
-        for (const variant of ['balance', 'focus', 'cause_effect']) {
-          await client.query('UPDATE structure SET logic_variant = $1 WHERE id = $2', [variant, structureId]);
-          const { rows } = await client.query('SELECT logic_variant FROM structure WHERE id = $1', [structureId]);
-          expect(rows[0].logic_variant).toBe(variant);
+        // Кожне з 5 дозволених значень реально приймається на рівні БД.
+        for (const mode of ['balance', 'focus', 'cause_effect', 'free', 'staging']) {
+          await client.query('UPDATE structure SET layout_mode = $1 WHERE id = $2', [mode, structureId]);
+          const { rows } = await client.query('SELECT layout_mode FROM structure WHERE id = $1', [structureId]);
+          expect(rows[0].layout_mode).toBe(mode);
         }
 
-        // Будь-яке інше значення -- CHECK відхиляє на рівні БД.
+        // 'single' скасований (вимога 14) -- CHECK відхиляє на рівні БД, як і будь-яке вигадане значення.
         await expect(
-          client.query("UPDATE structure SET logic_variant = 'not_a_real_variant' WHERE id = $1", [structureId])
+          client.query("UPDATE structure SET layout_mode = 'single' WHERE id = $1", [structureId])
         ).rejects.toThrow(/violates check constraint/);
+        await expect(
+          client.query("UPDATE structure SET layout_mode = 'logic' WHERE id = $1", [structureId])
+        ).rejects.toThrow(/violates check constraint/);
+
+        // logic_variant більше не існує як колонка взагалі.
+        await expect(
+          client.query('SELECT logic_variant FROM structure WHERE id = $1', [structureId])
+        ).rejects.toThrow(/column "logic_variant" does not exist/);
       } finally {
         await client.query('DELETE FROM app_user WHERE id = $1', [ownerId]); // каскадно прибирає structure
       }

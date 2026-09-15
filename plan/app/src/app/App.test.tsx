@@ -92,7 +92,7 @@ function baseProps() {
     // structure/ui/LayoutBoard.tsx (loadLayout/onMoveCard) і
     // structure/ui/AnalyticsScreen.tsx (loadAnalytics) -- App лише
     // прокидає їх без змін (той самий DI-стиль, що loadCards).
-    loadStructure: vi.fn().mockResolvedValue({ declaration: null, layoutMode: null, logicVariant: null, hasArrangedCards: false }),
+    loadStructure: vi.fn().mockResolvedValue({ declaration: null, layoutMode: null, hasArrangedCards: false }),
     onSaveDeclaration: vi.fn().mockResolvedValue(undefined),
     loadLayout: vi.fn().mockResolvedValue({ cellCount: 0, justReset: false, cards: [] }),
     onMoveCard: vi.fn().mockResolvedValue(undefined),

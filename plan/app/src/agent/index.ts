@@ -49,5 +49,5 @@ export type { ComposerSendInput } from './ui/chat/Composer';
 // domain/rules.ts -- ImperativeRuleCategory використовує RuleSettingsScreen
 // (пропи RuleSettingsScreenRule/RuleCreateInput), composition root типізує
 // ним свої DTO 1:1 із контрактом, не власною копією enum'у (D-19, той самий
-// підхід, що ../structure/index.ts's LayoutMode/LogicVariant).
+// підхід, що ../structure/index.ts's LayoutMode).
 export type { ImperativeRuleCategory } from './domain/rules';

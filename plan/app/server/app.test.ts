@@ -300,8 +300,7 @@ const STRUCTURE_ROW = {
   id: 'structure-1',
   owner_user_id: 'user-42',
   declaration: 'Навчання й здоров’я зараз важливіші за кар’єру.',
-  layout_mode: 'logic',
-  logic_variant: 'focus',
+  layout_mode: 'focus',
   created_at: new Date('2026-01-01T00:00:00Z'),
   updated_at: new Date('2026-01-02T00:00:00Z'),
 };
@@ -393,7 +392,7 @@ describe('composition root -- маршрути Структури змонтов
       const body = await res.json();
 
       expect(res.status).toBe(200);
-      expect(body).toMatchObject({ id: 'structure-1', layoutMode: 'logic', logicVariant: 'focus' });
+      expect(body).toMatchObject({ id: 'structure-1', layoutMode: 'focus' });
       // Токен власника мусить дійти до SQL-параметрів (AC-03 non-disclosure).
       expect(query.mock.calls[0][1]).toEqual(expect.arrayContaining(['user-42']));
     } finally {
@@ -590,15 +589,10 @@ describe('composition root -- маршрути Структури змонтов
     }
   });
 
-  // Review 2026-09-11, Частина 2 [major]: domain/layout.ts кидає
-  // LayoutValidationError (окремий клас -- домен навмисно не знає про HTTP,
-  // як і CardValidationError вище), і error-middleware цього класу не знав,
-  // тож будь-яка доменна помилка розкладки падала в generic 500 замість
-  // контрактного 422.
-  it('maps a thrown LayoutValidationError to the contract 422, not a generic 500', async () => {
-    // Структура вже у режимі 'free' із збереженим logic_variant 'focus';
-    // PATCH {logicVariant: null} змінює підвид, а змінювати підвид можна лише
-    // в режимі 'logic' -- app/update-structure.ts -> domain switchLogicVariant.
+  // Вимоги 14/15 (плоска модель): 'single' скасований, невідоме значення
+  // layoutMode лишається контрактним 422, перевіреним ДО будь-якого запису
+  // (ports/structure-handlers.ts) -- не generic 500.
+  it('maps an invalid layoutMode value to the contract 422, not a generic 500', async () => {
     const query = structureDb({ structure: { ...STRUCTURE_ROW, layout_mode: 'free' } });
     const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
     const { server, baseUrl } = await startServer(noopDeps({ query } as unknown as Db, verifyJwt));
@@ -607,13 +601,13 @@ describe('composition root -- маршрути Структури змонтов
       const res = await fetch(`${baseUrl}/api/v1/structure`, {
         method: 'PATCH',
         headers: AUTHED_JSON,
-        body: JSON.stringify({ logicVariant: null }),
+        body: JSON.stringify({ layoutMode: 'single' }),
       });
       const body = await res.json();
 
       expect(res.status).toBe(422);
       expect(body).toMatchObject(ERROR_SHAPE);
-      expect(body.code).toBe('structure.logic_variant_requires_logic_mode');
+      expect(body.code).toBe('structure.invalid_layout_mode');
     } finally {
       server.close();
     }
@@ -752,6 +746,31 @@ describe('composition root -- POST /api/v1/cards дає новій картці 
 
       expect(res.status).toBe(201);
       expect(layoutInserts(query)[0][1][3]).toBe(1);
+    } finally {
+      server.close();
+    }
+  });
+
+  // Вимога 15 (Андрій, чат): 'staging' ("Готово до розкладання") -- нова
+  // картка йде прямо в трей, БЕЗ автоматичної клітинки, навіть коли вільні
+  // клітинки є.
+  it('layoutMode "staging" -- нова картка отримує SQL NULL замість номера клітинки', async () => {
+    const query = cardAndStructureDb({
+      structure: { ...STRUCTURE_ROW, layout_mode: 'staging' },
+      positions: [layoutPositionRow('card-a', 0)],
+    });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query } as unknown as Db, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/cards`, {
+        method: 'POST',
+        headers: AUTHED_JSON,
+        body: JSON.stringify({ name: 'Здоровʼя' }),
+      });
+
+      expect(res.status).toBe(201);
+      expect(layoutInserts(query)[0][1][3]).toBeNull();
     } finally {
       server.close();
     }

@@ -1,16 +1,19 @@
-// SCR-02 — Схема (spec.md AC-02, AC-08, AC-11b, AC-16b).
+// SCR-02 — Схема (spec.md AC-02, AC-08, AC-11b).
 //
 // DI (plan/app/CLAUDE.md, той самий стиль, що DeclarationScreen/
 // AnalyticsScreen): loadLayout/onMoveCard — ін'єктовані пропи-функції,
 // жодного fetch() тут. onMoveCard мапиться 1:1 на PUT /structure/layout/{cardId}
 // (contracts/openapi.yaml moveCard) — сам HTTP-запит лишається за ports/.
 //
-// AC-11b/AC-16b: екран сам не вирішує ЧОМУ стався reset (зміна layoutMode
-// чи logicVariant, поки layoutMode лишається 'logic') — loadLayout уже
-// згорнув причину в один прапорець justReset (той самий підхід, що
-// AnalyticsScreen's trendAvailable). Рендер від причини не залежить:
-// банер "розклади заново" + нерозкладені картки в base order внизу,
-// сітка вище лишається порожньою.
+// AC-11b: екран сам не вирішує ЧОМУ стався reset (зміна layoutMode на будь-
+// яке з 5 плоских значень, вимоги 14/15) — loadLayout уже згорнув причину в
+// один прапорець justReset (той самий підхід, що AnalyticsScreen's
+// trendAvailable). Рендер від причини не залежить: банер "розклади заново" +
+// нерозкладені картки в base order внизу, сітка вище лишається порожньою.
+//
+// Вимога 15 ("Готово до розкладання"): той самий трей нерозкладених стає
+// СТІЙКИМ явним станом (не одноразовим), коли `layoutMode === 'staging'` --
+// showStagingHint нижче.
 //
 // AC-02 (D-62, 409 structure.cell_occupied): помилка показується inline,
 // прив'язана до самої клітинки, не банером/toast на всю ширину екрана
@@ -27,6 +30,7 @@ import type {
   CloseCardDialogTargetCard,
   CloseCardMetricTransferInput,
 } from './CloseCardDialog';
+import type { LayoutMode } from '../domain/layout';
 
 export interface LayoutBoardCard {
   cardId: string;
@@ -44,8 +48,16 @@ export interface LayoutBoardCloseCardOptions {
 
 export interface LayoutBoardState {
   cellCount: number;
-  /** Щойно скинуто розташування (AC-11b/AC-16b) -- банер + base order внизу. */
+  /** Щойно скинуто розташування (AC-11b) -- банер + base order внизу. */
   justReset: boolean;
+  /**
+   * Вимога 15 ("Готово до розкладання"): режим Структури на момент завантаження
+   * -- потрібен лише щоб зробити ЯВНИМ той самий трей нерозкладених карток
+   * (нижче), що вже існує для будь-якого reset (AC-11b). `null` -- режим ще не
+   * обрано (AC-09); дефолтне значення нижче ('free') на нього не впливає --
+   * банер staging просто не показується.
+   */
+  layoutMode: LayoutMode;
   cards: LayoutBoardCard[];
 }
 
@@ -85,7 +97,7 @@ export function LayoutBoard({
   onCloseCard,
 }: LayoutBoardProps): JSX.Element {
   const [loading, setLoading] = useState(true);
-  const [state, setState] = useState<LayoutBoardState>({ cellCount: 0, justReset: false, cards: [] });
+  const [state, setState] = useState<LayoutBoardState>({ cellCount: 0, justReset: false, layoutMode: null, cards: [] });
   const [cellErrors, setCellErrors] = useState<Record<number, string>>({});
   const [banner, setBanner] = useState<{ variant: 'error' | 'info'; text: string } | null>(null);
   // AC-12: яку картку закриваємо (null -- діалог закритий) і чим його наповнити.
@@ -241,9 +253,19 @@ export function LayoutBoard({
     );
   });
 
+  // Вимога 15 ("Готово до розкладання"): трей нерозкладених нижче -- той самий
+  // механізм, що AC-11b уже показує одноразово після reset (justReset), тут
+  // робимо його ЯВНИМ ВИДИМИМ СТАНОМ саме для цього режиму -- не одноразовий
+  // банер, а нагадування, поки лишається хоч одна нерозкладена картка. Коли
+  // щойно стався reset (justReset), той банер уже пояснює ситуацію -- staging
+  // не дублює його в той самий момент.
+  const showStagingHint = state.layoutMode === 'staging' && unassigned.length > 0 && !state.justReset;
+
   return (
     <div className="flex flex-col gap-4">
       {state.justReset && <Banner variant="info" text="Розклади заново -- попереднє розташування скинуто" />}
+
+      {showStagingHint && <Banner variant="info" text="Готово до розкладання -- перетягни картки знизу на вільні клітинки" />}
 
       {banner !== null && <Banner variant={banner.variant} text={banner.text} />}
 

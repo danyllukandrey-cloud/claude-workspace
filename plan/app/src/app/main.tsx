@@ -67,7 +67,6 @@ import type {
   LayoutBoardCloseCardOptions,
   LayoutBoardState,
   LayoutMode,
-  LogicVariant,
 } from '../structure';
 import {
   computeCardGapTrend,
@@ -719,7 +718,6 @@ interface StructureDto {
   id: string;
   declaration: string | null;
   layoutMode: LayoutMode;
-  logicVariant: LogicVariant;
   createdAt: string;
   updatedAt: string;
 }
@@ -728,7 +726,7 @@ interface LayoutPositionDto {
   cardId: string;
   /**
    * `null` -- активна позиція БЕЗ клітинки: картка лежить у треї нерозкладених
-   * (AC-11b/AC-16b після скидання, AC-17 після відновлення з архіву). Колонка
+   * (AC-11b після скидання, AC-17 після відновлення з архіву). Колонка
    * стала nullable міграцією 06 (рев'ю 2026-09-11), тож сюди реально приходить
    * JSON-null -- трактувати його як число означало б показати картку в
    * клітинці 0.
@@ -760,19 +758,21 @@ async function fetchActiveLayoutPositions(): Promise<LayoutPositionDto[]> {
 
 /**
  * Останній відомий клієнту спосіб розкладки (з найсвіжішого GET /structure) --
- * потрібен, щоб ВІДРІЗНИТИ "PATCH справді перемкнув режим/підвид" від "PATCH
- * зберіг лише декларацію". Сервер (app/update-structure.ts) скидає позиції
- * рівно за цією ж умовою: `layoutModeChanged || (logicVariantChanged &&
- * режим-результат === 'logic')` -- умова нижче її дзеркалить, а не вгадує.
+ * потрібен, щоб ВІДРІЗНИТИ "PATCH справді перемкнув режим" від "PATCH зберіг
+ * лише декларацію". Сервер (app/update-structure.ts) скидає позиції рівно за
+ * цією ж умовою: `layoutModeChanged` -- умова нижче її дзеркалить, а не
+ * вгадує. Плоска модель (вимоги 14/15) прибрала колишню окрему
+ * logicVariant-гілку -- перемикання між колишніми підвидами тепер звичайна
+ * зміна layoutMode, той самий шлях.
  *
  * `null` -- клієнт ще не бачив Структури (екран Декларації не відкривався), тож
  * і зберегти з нього нічого не міг: банер у такому разі не показуємо, бо
  * порівнювати ні з чим (хибний банер гірший за відсутній).
  */
-let lastKnownLayoutChoice: { layoutMode: LayoutMode; logicVariant: LogicVariant } | null = null;
+let lastKnownLayoutChoice: { layoutMode: LayoutMode } | null = null;
 
 /**
- * Клієнтський прапорець "щойно скинуто розкладку" (AC-11b/AC-16b).
+ * Клієнтський прапорець "щойно скинуто розкладку" (AC-11b).
  *
  * Review 2026-09-11 (MUST-FIX 3): тут стояв хардкод `justReset: false` із
  * коментарем "поки сервер не почне позначати" -- тобто банер "Розклади заново"
@@ -790,7 +790,7 @@ function consumeLayoutJustReset(): boolean {
   return justReset;
 }
 
-/** GET /api/v1/structure -- декларація + спосіб розкладки (DeclarationScreen.loadStructure). `hasArrangedCards` (AC-11b/AC-16b confirm-reset) -- поза Structure DTO, похідне з активних позицій розкладки. */
+/** GET /api/v1/structure -- декларація + спосіб розкладки (DeclarationScreen.loadStructure). `hasArrangedCards` (AC-11b confirm-reset) -- поза Structure DTO, похідне з активних позицій розкладки. */
 async function loadStructure(): Promise<DeclarationScreenState> {
   const response = await fetch('/api/v1/structure', { headers: authHeaders() });
 
@@ -806,8 +806,7 @@ async function loadStructure(): Promise<DeclarationScreenState> {
   return {
     declaration: structure.declaration,
     layoutMode: structure.layoutMode,
-    logicVariant: structure.logicVariant,
-    // AC-11b/AC-16b: картка в треї (cellIndex === null) вже НЕ розкладена --
+    // AC-11b: картка в треї (cellIndex === null) вже НЕ розкладена --
     // підтвердження "картки скинуться вниз" не має питатись, коли скидати
     // нічого. Після міграції 06 таких позицій реально повно.
     hasArrangedCards: activePositions.some((position) => position.cellIndex !== null),
@@ -816,11 +815,11 @@ async function loadStructure(): Promise<DeclarationScreenState> {
 
 /** Єдине місце, де запам'ятовується спосіб розкладки з відповіді сервера. */
 function rememberLayoutChoice(structure: StructureDto): void {
-  lastKnownLayoutChoice = { layoutMode: structure.layoutMode, logicVariant: structure.logicVariant };
+  lastKnownLayoutChoice = { layoutMode: structure.layoutMode };
 }
 
 /** PATCH /api/v1/structure -- зберігає декларацію/режим розкладки (DeclarationScreen.onSave). */
-async function onSaveDeclaration(input: { declaration: string; layoutMode: LayoutMode; logicVariant: LogicVariant }): Promise<void> {
+async function onSaveDeclaration(input: { declaration: string; layoutMode: LayoutMode }): Promise<void> {
   const response = await fetch('/api/v1/structure', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -832,22 +831,18 @@ async function onSaveDeclaration(input: { declaration: string; layoutMode: Layou
     throw new AppError(body?.code ?? 'structure.request_failed', body?.message ?? 'Не вдалося зберегти Структуру', response.status);
   }
 
-  // AC-11b/AC-16b: та сама умова, за якою сервер скидає позиції
+  // AC-11b: та сама умова, за якою сервер скидає позиції
   // (app/update-structure.ts). Прапорець ставиться ЛИШЕ після успішної
   // відповіді -- збій PATCH нічого на сервері не скинув, тож банер був би
   // брехнею.
   const previous = lastKnownLayoutChoice;
-  if (previous !== null) {
-    const layoutModeChanged = input.layoutMode !== previous.layoutMode;
-    const logicVariantSwitched = input.logicVariant !== previous.logicVariant && input.layoutMode === 'logic';
-    if (layoutModeChanged || logicVariantSwitched) {
-      layoutJustReset = true;
-    }
+  if (previous !== null && input.layoutMode !== previous.layoutMode) {
+    layoutJustReset = true;
   }
 
   const saved = (await response.json().catch(() => null)) as StructureDto | null;
   if (saved) rememberLayoutChoice(saved);
-  else lastKnownLayoutChoice = { layoutMode: input.layoutMode, logicVariant: input.logicVariant };
+  else lastKnownLayoutChoice = { layoutMode: input.layoutMode };
 }
 
 /**
@@ -864,12 +859,36 @@ async function onSaveDeclaration(input: { declaration: string; layoutMode: Layou
  * тексту, без окремого API-поля): тут це найбільший зайнятий індекс + запас
  * вільних клітинок (той самий текстовий принцип, що sad.md §5.2).
  *
- * `justReset` (AC-11b/AC-16b) -- клієнтський одноразовий прапорець, див.
+ * `justReset` (AC-11b) -- клієнтський одноразовий прапорець, див.
  * layoutJustReset вище. Окремого поля в контракті він не потребує: скидання --
  * наслідок PATCH, який зробив цей самий клієнт.
+ *
+ * `layoutMode` (вимога 15, "Готово до розкладання") -- окремий GET
+ * /api/v1/structure поряд із позиціями/картками: LayoutBoard сам не знає
+ * поточний режим (він живе на Структурі, не на розкладці), а йому треба
+ * знати САМЕ 'staging', щоб зробити трей нерозкладених явним стійким станом,
+ * а не лише одноразовим наслідком reset (justReset). Той самий виклик заразом
+ * оновлює lastKnownLayoutChoice (rememberLayoutChoice) -- джерело завжди одне
+ * (GET /structure), не власна копія стану.
  */
 async function loadLayout(): Promise<LayoutBoardState> {
-  const [positions, cards] = await Promise.all([fetchActiveLayoutPositions(), loadCards()]);
+  const [structureResponse, positions, cards] = await Promise.all([
+    fetch('/api/v1/structure', { headers: authHeaders() }),
+    fetchActiveLayoutPositions(),
+    loadCards(),
+  ]);
+
+  // Ця Структура -- лише допоміжна підказка (staging-банер), не критичні дані
+  // сітки/позицій: збій цього одного запиту навмисно НЕ валить весь екран
+  // Схеми (той самий принцип, що AC-07's history-запит у loadAnalytics нижче)
+  // -- просто немає підказки цього разу, `layoutMode` лишається null.
+  let layoutMode: LayoutMode = null;
+  if (structureResponse.ok) {
+    const structure = (await structureResponse.json()) as StructureDto;
+    rememberLayoutChoice(structure);
+    layoutMode = structure.layoutMode;
+  }
+
   const positionByCardId = new Map(positions.map((position) => [position.cardId, position]));
   // Позиції без клітинки (трей) у розмір сітки не входять -- інакше NULL
   // коерціювався б у 0 і міг би штучно підтягнути сітку до однієї клітинки.
@@ -882,6 +901,7 @@ async function loadLayout(): Promise<LayoutBoardState> {
   return {
     cellCount: maxCellIndex + 1 + FREE_CELL_BUFFER,
     justReset: consumeLayoutJustReset(),
+    layoutMode,
     cards: cards.map((card, index) => {
       const position = positionByCardId.get(card.id);
       return {
@@ -1028,12 +1048,17 @@ async function loadAnalytics(): Promise<AnalyticsScreenState> {
     })),
   );
 
-  const isLogicLayout = structure.layoutMode === 'logic';
+  // Вимоги 14/15 (плоска модель): колишні три підвиди "за логікою"
+  // (balance/focus/cause_effect) стали топ-рівневими значеннями layoutMode --
+  // саме вони й далі несуть позиційну схему пріоритету (ранг-розрив AC-06),
+  // на відміну від 'free'/'staging'/null, де такої схеми немає (AC-06b).
+  const POSITION_PRIORITY_MODES: LayoutMode[] = ['balance', 'focus', 'cause_effect'];
+  const hasPositionPriorityScheme = POSITION_PRIORITY_MODES.includes(structure.layoutMode);
 
   // AC-07: минулу розкладку читаємо ДО розрахунку розриву, бо вона входить у
   // шкалу (нижче). `null` -- історія не відповіла; порожній список -- відповіла,
   // просто другої точки немає.
-  const pastPositions = isLogicLayout ? await fetchLayoutHistoryAsOf(trendCheckpoint()) : [];
+  const pastPositions = hasPositionPriorityScheme ? await fetchLayoutHistoryAsOf(trendCheckpoint()) : [];
 
   // AC-06/AC-07: ОДНА шкала нормалізації на обидві точки часу.
   //
@@ -1050,7 +1075,7 @@ async function loadAnalytics(): Promise<AnalyticsScreenState> {
   const scale = logicLayoutScale([...positions, ...(pastPositions ?? [])]);
 
   const gapByCardId = new Map<string, number>();
-  if (isLogicLayout) {
+  if (hasPositionPriorityScheme) {
     const gaps = computeLogicLayoutGaps(
       cards
         .filter((card) => progressByCardId.get(card.id) !== null && progressByCardId.get(card.id) !== undefined)
@@ -1076,7 +1101,7 @@ async function loadAnalytics(): Promise<AnalyticsScreenState> {
   // про збій).
   const trendAvailable = pastPositions !== null;
   const trendByCardId = new Map<string, AnalyticsTrend>();
-  if (isLogicLayout && pastPositions !== null) {
+  if (hasPositionPriorityScheme && pastPositions !== null) {
     const pastByCardId = new Map(pastPositions.map((position) => [position.cardId, position]));
     for (const card of cards) {
       const past = pastByCardId.get(card.id);
@@ -1119,15 +1144,42 @@ async function loadAnalytics(): Promise<AnalyticsScreenState> {
   // метриками/записами робимо ЛИШЕ в цьому випадку: у режимі "за логікою"
   // прапорець не показується, тож і питати нічого.
   const unmaintainedIds = new Set<string>();
-  if (!isLogicLayout) {
+  if (!hasPositionPriorityScheme) {
     const maintenance = await Promise.all(
       cards.map(async (card) => ({ cardId: card.id, ...(await fetchCardMaintenance(card.id)) })),
     );
     for (const cardId of flagUnmaintainedCards(maintenance)) unmaintainedIds.add(cardId);
   }
 
+  // AnalyticsScreen.tsx ще не переведений на плоску модель (окремий,
+  // паралельний worktree/агент, вимоги 14/15 -- щоб уникнути конфлікту дві
+  // задачі свідомо лишились розділені) -- його AnalyticsScreenState.layoutMode
+  // досі типізований старою дворівневою формою ('single'|'free'|'logic'|null)
+  // і рендер там читає лише `layoutMode === 'logic'`, щоб показати ранг-розрив.
+  // Тимчасовий міст: hasPositionPriorityScheme (нова, правильна умова вище)
+  // -> 'logic' зберігає той самий видимий результат; 'staging' (нове
+  // значення, якого стара форма не знає) падає на найближчий старий
+  // еквівалент 'free' -- "без заданої схеми пріоритету", той самий вибір, що
+  // migrations/07_flatten_layout_mode.down.sql робить для розвороту схеми.
+  // Прибрати цей міст, коли AnalyticsScreen.tsx (і його стан) самі перейдуть
+  // на 5 плоских значень.
+  let legacyLayoutModeForAnalyticsScreen: AnalyticsScreenState['layoutMode'];
+  switch (structure.layoutMode) {
+    case 'balance':
+    case 'focus':
+    case 'cause_effect':
+      legacyLayoutModeForAnalyticsScreen = 'logic';
+      break;
+    case 'staging':
+      legacyLayoutModeForAnalyticsScreen = 'free';
+      break;
+    default:
+      // 'free' | null -- уже у старій формі як є.
+      legacyLayoutModeForAnalyticsScreen = structure.layoutMode;
+  }
+
   return {
-    layoutMode: structure.layoutMode,
+    layoutMode: legacyLayoutModeForAnalyticsScreen,
     average,
     excludedCount,
     trendAvailable,

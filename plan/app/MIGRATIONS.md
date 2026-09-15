@@ -38,3 +38,4 @@
 | `1789151324598_make-cell-index-nullable.sql` | `structure/migrations/backend/06_make_cell_index_nullable.{up,down}.sql` | `25e7368bc101d760544ca73fbe5decd5b61879a0842ddbb526b6eed664a4ed33` |
 | `1789458805273_add-metric-block-status.sql` | `life-area-card/migrations/08_add_metric_block_status.{up,down}.sql` | `5d6ffd6a2c53fda9c2d8cd3cfcb12af8f5619f48cc8fe55184ea0447a763996b` |
 | `1789463867853_create-action-log.sql` | `agent/migrations/12_create_action_log.{up,down}.sql` | `3d505164fff585416f0f5ac8fce3482536e04c5f1bc1c0312de1830e5e810e70` |
+| `1789464101168_flatten-layout-mode.sql` | `structure/migrations/backend/07_flatten_layout_mode.{up,down}.sql` | `428767dc4c0add1fc7ecaebf41f17c54d15b917fb764b9e7c4251dff12e2346b` |
