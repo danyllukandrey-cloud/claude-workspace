@@ -150,7 +150,7 @@ export function DeclarationScreen({ loadStructure, onSave }: DeclarationScreenPr
           value={declaration}
           onChange={(event) => setDeclaration(event.target.value)}
           rows={5}
-          className="min-h-32 resize-y rounded-control border border-border bg-surface-solid px-3.5 py-2.5 font-sans text-sm font-normal text-ink placeholder:text-ink-faint focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
+          className="min-h-32 resize-y rounded-control border border-border bg-surface-solid px-3.5 py-2.5 font-sans text-sm font-normal italic text-ink placeholder:text-ink-faint focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
         />
       </label>
 

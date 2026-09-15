@@ -136,7 +136,7 @@ export function ArchiveScreen({
 
     return (
       <div className="flex h-full min-h-0 flex-col gap-4 p-4 pb-20">
-        <h1 className="font-display text-xl font-bold text-ink">Архів карток</h1>
+        <h1 className="font-display text-xl font-bold leading-relaxed text-ink">Архів карток</h1>
         <CardShell
           isFlipped={false}
           front={
@@ -146,7 +146,7 @@ export function ArchiveScreen({
             // (flex-1 min-h-0 overflow-y-auto) сюди, щоб не втратити скрол при
             // довгій історії записів.
             <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
-              <h2 className="font-display text-lg font-bold text-ink">{card.name}</h2>
+              <h2 className="font-display text-lg font-bold leading-relaxed text-ink">{card.name}</h2>
               <p className="text-sm italic text-ink-muted">Картка в архіві -- новий запис недоступний, поки її не розархівовано</p>
               <Button label="Розархівувати" onClick={handleRestore} disabled={isRestoring} />
               {restoreError !== null && <Banner variant="error" text={restoreError} />}
@@ -155,7 +155,7 @@ export function ArchiveScreen({
               {history.status === 'error' && <Banner variant="error" text={history.message} />}
               {history.status === 'ready' && (
                 <div className="flex flex-col gap-2">
-                  <h3 className="text-sm font-bold text-ink">Історія записів</h3>
+                  <h3 className="text-sm font-bold leading-relaxed text-ink">Історія записів</h3>
                   <ul className="flex flex-col gap-2">
                     {history.entries.map((entry) => (
                       <li
@@ -181,7 +181,7 @@ export function ArchiveScreen({
   if (state.items.length === 0) {
     return (
       <div className="flex h-full min-h-0 flex-col gap-4 p-4 pb-20">
-        <h1 className="font-display text-xl font-bold text-ink">Архів карток</h1>
+        <h1 className="font-display text-xl font-bold leading-relaxed text-ink">Архів карток</h1>
         <EmptyState message="Архів порожній" actionHint="Заархівовані картки з'являться тут після архівації" />
       </div>
     );
@@ -221,7 +221,7 @@ export function ArchiveScreen({
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 p-4 pb-20">
-      <h1 className="font-display text-xl font-bold text-ink">Архів карток</h1>
+      <h1 className="font-display text-xl font-bold leading-relaxed text-ink">Архів карток</h1>
       <DeckGrid
         items={items}
         renderFront={(item) => (

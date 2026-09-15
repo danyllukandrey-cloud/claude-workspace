@@ -356,7 +356,7 @@ export function App({
               h-6 w-6 підібраний за аналогією з GearIcon нижче (h-5 w-5
               всередині h-9 w-9 кнопки): трохи більший за значок шестерні,
               бо це лого, але явно менший за повнорозмірний варіант входу. */}
-          <h1 className="flex items-center gap-2 font-display text-lg font-bold tracking-tight text-ink">
+          <h1 className="flex items-center gap-2 font-display text-lg font-bold leading-relaxed tracking-tight text-ink">
             <Logo className="h-6 w-6 text-ink" />
             ПЛАН
           </h1>

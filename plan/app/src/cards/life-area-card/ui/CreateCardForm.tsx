@@ -97,7 +97,7 @@ export function CreateCardForm({ onCreate, onCancel }: CreateCardFormProps): JSX
         onSubmit={handleSubmit}
         className="flex flex-col gap-5 rounded-card border border-border bg-surface-solid p-6 shadow-soft"
       >
-        <h2 className="font-display text-lg font-bold text-ink">Нова картка</h2>
+        <h2 className="font-display text-lg font-bold leading-relaxed text-ink">Нова картка</h2>
         {submitError && <Banner variant="error" text={submitError} />}
         <TextField label="Назва" value={name} onChange={handleNameChange} error={validationError} />
         {saving ? (

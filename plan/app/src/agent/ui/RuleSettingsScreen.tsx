@@ -167,7 +167,7 @@ export function RuleSettingsScreen({ targetCards, loadRules, onSave }: RuleSetti
   if (loadError !== null) {
     return (
       <div className="mx-auto flex w-full max-w-md flex-col gap-4 px-4 py-6">
-        <h1 className="font-display text-xl font-bold text-ink">
+        <h1 className="font-display text-xl font-bold leading-relaxed text-ink">
           {isCardScope ? 'Налаштування правил — для картки' : 'Налаштування правил'}
         </h1>
         <Banner variant="error" text={loadError} />
@@ -311,7 +311,7 @@ export function RuleSettingsScreen({ targetCards, loadRules, onSave }: RuleSetti
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-6 px-4 py-6">
-      <h1 className="font-display text-xl font-bold text-ink">
+      <h1 className="font-display text-xl font-bold leading-relaxed text-ink">
         {isCardScope ? 'Налаштування правил — для картки' : 'Налаштування правил'}
       </h1>
 

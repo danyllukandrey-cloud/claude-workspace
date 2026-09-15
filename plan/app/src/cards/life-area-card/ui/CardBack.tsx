@@ -264,7 +264,7 @@ export function CardBack({
         ) : (
           <div className="flex flex-col gap-3">
             {data.aggregateProgress !== null && (
-              <p className="font-display text-sm font-bold text-ink">
+              <p className="mt-1 font-display text-sm font-bold leading-relaxed text-ink">
                 Загальний прогрес: {Math.round(data.aggregateProgress * 100)}%
               </p>
             )}

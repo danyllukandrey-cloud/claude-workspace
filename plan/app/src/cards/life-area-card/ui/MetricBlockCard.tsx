@@ -71,7 +71,7 @@ export function MetricBlockCard({ block, onDelete }: MetricBlockCardProps): JSX.
               {progress.accumulated} {block.unit}
             </span>
           </div>
-          <p className="text-xs font-medium text-ink-muted">постійний процес</p>
+          <p className="mt-1 text-xs font-medium leading-relaxed text-ink-muted">постійний процес</p>
         </>
       ) : (
         <>
@@ -84,13 +84,15 @@ export function MetricBlockCard({ block, onDelete }: MetricBlockCardProps): JSX.
             </span>
           </div>
           {progress.overGoal > 0 && (
-            <p className="text-xs font-medium text-ink-muted">
+            <p className="mt-1 text-xs font-medium leading-relaxed text-ink-muted">
               +{progress.overGoal} {block.unit} понад ціль
             </p>
           )}
         </>
       )}
-      {block.hasPendingEntry && <p className="text-xs font-medium text-ink-muted">Запис очікує перевірки агента</p>}
+      {block.hasPendingEntry && (
+        <p className="mt-1 text-xs font-medium leading-relaxed text-ink-muted">Запис очікує перевірки агента</p>
+      )}
     </div>
   );
 }
