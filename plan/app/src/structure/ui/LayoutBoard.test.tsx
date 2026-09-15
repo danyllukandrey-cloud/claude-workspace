@@ -50,12 +50,28 @@ function firePointer(target: EventTarget, type: 'pointerdown' | 'pointermove' | 
   });
 }
 
+// Реалістичний розмір чипа картки (для рect-based відступу лінії зв'язку --
+// LayoutBoard.tsx's rectPullback) -- значно менший за канву 300x210, інакше
+// (як CANVAS_RECT для всіх елементів) чип "заповнював" би пів-канви і
+// відступ ліній ставав абсурдно великим.
+const CARD_CHIP_RECT = { x: 0, y: 0, left: 0, top: 0, width: 70, height: 36, right: 70, bottom: 36 };
+
 let originalGetBoundingClientRect: typeof Element.prototype.getBoundingClientRect;
 
 beforeEach(() => {
   originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
-  Element.prototype.getBoundingClientRect = () =>
-    ({ ...CANVAS_RECT, toJSON: () => CANVAS_RECT }) as DOMRect;
+  Element.prototype.getBoundingClientRect = function (this: Element) {
+    // "card chip" -- сам чип (data-card-id на собі) АБО card-wrapper, чия
+    // ПРЯМА дитина -- чип (LayoutBoard.tsx's ref на wrapper-div). НЕ
+    // querySelector (глибокий пошук) -- канва теж МІСТИТЬ чипи як нащадків
+    // (просто не прямих), і глибокий пошук хибно позначав би саму канву
+    // як "чип", підмінюючи canvasRect на CARD_CHIP_RECT.
+    const isCardChip =
+      this.hasAttribute('data-card-id') ||
+      Array.from(this.children).some((child) => child.hasAttribute('data-card-id'));
+    const rect = isCardChip ? CARD_CHIP_RECT : CANVAS_RECT;
+    return { ...rect, toJSON: () => rect } as DOMRect;
+  };
 });
 
 afterEach(() => {
@@ -121,7 +137,7 @@ test('default: розкладені картки показані всереди
   expect(cardA.parentElement?.style.top).toBe('30%');
 });
 
-test('default: нерозкладена картка (x/y null) показана в купці, не на канві', async () => {
+test('default: нерозкладена картка (x/y null) показана в купці, не серед вільно розташованих карток канви', async () => {
   const props = baseProps({
     cards: [
       { cardId: 'card-a', cardTitle: 'Картка A', x: 20, y: 30 },
@@ -131,11 +147,15 @@ test('default: нерозкладена картка (x/y null) показана
   render(<LayoutBoard {...props} />);
 
   const tray = await screen.findByTestId('unassigned-tray');
-  const canvas = screen.getByTestId('canvas');
   const trayCard = screen.getByTestId('card-card-tray');
 
+  // Живе тестування (Андрій): "блоки мають лежати в зоні де схема а не поза
+  // нею" -- купка нерозкладених тепер НАВМИСНЕ вкладена всередину тієї самої
+  // зони (data-testid="canvas"), тож canvas.contains(trayCard) законно true.
+  // Значущий інваріант -- картка без позиції лежить САМЕ в треї, а не
+  // позиціонована вільно (style left/top) як розкладена картка канви.
   expect(tray.contains(trayCard)).toBe(true);
-  expect(canvas.contains(trayCard)).toBe(false);
+  expect(trayCard.style.left).toBe('');
 });
 
 describe('вимога 3 (чат): реальний драг мишею/дотиком через Pointer Events', () => {
@@ -198,16 +218,16 @@ describe('вимога 3 (чат): реальний драг мишею/доти
   });
 });
 
-describe('вимоги 4/5 (чат): інструмент "Зв\'язати" -- лінія чи стрілка між двома картками', () => {
-  test('кнопка "Зв\'язати" відкриває вибір Лінія/Стрілка + підказку "оберіть першу картку"', async () => {
+describe('вимоги 4/5 (чат): два завжди видимі інструменти "Лінія"/"Стрілка" -- без проміжної кнопки-шлюзу "Зв\'язати"', () => {
+  test('обидва інструменти видимі одразу, клік по "Лінія" вмикає підказку "оберіть першу картку"', async () => {
     const props = baseProps();
     render(<LayoutBoard {...props} />);
 
     await screen.findByTestId('canvas');
-    fireEvent.click(screen.getByRole('button', { name: "Зв'язати" }));
-
     expect(screen.getByRole('button', { name: 'Лінія' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Стрілка' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Лінія' }));
     await screen.findByText(/оберіть першу картку/i);
   });
 
@@ -216,8 +236,7 @@ describe('вимоги 4/5 (чат): інструмент "Зв\'язати" -- 
     render(<LayoutBoard {...props} />);
 
     await screen.findByTestId('canvas');
-    fireEvent.click(screen.getByRole('button', { name: "Зв'язати" }));
-    // "Лінія" вже обрана за замовчуванням, тапаємо одразу по картках.
+    fireEvent.click(screen.getByRole('button', { name: 'Лінія' }));
     firePointer(screen.getByTestId('card-card-a'), 'pointerdown', 10, 10);
     firePointer(screen.getByTestId('card-card-b'), 'pointerdown', 20, 20);
 
@@ -231,7 +250,6 @@ describe('вимоги 4/5 (чат): інструмент "Зв\'язати" -- 
     render(<LayoutBoard {...props} />);
 
     await screen.findByTestId('canvas');
-    fireEvent.click(screen.getByRole('button', { name: "Зв'язати" }));
     fireEvent.click(screen.getByRole('button', { name: 'Стрілка' }));
     firePointer(screen.getByTestId('card-card-a'), 'pointerdown', 10, 10);
     firePointer(screen.getByTestId('card-card-b'), 'pointerdown', 20, 20);
@@ -246,7 +264,7 @@ describe('вимоги 4/5 (чат): інструмент "Зв\'язати" -- 
     render(<LayoutBoard {...props} />);
 
     await screen.findByTestId('canvas');
-    fireEvent.click(screen.getByRole('button', { name: "Зв'язати" }));
+    fireEvent.click(screen.getByRole('button', { name: 'Лінія' }));
     firePointer(screen.getByTestId('card-card-a'), 'pointerdown', 10, 10);
     firePointer(screen.getByTestId('card-card-a'), 'pointerdown', 10, 10);
 
@@ -254,30 +272,48 @@ describe('вимоги 4/5 (чат): інструмент "Зв\'язати" -- 
     await screen.findByText(/оберіть першу картку/i);
   });
 
-  test('"Готово" виходить з режиму зв\'язування без побічних дій', async () => {
+  test('повторний клік по вже активному інструменту вимикає режим зв\'язування без побічних дій', async () => {
     const props = baseProps();
     render(<LayoutBoard {...props} />);
 
     await screen.findByTestId('canvas');
-    fireEvent.click(screen.getByRole('button', { name: "Зв'язати" }));
-    fireEvent.click(screen.getByRole('button', { name: 'Готово' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Лінія' }));
+    await screen.findByText(/оберіть першу картку/i);
 
-    expect(screen.queryByRole('button', { name: 'Лінія' })).toBeNull();
-    expect(screen.getByRole('button', { name: "Зв'язати" })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Лінія' }));
+
+    expect(screen.queryByText(/оберіть першу картку/i)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Лінія' }).getAttribute('aria-pressed')).toBe('false');
     expect(props.onCreateConnection).not.toHaveBeenCalled();
   });
 
-  test('наявний зв\'язок рендериться SVG-лінією між центрами обох карток', async () => {
+  test('клік по "Стрілка", поки активна "Лінія", перемикає інструмент замість вмикання обох', async () => {
+    const props = baseProps();
+    render(<LayoutBoard {...props} />);
+
+    await screen.findByTestId('canvas');
+    fireEvent.click(screen.getByRole('button', { name: 'Лінія' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Стрілка' }));
+
+    expect(screen.getByRole('button', { name: 'Лінія' }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('button', { name: 'Стрілка' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  test('наявний зв\'язок рендериться SVG-лінією, відтягнутою від центрів карток (щоб вістря стрілки не ховалось під чипом)', async () => {
     const props = baseProps({
       connections: [{ id: 'conn-1', cardIdA: 'card-a', cardIdB: 'card-b', directed: false }],
     });
     render(<LayoutBoard {...props} />);
 
     const line = await screen.findByTestId('connection-conn-1');
-    expect(line.getAttribute('x1')).toBe('20');
-    expect(line.getAttribute('y1')).toBe('30');
-    expect(line.getAttribute('x2')).toBe('60');
-    expect(line.getAttribute('y2')).toBe('70');
+    // Центри карток -- (20,30) і (60,70); кінці лінії відтягнуті від центру
+    // на межу ФАКТИЧНОГО прямокутника чипа (CARD_CHIP_RECT 70x36 на канві
+    // 300x210, +1 запасу), щоб і лінія, і вістря стрілки (для directed:true)
+    // малювались поза межею непрозорого чипа картки, а не під ним.
+    expect(Number(line.getAttribute('x1'))).toBeCloseTo(29.281, 2);
+    expect(Number(line.getAttribute('y1'))).toBeCloseTo(39.281, 2);
+    expect(Number(line.getAttribute('x2'))).toBeCloseTo(50.719, 2);
+    expect(Number(line.getAttribute('y2'))).toBeCloseTo(60.719, 2);
     expect(line.getAttribute('data-directed')).toBe('false');
   });
 

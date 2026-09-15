@@ -30,7 +30,7 @@
 // ЛИШАЄТЬСЯ як є з попереднього проходу (D-131), логіка вибору режиму тут не
 // змінюється. Змінюється лише BOARD-екран (сама канва).
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { Banner, Button, ConfirmDialog, EmptyState, Spinner } from '../../shared/ui';
 import { CloseCardDialog } from './CloseCardDialog';
@@ -162,6 +162,12 @@ export function LayoutBoard({
 
   // --- Драг мишею/дотиком (вимога 3) -- Pointer Events API -------------------
   const canvasRef = useRef<HTMLDivElement>(null);
+  // Реальні DOM-вузли чипів на канві -- лінії зв'язків (нижче) відступають
+  // від центру картки на ФАКТИЧНУ половину її розміру (ширина залежить від
+  // довжини назви), а не на приблизну константу. Живе тестування (Андрій,
+  // зі скріншотом): фіксований відступ ховав вістря стрілки під широким
+  // чипом ("Філософія") -- константа була відкаліброва на вужчий чип.
+  const cardElementsRef = useRef<Map<string, HTMLDivElement>>(new Map());
   const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
   // Джерело правди для позиції картки, що ЗАРАЗ тягнеться -- ref (синхронний
   // читач на pointerup), `dragTick` лише змушує React перемалювати JSX із
@@ -181,6 +187,18 @@ export function LayoutBoard({
     // Навмисно без loadLayout у deps -- викликається рівно раз при монтуванні.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Живе тестування (Андрій, зі скріншотом): rectPullback (нижче, при
+  // рендері ліній зв'язків) читає cardElementsRef -- а ref на чип картки
+  // заповнюється лише ПІСЛЯ commit, тобто в межах ТОГО САМОГО виклику
+  // render(), у якому вперше з'явились картки, cardElementsRef ще
+  // порожній -- лінії малювались з відступом-заглушкою (замість реального
+  // розміру чипа), тому вістря ховалось під широким чипом. Один додатковий
+  // тік ПІСЛЯ commit (dragTick, той самий лічильник, що й драг) змушує
+  // перемалювати лінії вже зі свіжо-заповненими рефами.
+  useLayoutEffect(() => {
+    setDragTick((tick) => tick + 1);
+  }, [state.cards.length, state.connections.length]);
 
   /** Пікселі вказівника -> відсоток канви (0-100), клемплені -- той самий clampPercent, що сервер (domain/layout.ts). */
   function toCanvasPercent(clientX: number, clientY: number): { x: number; y: number } {
@@ -377,12 +395,7 @@ export function LayoutBoard({
     setCloseOptions(null);
   };
 
-  const exitLinkMode = (): void => {
-    setLinkTool(null);
-    setLinkFirstCardId(null);
-  };
-
-  /** Тап по картці, поки активний інструмент "Зв'язати" (вимога 4/5). */
+  /** Тап по картці, поки активний інструмент зв'язування (вимога 4/5). */
   const handleLinkTap = (cardId: string): void => {
     if (linkTool === null) return;
 
@@ -515,16 +528,36 @@ export function LayoutBoard({
         </div>
       )}
 
-      {/* Вимога 2 (Андрій, чат): ОДНА канва -- верхні 70% висоти екрана, не
-          окрема "зона базового розташування". */}
-      <div ref={canvasRef} data-testid="canvas" className="relative h-[70%] min-h-0 shrink-0 overflow-hidden rounded-control border border-border">
+      {/* Живе тестування (Андрій): "блоки мають лежати в зоні де схема а не
+          поза нею" -- ОДНА зона (канва + купка нерозкладених РАЗОМ, жодного
+          border-top-розділювача між ними). "Низ зони має бути над кнопками і
+          не змінюватись ні в верх ні в низ, зона не має опускатись нижче
+          кнопок конфігурація" -- flex-1 (не фіксовані 70%) дає стабільний
+          низ, АЛЕ плаваючий тулбар (absolute, поза потоком) інакше просто
+          "плавав" би ПОВЕРХ нижньої частини зони, а не над порожнім місцем --
+          mb-16 нижче явно резервує той самий простір, що займає тулбар
+          (bottom-4 + висота кнопок), тож зона реально закінчується ВИЩЕ за
+          кнопки, а не ховається під ними. Живе тестування (Андрій): "прибери
+          рамку зони -- вона зайва, нижню частину просто відділи променем" --
+          жодного border навколо зони, лише тонка горизонтальна риска під
+          самим низом (окремий елемент нижче), не суцільна рамка. */}
+      <div
+        ref={canvasRef}
+        data-testid="canvas"
+        className="relative mb-16 flex-1 min-h-0 overflow-hidden"
+      >
         {/* SVG-шар зв'язків -- viewBox 0..100 у ЄДИНИХ одиницях з
             left/top-відсотками карток нижче, тож лінія завжди влучає в центр
             чипа, незалежно від реального пропорцій канви (вимога 4). */}
         <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
           <defs>
-            <marker id="layout-board-arrowhead" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" markerUnits="userSpaceOnUse">
-              <path d="M0,0 L6,3 L0,6 Z" fill="currentColor" />
+            {/* Живе тестування (Андрій, зі скріншотом): "це за великий розмір.
+                Такого як розмір інструментарію достатньо" -- вістря було
+                розміром 6 одиниць viewBox (при нерівномірному розтягу канви
+                це вироджувалось у величезний трикутник). 1.8 -- приблизно
+                розмір іконки інструменту в тулбарі (20px). */}
+            <marker id="layout-board-arrowhead" markerWidth="1.8" markerHeight="1.8" refX="1.5" refY="0.9" orient="auto" markerUnits="userSpaceOnUse">
+              <path d="M0,0 L1.8,0.9 L0,1.8 Z" fill="currentColor" />
             </marker>
           </defs>
           {state.connections.map((connection) => {
@@ -534,15 +567,50 @@ export function LayoutBoard({
             const posA = renderedPosition(a);
             const posB = renderedPosition(b);
             if (!posA || !posB) return null;
+            // Живе тестування (Андрій): "При зєднання стрілкою стрілки самої
+            // не видно" -- чип картки в DOM йде ПІСЛЯ svg-шару (рендериться
+            // зверху), а кінець лінії/вістря стрілки стояв точно в центрі
+            // чипа (posB) -- вістря ховалось під непрозорим фоном картки.
+            // Далі (Андрій, зі скріншотом): фіксований відступ ховав вістря
+            // під ШИРОКИМ чипом ("Філософія") -- константа калібрувалась на
+            // вужчий чип. Відступ рахуємо за ФАКТИЧНИМ розміром DOM-вузла
+            // кожної картки (rectHalfWidth/rectHalfHeight у % канви) --
+            // класичне "промінь із центра прямокутника до його межі":
+            // t = min(halfW/|ux|, halfH/|uy|).
+            const dx = posB.x - posA.x;
+            const dy = posB.y - posA.y;
+            const dist = Math.hypot(dx, dy);
+            const ux = dist > 0 ? dx / dist : 0;
+            const uy = dist > 0 ? dy / dist : 0;
+            const canvasRect = canvasRef.current?.getBoundingClientRect();
+            const rectPullback = (cardId: string): number => {
+              const el = cardElementsRef.current.get(cardId);
+              if (!el || !canvasRect || canvasRect.width === 0 || canvasRect.height === 0) return 4;
+              const chipRect = el.getBoundingClientRect();
+              const halfW = (chipRect.width / 2 / canvasRect.width) * 100;
+              const halfH = (chipRect.height / 2 / canvasRect.height) * 100;
+              const tW = Math.abs(ux) > 0.001 ? halfW / Math.abs(ux) : Infinity;
+              const tH = Math.abs(uy) > 0.001 ? halfH / Math.abs(uy) : Infinity;
+              const t = Math.min(tW, tH);
+              // +1 -- невеликий запас понад точну межу прямокутника, щоб
+              // лінія не торкалась заокругленого кута впритул.
+              return Number.isFinite(t) ? t + 1 : 4;
+            };
+            const pullbackA = dist > 0 ? Math.min(rectPullback(connection.cardIdA), dist / 2 - 0.5) : 0;
+            const pullbackB = dist > 0 ? Math.min(rectPullback(connection.cardIdB), dist / 2 - 0.5) : 0;
+            const x1 = posA.x + ux * pullbackA;
+            const y1 = posA.y + uy * pullbackA;
+            const x2 = posB.x - ux * pullbackB;
+            const y2 = posB.y - uy * pullbackB;
             return (
               <line
                 key={connection.id}
                 data-testid={`connection-${connection.id}`}
                 data-directed={connection.directed}
-                x1={posA.x}
-                y1={posA.y}
-                x2={posB.x}
-                y2={posB.y}
+                x1={x1}
+                y1={y1}
+                x2={x2}
+                y2={y2}
                 className={`text-ink/50 hover:text-ink ${linkTool === null ? 'pointer-events-auto cursor-pointer' : ''}`}
                 stroke="currentColor"
                 strokeWidth={1.5}
@@ -560,18 +628,36 @@ export function LayoutBoard({
           return (
             <div
               key={card.cardId}
+              ref={(el) => {
+                if (el) cardElementsRef.current.set(card.cardId, el);
+                else cardElementsRef.current.delete(card.cardId);
+              }}
               style={{ position: 'absolute', left: `${pos.x}%`, top: `${pos.y}%`, transform: 'translate(-50%, -50%)' }}
             >
               {cardChip(card)}
             </div>
           );
         })}
+
+        {/* Купка нерозкладених -- ВСЕРЕДИНІ тієї самої зони, доклеєна до її
+            низу (absolute bottom-0), напівпрозорий фон-підклад, щоб читалась
+            навіть поверх картки на канві під нею. max-h -- приблизно 3 рядки
+            чипів (вимога Андрія "не більше"), далі власний внутрішній скрол. */}
+        {unassigned.length > 0 && (
+          <div
+            data-testid="unassigned-tray"
+            className="absolute inset-x-0 bottom-0 flex max-h-28 flex-wrap content-start gap-2 overflow-y-auto bg-surface/85 p-2 backdrop-blur-sm"
+          >
+            {unassigned.map((card) => cardChip(card))}
+          </div>
+        )}
       </div>
 
-      {/* Вимога 2: купка нерозкладених -- решта висоти, звичайний потік (flex-wrap), не absolute. */}
-      <div data-testid="unassigned-tray" className="flex min-h-0 flex-1 flex-wrap content-start gap-2 overflow-y-auto border-t border-border pt-3">
-        {unassigned.map((card) => cardChip(card))}
-      </div>
+      {/* Живе тестування (Андрій): "нижню частину просто відділи променем в
+          обидві сторони від центру над кнопкою та інструментом" -- тонка
+          горизонтальна риска замість рамки, точно на межі зони (bottom-16 --
+          та сама відстань, що mb-16 зони вище), над плаваючим тулбаром. */}
+      <div className="pointer-events-none absolute inset-x-10 z-10 border-t border-border" style={{ bottom: '4rem' }} />
 
       {/* AC-12 / SCR-04. */}
       {closingCard !== null && (
@@ -612,39 +698,45 @@ export function LayoutBoard({
         </div>
       )}
 
-      {/* Живе тестування (Андрій): "Конфігурація" -- знизу по центру, поверх
-          контенту. "Зв'язати" (вимоги 4/5) -- поруч, той самий floating-патерн. */}
+      {/* Живе тестування (Андрій): "Замість кнопки зв'язати можна просто два
+          інструменти стрілочку та пряму з двома кружечками які можна
+          вибрати" -- прибрано проміжну кнопку-шлюз "Зв'язати" + окрему
+          "Готово". Тепер два інструменти ЗАВЖДИ видимі поруч із
+          "Конфігурація": клік по неактивному -- вмикає (перемикає з іншого,
+          якщо той був активний), клік по вже активному -- вимикає назад у
+          звичайний режим перетягування (той самий toggle, що LAYOUT_MODE
+          пігулки, лише без "Готово" -- сам клік по активній іконці ним і є). */}
       <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2">
-        {linkTool === null ? (
-          <>
-            <Button label="Зв'язати" onClick={() => setLinkTool('line')} />
-            <Button label="Конфігурація" onClick={openConfig} />
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              aria-pressed={linkTool === 'line'}
-              onClick={() => setLinkTool('line')}
-              className={`rounded-control border px-3.5 py-2.5 text-sm font-bold transition-colors ${
-                linkTool === 'line' ? 'border-ink bg-ink/10 text-ink' : 'border-border bg-surface-solid text-ink-muted'
-              }`}
-            >
-              Лінія
-            </button>
-            <button
-              type="button"
-              aria-pressed={linkTool === 'arrow'}
-              onClick={() => setLinkTool('arrow')}
-              className={`rounded-control border px-3.5 py-2.5 text-sm font-bold transition-colors ${
-                linkTool === 'arrow' ? 'border-ink bg-ink/10 text-ink' : 'border-border bg-surface-solid text-ink-muted'
-              }`}
-            >
-              Стрілка
-            </button>
-            <Button label="Готово" onClick={exitLinkMode} />
-          </>
-        )}
+        <button
+          type="button"
+          aria-label="Лінія"
+          aria-pressed={linkTool === 'line'}
+          onClick={() => setLinkTool((prev) => (prev === 'line' ? null : 'line'))}
+          className={`flex h-11 w-11 items-center justify-center rounded-control border transition-colors ${
+            linkTool === 'line' ? 'border-ink bg-ink/10 text-ink' : 'border-border bg-surface-solid text-ink-muted hover:border-ink/40'
+          }`}
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <circle cx="4" cy="10" r="2.4" fill="currentColor" />
+            <line x1="6.4" y1="10" x2="13.6" y2="10" stroke="currentColor" strokeWidth="1.6" />
+            <circle cx="16" cy="10" r="2.4" fill="currentColor" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          aria-label="Стрілка"
+          aria-pressed={linkTool === 'arrow'}
+          onClick={() => setLinkTool((prev) => (prev === 'arrow' ? null : 'arrow'))}
+          className={`flex h-11 w-11 items-center justify-center rounded-control border transition-colors ${
+            linkTool === 'arrow' ? 'border-ink bg-ink/10 text-ink' : 'border-border bg-surface-solid text-ink-muted hover:border-ink/40'
+          }`}
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <line x1="3" y1="10" x2="15" y2="10" stroke="currentColor" strokeWidth="1.6" />
+            <path d="M11 5.5 L16.5 10 L11 14.5" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinejoin="round" strokeLinecap="round" />
+          </svg>
+        </button>
+        <Button label="Конфігурація" onClick={openConfig} />
       </div>
     </div>
   );
