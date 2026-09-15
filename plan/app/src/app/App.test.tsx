@@ -24,7 +24,7 @@
 // "now" теж ін'єктовано -- порівняння expiresAt з поточним часом інакше
 // недетерміноване між прогонами тесту (сьогодні збігається, за рік -- ні).
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { App } from './App';
 import type { DeckGridItem, EntryViewModel } from '../cards/life-area-card';
 import type {
@@ -73,6 +73,9 @@ function baseProps() {
     // ISS-60 (docs/ISSUES.md): реальний POST /cards/{id}/metric-blocks
     // (main.tsx) -- App замикає над cardId, той самий стиль, що onRename.
     createMetricBlock: vi.fn().mockResolvedValue(undefined),
+    // Реальний DELETE /cards/{id}/metric-blocks/{metricBlockId} (main.tsx) --
+    // App замикає над cardId, той самий стиль, що createMetricBlock/onRename.
+    archiveMetricBlock: vi.fn().mockResolvedValue(undefined),
     // Review C10 (AC-03): реальний PATCH /cards/{cardId} (description/markFilled,
     // main.tsx) -- App замикає над cardId, той самий стиль, що onRename.
     onUpdateDescription: vi.fn().mockResolvedValue(undefined),
@@ -394,9 +397,13 @@ test('ISS-55 stage 3+D-124: клік "Архів" на Літопис-Аналі
   expect(props.loadArchivedCards).toHaveBeenCalledTimes(1);
 });
 
-test('ISS-55 stage 3: кнопка "← Назад" в Архіві повертає на Колоду з повторним завантаженням', async () => {
+// Задача 13 (живе тестування): раніше "← Назад" завжди виставляв Screen на
+// 'deck' -- у зв'язці з direction='cards' (виставленим ще при відкритті
+// архіву з onOpenArchive) це вело на Картки, а не туди, звідки користувач
+// реально прийшов. Архів зараз відкривається лише з Аналітики (onOpenArchive
+// вище), тож "Назад" має повернути саме на AnalyticsScreen.
+test('Задача 13: кнопка "← Назад" в Архіві, відкритому з Аналітики, повертає на Аналітику', async () => {
   const props = validSessionProps();
-  props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
   props.loadArchivedCards.mockResolvedValue([]);
 
   render(<App {...props} />);
@@ -406,11 +413,11 @@ test('ISS-55 stage 3: кнопка "← Назад" в Архіві поверт
 
   fireEvent.click(screen.getByRole('button', { name: '← Назад' }));
 
-  // Повернення на 'deck' -- активна картка знову видима (D-121: одразу
-  // повним вмістом, не тайлом-кнопкою), loadCards викликано вдруге (перший
-  // раз при первинному монтуванні Колоди).
-  expect(await screen.findByRole('heading', { name: 'Спорт' })).toBeTruthy();
-  expect(props.loadCards).toHaveBeenCalledTimes(2);
+  // Повернення на 'analytics' -- AnalyticsScreen знову видимий (кнопка
+  // "Архів" -- її власний елемент), loadAnalytics викликано вдруге (перший
+  // раз при первинному монтуванні Аналітики, перед відкриттям архіву).
+  expect(await screen.findByRole('button', { name: 'Архів' })).toBeTruthy();
+  expect(props.loadAnalytics).toHaveBeenCalledTimes(2);
 });
 
 test('ISS-55 stage 3: розархівування картки в Архіві викликає injected onRestoreCard(cardId)', async () => {
@@ -482,6 +489,38 @@ test('ISS-60: створення блоку-метрики на передній
     isOngoing: false,
     targetDate: null,
   });
+});
+
+// Видалення блоку-метрики: App прокидає archiveMetricBlock прямо в
+// DeckScreen -> DeckFrontCard -> CardBack, DeckFrontCard сам замикає над
+// cardId передньої картки (той самий стиль, що createMetricBlock/onFlagEntry).
+
+test('видалення блоку-метрики на передній картці (кнопка "×" -> ввід "видалити" -> "Видалити") викликає injected archiveMetricBlock(cardId, metricBlockId)', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
+  props.loadBack.mockResolvedValue({
+    metricBlocks: [
+      { id: 'mb1', label: 'Тренування', unit: 'раз', progress: { kind: 'bounded', share: 0.5, overGoal: 0 }, hasPendingEntry: false },
+    ],
+    aggregateProgress: 0.5,
+    entries: [],
+  });
+
+  render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
+
+  fireEvent.click(await screen.findByRole('button', { name: /перегорнути/ }));
+  await screen.findByText('Тренування');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Видалити метрику «Тренування»' }));
+  // ChatPanel (постійна панель, D-121) теж має власне текстове поле --
+  // getByRole('textbox') на рівні всього App неоднозначний, тому питаємо
+  // лише всередині діалогу підтвердження (role="dialog").
+  const dialog = screen.getByRole('dialog');
+  fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'видалити' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Видалити' }));
+
+  expect(props.archiveMetricBlock).toHaveBeenCalledWith('card-1', 'mb1');
 });
 
 test('D-124: клік "Вийти" у верхньому барі (поруч із шестернею) стирає сесію і повертає на LoginScreen', async () => {
@@ -651,6 +690,39 @@ test('T29+D-121+D-123: після входу видно і дефолтний е
   expect(await screen.findByRole('menuitem', { name: 'Налаштування правил' })).toBeTruthy();
   expect(await screen.findByRole('menuitem', { name: 'Звіти активності' })).toBeTruthy();
   expect(await screen.findByRole('menuitem', { name: 'Обліковий запис і дані' })).toBeTruthy();
+});
+
+// Задача 9: стандартна поведінка випадного меню -- клік будь-де поза меню й
+// поза кнопкою-шестернею закриває меню, не лише повторний клік по шестерні
+// чи вибір пункту (обидва вже покриті тестами вище/нижче).
+test('Задача 9: клік поза меню шестерні закриває його', async () => {
+  const props = validSessionProps();
+
+  render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Меню налаштувань' }));
+  expect(await screen.findByRole('menu')).toBeTruthy();
+
+  // Клік по заголовку "ПЛАН" -- точно поза меню й поза шестернею.
+  fireEvent.mouseDown(await screen.findByText('ПЛАН'));
+
+  await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+});
+
+test('Задача 9: клік по самій шестерні, поки меню відкрите, закриває його лише один раз (без подвійного тригера)', async () => {
+  const props = validSessionProps();
+
+  render(<App {...props} />);
+  const gearButton = await screen.findByRole('button', { name: 'Меню налаштувань' });
+  fireEvent.click(gearButton);
+  expect(await screen.findByRole('menu')).toBeTruthy();
+
+  // mousedown на самій кнопці (document-listener) + click одразу після
+  // (React onClick, той самий toggle) -- імітує реальний клік мишею.
+  fireEvent.mouseDown(gearButton);
+  fireEvent.click(gearButton);
+
+  // Мав закритися (toggle), а не лишитись відкритим через подвійний тригер.
+  expect(screen.queryByRole('menu')).toBeNull();
 });
 
 test('T29+D-123: клік "Налаштування правил" у меню шестерні перемикає екран на RuleSettingsScreen (loadRules/loadRuleTargetCards)', async () => {

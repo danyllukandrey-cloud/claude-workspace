@@ -24,10 +24,19 @@ export interface CardShellProps {
 // -- CardShell розтягується на всю неї; де предок сам content-сайзиться
 // (ArchiveScreen.tsx card-view -- явних змін тут не було) `height: 100%` від
 // `height: auto` резолвиться в `auto` (сам CSS-спек), тож існуючі виклики без
-// означеної висоти-предка поводяться так само, як і раніше. `overflow-y-auto`
-// на внутрішньому блоці -- вміст (особливо зворот із багатьма блоками-
-// метриками) прокручується всередині фіксованої висоти картки, замість того
-// щоб продавлювати її вниз.
+// означеної висоти-предка поводяться так само, як і раніше.
+//
+// Живе тестування (Андрій, баг 2): `overflow-y-auto` НЕ тут -- раніше стояв
+// на цьому самому контейнері, що містив УВЕСЬ вміст (front/back) РАЗОМ із
+// кнопкою "перегорнути" (mt-auto), тож при великому контенті скролився
+// весь стовпчик цілком, разом із кнопкою, замість того щоб кнопка лишалась
+// прикріпленою внизу. Тепер скрол і прикріплена кнопка -- на РІЗНИХ рівнях:
+// кожен викликач (CardFace.tsx/CardBack.tsx) сам обгортає СВІЙ контент (без
+// кнопки) у `flex-1 min-h-0 overflow-y-auto`, а кнопка -- сестринський
+// елемент ПІСЛЯ цієї обгортки, природно лишається внизу через flex-1 на
+// сусідові. Виклики без власної кнопки-футера (ArchiveScreen.tsx card-view)
+// переносять той самий `flex-1 min-h-0 overflow-y-auto` патерн на свій
+// єдиний вміст, щоб не втратити скрол.
 export function CardShell({ front, back, isFlipped }: CardShellProps): JSX.Element {
   return (
     <div className="relative isolate h-full p-1">
@@ -43,7 +52,7 @@ export function CardShell({ front, back, isFlipped }: CardShellProps): JSX.Eleme
         aria-hidden="true"
         className="absolute right-1/4 top-1/2 -z-10 h-36 w-36 rounded-full bg-blob-c opacity-90 blur-3xl"
       />
-      <div className="flex h-full flex-col gap-5 overflow-y-auto rounded-card border border-border bg-surface p-6 shadow-soft backdrop-blur-xl">
+      <div className="flex h-full flex-col gap-5 rounded-card border border-border bg-surface p-6 shadow-soft backdrop-blur-xl">
         {isFlipped ? back : front}
       </div>
     </div>

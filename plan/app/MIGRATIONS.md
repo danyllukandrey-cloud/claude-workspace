@@ -36,3 +36,4 @@
 | `1789122610006_add-logic-variant.sql` | `structure/migrations/backend/04_add_logic_variant.{up,down}.sql` | `57360a2e568cd37429a70e7842177d96d2a55cfe96439b391c5ed92b4ff02bb1` |
 | `1789123033656_create-structure-history-event.sql` | `structure/migrations/backend/05_create_structure_history_event.{up,down}.sql` | `013f2e70eb3c5f6be0f29ee5725a601b16bf084f663bc44ea20dadfe9bd5eebf` |
 | `1789151324598_make-cell-index-nullable.sql` | `structure/migrations/backend/06_make_cell_index_nullable.{up,down}.sql` | `25e7368bc101d760544ca73fbe5decd5b61879a0842ddbb526b6eed664a4ed33` |
+| `1789458805273_add-metric-block-status.sql` | `life-area-card/migrations/08_add_metric_block_status.{up,down}.sql` | `5d6ffd6a2c53fda9c2d8cd3cfcb12af8f5619f48cc8fe55184ea0447a763996b` |

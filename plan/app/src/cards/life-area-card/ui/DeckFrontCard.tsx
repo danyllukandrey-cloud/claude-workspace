@@ -45,6 +45,8 @@ export interface DeckFrontCardProps {
   onFlagEntry?: (cardId: string, entryId: string) => Promise<CardBackData>;
   /** ISS-60: створює новий блок-метрику -- опційно, як і в CardBack. */
   onCreateMetricBlock?: (cardId: string, values: MetricBlockFormValues) => Promise<void>;
+  /** Видаляє (архівує) блок-метрику -- опційно, як і в CardBack. */
+  onArchiveMetricBlock?: (cardId: string, metricBlockId: string) => Promise<void>;
 }
 
 type Side = 'face' | 'back';
@@ -59,6 +61,7 @@ export function DeckFrontCard({
   onUpdateDescription,
   onFlagEntry,
   onCreateMetricBlock,
+  onArchiveMetricBlock,
 }: DeckFrontCardProps): JSX.Element {
   const [side, setSide] = useState<Side>('face');
 
@@ -89,6 +92,7 @@ export function DeckFrontCard({
           onFlip={() => setSide('face')}
           onFlagEntry={onFlagEntry ? (entryId) => onFlagEntry(cardId, entryId) : undefined}
           onCreateMetricBlock={onCreateMetricBlock ? (values) => onCreateMetricBlock(cardId, values) : undefined}
+          onArchiveMetricBlock={onArchiveMetricBlock ? (metricBlockId) => onArchiveMetricBlock(cardId, metricBlockId) : undefined}
         />
       }
     />

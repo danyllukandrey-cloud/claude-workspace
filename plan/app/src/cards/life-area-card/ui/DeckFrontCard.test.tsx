@@ -50,14 +50,14 @@ test('клік "перегорнути →" на лицьовій стороні
   expect(screen.queryByText('Спорт')).toBeNull();
 });
 
-test('клік "← лицьова" на звороті перемикає назад на CardFace', async () => {
+test('клік "← перегорнути" на звороті перемикає назад на CardFace', async () => {
   const props = baseProps();
   render(<DeckFrontCard {...props} />);
 
   fireEvent.click(await screen.findByRole('button', { name: /перегорнути/ }));
   await screen.findByText('Ще немає жодної активної метрики');
 
-  fireEvent.click(screen.getByRole('button', { name: /лицьова/ }));
+  fireEvent.click(screen.getByRole('button', { name: /перегорнути/ }));
 
   expect(await screen.findByText('Спорт')).toBeTruthy();
 });
@@ -119,6 +119,30 @@ test('onFlagEntry/onCreateMetricBlock, якщо передані, прокида
   expect(await screen.findByText('Ще немає жодної активної метрики')).toBeTruthy();
   expect(screen.getByRole('button', { name: '+ Додати блок-метрику' })).toBeTruthy();
   expect(onFlagEntry).not.toHaveBeenCalled();
+});
+
+test('onArchiveMetricBlock, якщо передано, прокидається в CardBack з cardId', async () => {
+  const props = baseProps();
+  const onArchiveMetricBlock = vi.fn().mockResolvedValue(undefined);
+  const dataWithBlock: CardBackData = {
+    metricBlocks: [
+      { id: 'mb1', label: 'Тренування', unit: 'раз', progress: { kind: 'bounded', share: 0.5, overGoal: 0 }, hasPendingEntry: false },
+    ],
+    aggregateProgress: 0.5,
+    entries: [],
+  };
+  const loadBack = vi.fn().mockResolvedValue(dataWithBlock);
+
+  render(<DeckFrontCard {...props} loadBack={loadBack} onArchiveMetricBlock={onArchiveMetricBlock} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: /перегорнути/ }));
+  await screen.findByText('Тренування');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Видалити метрику «Тренування»' }));
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'видалити' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Видалити' }));
+
+  expect(onArchiveMetricBlock).toHaveBeenCalledWith('card-1', 'mb1');
 });
 
 // ISS-56: CardFace's меню "..." -> "Архівувати" -> ArchiveCardDialog ->

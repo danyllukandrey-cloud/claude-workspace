@@ -64,7 +64,10 @@ export async function getCardWithProgress(
     throw new AppError('card.not_found', 'Картку не знайдено', 404);
   }
 
-  const blocks = await listMetricBlocksByCard(db, card.id);
+  // ISS-121: заархівовані блоки (D-127) виключаємо тут так само, як
+  // ports/metric-block-handlers.ts's listMetricBlocks уже робить -- інакше
+  // "видалена" метрика й далі тягнула б за собою Загальний прогрес картки.
+  const blocks = (await listMetricBlocksByCard(db, card.id)).filter((block) => block.status === 'active');
 
   const metricBlocks: MetricBlockProgress[] = [];
   const entriesByBlockId = new Map<string, EntryRecord[]>();

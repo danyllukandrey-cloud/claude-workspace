@@ -44,6 +44,7 @@ const METRIC_BLOCK_ROW = {
   target_date: null,
   created_at: new Date('2026-01-01T00:00:00Z'),
   updated_at: new Date('2026-01-02T00:00:00Z'),
+  status: 'active',
 };
 
 const OTHER_METRIC_BLOCK_ROW = {

@@ -59,6 +59,9 @@ const TO_PROMOTE = [
   // без клітинки" після зміни режиму/підвиду розкладки фізично неможлива (колонка з 02
   // була NOT NULL, а 02 уже промоучена -- правка йде наступною міграцією, ADR-0006).
   { slug: 'structure', staged: 'backend/06_make_cell_index_nullable', name: 'make-cell-index-nullable' },
+  // D-127 (US-17/AC-20): архівація окремого блоку-метрики -- лише додає
+  // metric_block.status, жодних крос-фічевих залежностей, тож у самому кінці.
+  { slug: 'life-area-card', staged: '08_add_metric_block_status', name: 'add-metric-block-status' },
 ];
 
 function readReadme() {

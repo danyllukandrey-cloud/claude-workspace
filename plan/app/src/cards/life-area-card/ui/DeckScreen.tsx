@@ -54,6 +54,7 @@ export interface DeckScreenProps {
   onUpdateDescription?: (cardId: string, input: { description: string; markFilled: boolean }) => Promise<void>;
   onFlagEntry?: (cardId: string, entryId: string) => Promise<CardBackData>;
   onCreateMetricBlock?: (cardId: string, values: MetricBlockFormValues) => Promise<void>;
+  onArchiveMetricBlock?: (cardId: string, metricBlockId: string) => Promise<void>;
 }
 
 type LoadState =
@@ -74,6 +75,7 @@ export function DeckScreen({
   onUpdateDescription,
   onFlagEntry,
   onCreateMetricBlock,
+  onArchiveMetricBlock,
 }: DeckScreenProps): JSX.Element {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   // C14: "Спробувати ще раз" не може просто повторно викликати loadCards()
@@ -186,6 +188,7 @@ export function DeckScreen({
             onUpdateDescription={onUpdateDescription}
             onFlagEntry={onFlagEntry}
             onCreateMetricBlock={onCreateMetricBlock}
+            onArchiveMetricBlock={onArchiveMetricBlock}
           />
         )}
       />

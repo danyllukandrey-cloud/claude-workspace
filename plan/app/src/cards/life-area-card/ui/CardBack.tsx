@@ -15,11 +15,12 @@
 // historyExpanded/колізія перейменування) навколо їхнього виклику.
 import { useEffect, useRef, useState } from 'react';
 import { Banner, Button, EmptyState, Spinner, TextField } from '../../../shared/ui';
+import { ArchiveMetricBlockDialog } from './ArchiveMetricBlockDialog';
 import { EntryHistoryList } from './EntryHistoryList';
 import { MetricBlockCard } from './MetricBlockCard';
 import { MetricBlockForm } from './MetricBlockForm';
 import type { MetricBlockFormValues } from './MetricBlockForm';
-import type { CardBackData } from './types';
+import type { CardBackData, MetricBlockViewModel } from './types';
 
 export interface CardBackProps {
   /** Завантажує дані звороту картки (блоки-метрики, історія, агрегат). */
@@ -41,6 +42,15 @@ export interface CardBackProps {
    * свіжість забезпечує повторний виклик loadBack, не повернене значення.
    */
   onCreateMetricBlock?: (values: MetricBlockFormValues) => Promise<void>;
+  /**
+   * Видалення (архівація) блоку-метрики -- DELETE .../metric-blocks/{id}.
+   * Той самий опційний DI-патерн, що onCreateMetricBlock: без пропу кнопка
+   * "×" на MetricBlockCard не рендериться взагалі. Реальний fetch -- у
+   * викликача (main.tsx); тут лише Promise<void>, свіжість зворту після
+   * успіху забезпечує повторний виклик loadBack (refresh()), не повернене
+   * значення -- той самий підхід, що onCreateMetricBlock.
+   */
+  onArchiveMetricBlock?: (metricBlockId: string) => Promise<void>;
 }
 
 type LoadState = 'loading' | 'ready' | 'error';
@@ -54,6 +64,7 @@ export function CardBack({
   onFlagEntry,
   onRenameTransferredBlock,
   onCreateMetricBlock,
+  onArchiveMetricBlock,
 }: CardBackProps): JSX.Element {
   const [state, setState] = useState<LoadState>('loading');
   const [data, setData] = useState<CardBackData | null>(null);
@@ -62,6 +73,11 @@ export function CardBack({
   const [renameValue, setRenameValue] = useState('');
   const [collisionError, setCollisionError] = useState<string | undefined>(undefined);
   const [isCreatingBlock, setIsCreatingBlock] = useState(false);
+  // Видалення блоку-метрики: блок, для якого зараз відкрито
+  // ArchiveMetricBlockDialog -- null означає "жоден", той самий локальний
+  // toggle-стан, що isCreatingBlock вище. Тримаємо весь MetricBlockViewModel,
+  // не лише id -- діалогу потрібна label для тексту підтвердження.
+  const [pendingDeleteBlock, setPendingDeleteBlock] = useState<MetricBlockViewModel | null>(null);
   // Review 2026-09-07, post-ship follow-up review (AC-12/E remainder):
   // handleFlagEntry нижче мав ТОЙ САМИЙ баг, що refresh() уже виправлено
   // (setState('error') на невдачі стирало всі дані) -- пропущено окремо,
@@ -164,6 +180,23 @@ export function CardBack({
     });
   };
 
+  /**
+   * Підтвердження в ArchiveMetricBlockDialog ("введіть «видалити»") викликає
+   * injected onArchiveMetricBlock, потім закриває діалог і перезавантажує
+   * зворот (refresh(), той самий "ремаунт перезавантажує" підхід, що
+   * handleCreateMetricBlock вище) -- бекенд більше не поверне архівований
+   * блок у GET .../metric-blocks, тож він сам зникне зі списку. Помилку
+   * (404 card.not_found / мережева) показує сам ArchiveMetricBlockDialog
+   * (injected onArchive кидає -- та сама Promise-помилка долітає туди).
+   */
+  const handleArchiveMetricBlock = (): Promise<void> => {
+    if (!onArchiveMetricBlock || !pendingDeleteBlock) return Promise.resolve();
+    return onArchiveMetricBlock(pendingDeleteBlock.id).then(() => {
+      setPendingDeleteBlock(null);
+      refresh();
+    });
+  };
+
   const handleConfirmRename = (): void => {
     if (!onRenameTransferredBlock || !data.pendingTransferCollision) return;
     setCollisionError(undefined);
@@ -178,68 +211,94 @@ export function CardBack({
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* Review 2026-09-07 E (T52): фоновий refresh невдалий -- НЕблокуючий
-          банер над уже показаними даними, не заміна всього екрана. */}
-      {refreshError !== null && <Banner variant="error" text={refreshError} />}
+    // Живе тестування (Андрій, баг 2): скрол і кнопка "← перегорнути" -- на
+    // РІЗНИХ рівнях (CardShell.tsx більше не скролить сам себе). Внутрішня
+    // обгортка нижче (flex-1 min-h-0 overflow-y-auto) несе ввесь контент
+    // звороту (разом з "Історія записів" -- це частина контенту, що
+    // розгортається, не кнопка-футер), КРІМ "← перегорнути" -- вона
+    // сестринський елемент ПІСЛЯ обгортки, природно лишається внизу (flex-1
+    // забирає решту висоти в сусіда), mt-auto їй більше не потрібен.
+    <div className="flex h-full flex-col gap-4">
+      <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
+        {/* Review 2026-09-07 E (T52): фоновий refresh невдалий -- НЕблокуючий
+            банер над уже показаними даними, не заміна всього екрана. */}
+        {refreshError !== null && <Banner variant="error" text={refreshError} />}
 
-      {/* AC-14/AC-15: перенос уже стався зовні -- тут лише пропозиція
-          перейменувати, коли він зіткнувся з наявним блоком тієї ж картки. */}
-      {data.pendingTransferCollision && (
-        <div className="flex flex-col gap-3">
-          <Banner variant="error" text={FALLBACK_COLLISION_ERROR_TEXT} />
-          <TextField label="Нова назва блоку-метрики" value={renameValue} onChange={setRenameValue} error={collisionError} />
-          <Button label="Зберегти" onClick={handleConfirmRename} />
-        </div>
-      )}
+        {/* AC-14/AC-15: перенос уже стався зовні -- тут лише пропозиція
+            перейменувати, коли він зіткнувся з наявним блоком тієї ж картки. */}
+        {data.pendingTransferCollision && (
+          <div className="flex flex-col gap-3">
+            <Banner variant="error" text={FALLBACK_COLLISION_ERROR_TEXT} />
+            <TextField label="Нова назва блоку-метрики" value={renameValue} onChange={setRenameValue} error={collisionError} />
+            <Button label="Зберегти" onClick={handleConfirmRename} />
+          </div>
+        )}
 
-      {/* D-111 (docs/DECISIONS.md): кнопка/форма створення -- ПЕРЕД будь-яким
-          контентом звороту, не лише перед порожнім станом (Andrii: "+ Додати
-          блок-метрику" має бути першим, що бачить користувач згори).
-          Review 2026-09-07 A4 (AC-07/AC-08): рендериться НЕЗАЛЕЖНО від
-          metricBlocks.length -- раніше з'являлась лише в порожньому стані,
-          тож у картки з хоч одним блоком не було способу додати другий. */}
-      {onCreateMetricBlock &&
-        (isCreatingBlock ? (
-          <MetricBlockForm onSubmit={handleCreateMetricBlock} />
-        ) : (
-          <Button label="+ Додати блок-метрику" onClick={() => setIsCreatingBlock(true)} />
-        ))}
-
-      {data.metricBlocks.length === 0 ? (
-        <EmptyState
-          message="Ще немає жодної активної метрики"
-          actionHint="Додайте блок-метрику, щоб почати відстежувати прогрес"
-        />
-      ) : (
-        <div className="flex flex-col gap-3">
-          {data.aggregateProgress !== null && (
-            <p className="font-display text-sm font-bold text-ink">
-              Загальний прогрес: {Math.round(data.aggregateProgress * 100)}%
-            </p>
-          )}
-          {data.metricBlocks.map((block) => (
-            <MetricBlockCard key={block.id} block={block} />
+        {/* D-111 (docs/DECISIONS.md): кнопка/форма створення -- ПЕРЕД будь-яким
+            контентом звороту, не лише перед порожнім станом (Andrii: "+ Додати
+            блок-метрику" має бути першим, що бачить користувач згори).
+            Review 2026-09-07 A4 (AC-07/AC-08): рендериться НЕЗАЛЕЖНО від
+            metricBlocks.length -- раніше з'являлась лише в порожньому стані,
+            тож у картки з хоч одним блоком не було способу додати другий. */}
+        {onCreateMetricBlock &&
+          (isCreatingBlock ? (
+            <MetricBlockForm onSubmit={handleCreateMetricBlock} />
+          ) : (
+            <Button label="+ Додати блок-метрику" onClick={() => setIsCreatingBlock(true)} />
           ))}
-        </div>
-      )}
 
-      <button
-        type="button"
-        onClick={() => setHistoryExpanded((expanded) => !expanded)}
-        className="w-full rounded-control border border-border px-4 py-2.5 text-left text-sm font-bold text-ink transition-colors hover:bg-border"
-      >
-        Історія записів {historyExpanded ? '▴' : '▾'}
-      </button>
-      {historyExpanded && (
-        <EntryHistoryList
-          entries={data.entries}
-          onFlagEntry={onFlagEntry ? handleFlagEntry : undefined}
-          isFlagEntryDisabled={isFlaggingEntry}
-        />
-      )}
+        {data.metricBlocks.length === 0 ? (
+          <EmptyState
+            message="Ще немає жодної активної метрики"
+            actionHint="Додайте блок-метрику, щоб почати відстежувати прогрес"
+          />
+        ) : (
+          <div className="flex flex-col gap-3">
+            {data.aggregateProgress !== null && (
+              <p className="font-display text-sm font-bold text-ink">
+                Загальний прогрес: {Math.round(data.aggregateProgress * 100)}%
+              </p>
+            )}
+            {data.metricBlocks.map((block) => (
+              <MetricBlockCard
+                key={block.id}
+                block={block}
+                onDelete={onArchiveMetricBlock ? () => setPendingDeleteBlock(block) : undefined}
+              />
+            ))}
+          </div>
+        )}
 
-      {/* D-111 (docs/DECISIONS.md, виправлено): "← лицьова" -- ОСТАННІЙ
+        {/* Видалення блоку-метрики: клік "×" на MetricBlockCard відкриває
+            ArchiveMetricBlockDialog саме для того блоку (pendingDeleteBlock).
+            onArchiveMetricBlock перевірено вище (onDelete не рендериться без
+            нього), другий guard тут -- лише для типів (pendingDeleteBlock міг
+            лишитись зі старого рендеру між двома ре-рендерами того самого разу). */}
+        {pendingDeleteBlock && onArchiveMetricBlock && (
+          <ArchiveMetricBlockDialog
+            metricBlockLabel={pendingDeleteBlock.label}
+            onArchive={handleArchiveMetricBlock}
+            onCancel={() => setPendingDeleteBlock(null)}
+          />
+        )}
+
+        <button
+          type="button"
+          onClick={() => setHistoryExpanded((expanded) => !expanded)}
+          className="w-full rounded-control border border-border px-4 py-2.5 text-left text-sm font-bold text-ink transition-colors hover:bg-border"
+        >
+          Історія записів {historyExpanded ? '▴' : '▾'}
+        </button>
+        {historyExpanded && (
+          <EntryHistoryList
+            entries={data.entries}
+            onFlagEntry={onFlagEntry ? handleFlagEntry : undefined}
+            isFlagEntryDisabled={isFlaggingEntry}
+          />
+        )}
+      </div>
+
+      {/* D-111 (docs/DECISIONS.md, виправлено): "← перегорнути" -- ОСТАННІЙ
           елемент, унизу -- те саме місце, де на лицьовій стороні стоїть
           "перегорнути →" (CardFace.tsx). Живе тестування (скріншоти):
           користувач бачив кнопки вгорі на звороті й унизу на лиці -- це не
@@ -250,7 +309,7 @@ export function CardBack({
         onClick={onFlip}
         className="w-full rounded-control border border-border px-4 py-2.5 text-sm font-bold text-ink transition-colors hover:bg-border"
       >
-        ← лицьова
+        ← перегорнути
       </button>
     </div>
   );

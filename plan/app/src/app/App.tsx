@@ -5,7 +5,7 @@
 // writeStoredSession/now -- ін'єктовані, компонент не знає, що це
 // localStorage['plan.jwt'] і Date.now() (composition root -- main.tsx).
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArchiveScreen, CreateCardForm, DeckScreen } from '../cards/life-area-card';
 import type { CardBackData, CardFaceData, DeckGridItem, EntryViewModel, MetricBlockFormValues } from '../cards/life-area-card';
 import { AnalyticsScreen, DeclarationScreen, LayoutBoard } from '../structure';
@@ -36,7 +36,7 @@ import type {
   RuleSettingsScreenTargetCard,
   SendMessageResult,
 } from '../agent';
-import { Button, GearIcon, IconButton } from '../shared/ui';
+import { Button, GearIcon, IconButton, Logo } from '../shared/ui';
 import { LoginScreen } from './LoginScreen';
 import type { SessionResult } from './LoginScreen';
 
@@ -82,6 +82,8 @@ export interface AppProps {
   archiveCard: (cardId: string) => Promise<void>;
   /** Створює блок-метрику обраної картки (POST /cards/{id}/metric-blocks, CardBack.onCreateMetricBlock, ISS-60). */
   createMetricBlock: (cardId: string, values: MetricBlockFormValues) => Promise<void>;
+  /** Видаляє (архівує) блок-метрику обраної картки (DELETE /cards/{id}/metric-blocks/{metricBlockId}, CardBack.onArchiveMetricBlock). */
+  archiveMetricBlock: (cardId: string, metricBlockId: string) => Promise<void>;
   /** Review C10 (AC-03) -- зберігає Опис/markFilled обраної картки (PATCH /cards/{id}, CardFace.onUpdateDescription). */
   onUpdateDescription: (cardId: string, input: { description: string; markFilled: boolean }) => Promise<void>;
   /** Review 2026-09-07 C11 (AC-12) -- позначає запис в історії обраної картки помилковим (PATCH /entries/{id}, CardBack.onFlagEntry) і повертає свіжий зворот. */
@@ -138,7 +140,16 @@ export interface AppProps {
 // D-121 (живе тестування): 'detail' прибрано -- відкриття картки окремим
 // екраном скасоване, передня картка в DeckScreen/DeckGrid сама несе повний
 // вміст (CardFace/CardBack) на місці. CardDetailScreen.tsx видалено.
-type Screen = { screen: 'deck' } | { screen: 'create' } | { screen: 'archive' };
+//
+// Задача 13: варіант 'archive' носить `from` -- напрямок (Direction), з
+// якого користувач відкрив архів, щоб кнопка "Назад" повертала саме туди
+// (а не завжди на 'cards' / екран Картки, як було). Зараз єдиний вхід в
+// архів -- AnalyticsScreen.onOpenArchive нижче ('analytics'), тож `from`
+// завжди 'analytics' на практиці, але поле типізоване як Direction, а не
+// як буквальний літерал -- якщо колись з'явиться ще один вхід в архів, він
+// просто підставить свій напрямок, і "Назад" сам поведеться правильно без
+// додаткової гілки коду.
+type Screen = { screen: 'deck' } | { screen: 'create' } | { screen: 'archive'; from: Direction };
 
 // T24 (sad.md §5 "Навігація (чотири напрямки)") + T29 (агент, D-25 "єдиний
 // канал прямого вводу"): постійне нижнє нав-меню, незалежне від Screen
@@ -180,6 +191,7 @@ export function App({
   loadArchivedCardHistory,
   archiveCard,
   createMetricBlock,
+  archiveMetricBlock,
   onUpdateDescription,
   onFlagEntry,
   loadStructure,
@@ -217,10 +229,35 @@ export function App({
   // напрямки (agent-rules/agent-account/agent-reports), що ISS-117 називав
   // "другорядними", переїхали з рівного нижнього нав-меню сюди, під значок
   // шестерні. Той самий локальний toggle-стан, що CardFace.tsx's isMenuOpen
-  // (меню "...") -- немає click-outside-close, лише клік по шестерні знову
-  // або вибір пункту (той самий мінімалізм, що вже усталений патерн).
+  // (меню "..."). Клік по шестерні знову або вибір пункту закривають меню, як
+  // і раніше -- ДОДАНО (задача 9): клік будь-де поза меню й поза самою
+  // шестернею теж закриває його (стандартна поведінка випадного меню, refs +
+  // useEffect нижче), а не лише ці два способи.
   const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);
+  const settingsMenuRef = useRef<HTMLDivElement>(null);
+  const settingsButtonRef = useRef<HTMLDivElement>(null);
   const [ruleTargetCards, setRuleTargetCards] = useState<RuleSettingsScreenTargetCard[]>([]);
+
+  // Задача 9: click-outside-close для меню налаштувань -- слухач вішається
+  // лише поки меню відкрите (і знімається одразу, щойно закрилось чи
+  // компонент розмонтувався), щоб не тримати зайвий global listener весь
+  // час. `mousedown`, не `click` -- стандартний вибір для click-outside:
+  // спрацьовує до можливого `click` на елементі під курсором. Дві окремі
+  // ref -- на сам контейнер меню і окремо на кнопку-шестерню -- бо клік по
+  // шестерні, коли меню вже відкрите, має пройти через свій onClick
+  // (toggle -> закриє меню), а не крізь цей listener теж (інакше подвійний
+  // тригер: закриє й одразу відкриє назад).
+  useEffect(() => {
+    if (!isSettingsMenuOpen) return;
+    function handleClickOutside(event: MouseEvent): void {
+      const target = event.target as Node;
+      if (settingsMenuRef.current?.contains(target)) return;
+      if (settingsButtonRef.current?.contains(target)) return;
+      setIsSettingsMenuOpen(false);
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isSettingsMenuOpen]);
 
   // AC-12 (RuleSettingsScreen card-override): картки завантажуються лише
   // коли користувач реально відкрив цей напрямок, не одразу при вході (той
@@ -303,7 +340,15 @@ export function App({
             (role="menu", той самий патерн, що CardFace.tsx's "..."): три
             пункти, що раніше стояли рівноправно в нижньому нав-меню. */}
         <div className="relative flex items-center justify-between border-b border-border bg-surface-solid px-4 py-3 sm:px-6 md:col-start-2 md:row-start-1">
-          <h1 className="font-display text-lg font-bold tracking-tight text-ink">ПЛАН</h1>
+          {/* Задача 20: невеликий Logo (shared/ui/Logo.tsx, раніше лише
+              h-48 w-48 на LoginScreen) поруч із написом "ПЛАН" -- розмір
+              h-6 w-6 підібраний за аналогією з GearIcon нижче (h-5 w-5
+              всередині h-9 w-9 кнопки): трохи більший за значок шестерні,
+              бо це лого, але явно менший за повнорозмірний варіант входу. */}
+          <h1 className="flex items-center gap-2 font-display text-lg font-bold tracking-tight text-ink">
+            <Logo className="h-6 w-6 text-accent" />
+            ПЛАН
+          </h1>
           {/* D-124 (живе тестування): "Вийти" переїхало сюди з Колоди
               (life-area-card/DeckScreen.tsx) -- "поруч із шестернею, справа,
               зверху в прикріпленому барі". Шестерня лишається крайньою
@@ -314,16 +359,22 @@ export function App({
             {/* D-123 (живе тестування): "виділи як кнопку" -- рамка/фон завжди
                 видимі, не лише на hover (дефолт IconButton -- прозорий у стані
                 спокою, тут цього замало: значок сам-один у шапці губився). */}
-            <IconButton
-              label={isSettingsMenuOpen ? 'Закрити меню налаштувань' : 'Меню налаштувань'}
-              onClick={() => setIsSettingsMenuOpen((prev) => !prev)}
-              className="border border-border bg-surface"
-            >
-              <GearIcon className="h-5 w-5" />
-            </IconButton>
+            {/* `contents` -- div існує лише як носій ref для click-outside
+                (задача 9), не бере участі в flex-розкладці навколо (той
+                самий layout, що й до цього блоку). */}
+            <div ref={settingsButtonRef} className="contents">
+              <IconButton
+                label={isSettingsMenuOpen ? 'Закрити меню налаштувань' : 'Меню налаштувань'}
+                onClick={() => setIsSettingsMenuOpen((prev) => !prev)}
+                className="border border-border bg-surface"
+              >
+                <GearIcon className="h-5 w-5" />
+              </IconButton>
+            </div>
           </div>
           {isSettingsMenuOpen && (
             <div
+              ref={settingsMenuRef}
               role="menu"
               className="absolute right-4 top-full z-10 mt-1 flex w-56 flex-col gap-0.5 rounded-control border border-border bg-surface-solid p-1.5 shadow-soft sm:right-6"
             >
@@ -387,7 +438,10 @@ export function App({
               // лишається під-навігацією "Картки", не власним напрямком.
               onOpenArchive={() => {
                 setDirection('cards');
-                setScreen({ screen: 'archive' });
+                // Задача 13: запам'ятовуємо, що цей архів відкрили з
+                // Аналітики, щоб "Назад" (нижче) повернув сюди ж, а не на
+                // Картки.
+                setScreen({ screen: 'archive', from: 'analytics' });
               }}
             />
           )}
@@ -419,7 +473,18 @@ export function App({
           )}
           {direction === 'cards' && screen.screen === 'archive' && (
             <div className="flex flex-col gap-4">
-              <Button label="← Назад" onClick={() => setScreen({ screen: 'deck' })} />
+              <Button
+                label="← Назад"
+                onClick={() => {
+                  // Задача 13: повертаємось туди, звідки відкрили архів
+                  // (screen.from -- напр. 'analytics'), не завжди на 'cards'
+                  // -- раніше цей клік вів на Картки навіть коли користувач
+                  // прийшов із Аналітики, бо direction лишався 'cards' з
+                  // моменту onOpenArchive.
+                  setDirection(screen.from);
+                  setScreen({ screen: 'deck' });
+                }}
+              />
               <ArchiveScreen
                 loadArchivedCards={loadArchivedCards}
                 onRestoreCard={onRestoreCard}
@@ -451,6 +516,7 @@ export function App({
               onUpdateDescription={onUpdateDescription}
               onFlagEntry={onFlagEntry}
               onCreateMetricBlock={createMetricBlock}
+              onArchiveMetricBlock={archiveMetricBlock}
             />
           )}
         </div>

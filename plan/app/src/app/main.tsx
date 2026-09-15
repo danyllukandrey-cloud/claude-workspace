@@ -662,6 +662,30 @@ async function createMetricBlock(cardId: string, values: MetricBlockFormValues):
 }
 
 /**
+ * Реальний DELETE /cards/{cardId}/metric-blocks/{metricBlockId} --
+ * CardBack.onArchiveMetricBlock (кнопка "×" на MetricBlockCard ->
+ * ArchiveMetricBlockDialog, ввід слова "видалити"). Фіксований контракт
+ * (паралельний бекенд-агент): успіх -- 200 з оновленим MetricBlock DTO
+ * (status: "archived"), тіло тут не потрібне -- CardBack сам перевантажує
+ * зворот (refresh()) після успіху, той самий стиль, що createMetricBlock/
+ * archiveCard вище (DELETE, той самий парсинг помилки з body?.message).
+ * 404 card.not_found (той самий код, що вже встановив transfer-metric-block,
+ * ISS-30) прилітає як звичайна не-2xx відповідь -- тут нічого спеціально не
+ * розрізняємо за кодом, лише показуємо message, як і всі сусідні виклики.
+ */
+async function archiveMetricBlock(cardId: string, metricBlockId: string): Promise<void> {
+  const response = await fetch(`/api/v1/cards/${cardId}/metric-blocks/${metricBlockId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? 'Не вдалося видалити метрику');
+  }
+}
+
+/**
  * Review 2026-09-07 C11 (AC-12): реальний PATCH /entries/{entryId} --
  * CardBack.onFlagEntry. "Виправити" переводить підтверджений запис у
  * 'rejected' -- "відкат" із формулювання AC-12 ("agent walks through
@@ -1570,6 +1594,7 @@ createRoot(root).render(
       loadArchivedCardHistory={loadArchivedCardHistory}
       archiveCard={archiveCard}
       createMetricBlock={createMetricBlock}
+      archiveMetricBlock={archiveMetricBlock}
       onUpdateDescription={onUpdateDescription}
       onFlagEntry={onFlagEntry}
       loadStructure={loadStructure}

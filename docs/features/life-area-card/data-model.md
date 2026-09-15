@@ -92,10 +92,11 @@ erDiagram
 | `target_date` | DATE | NULL | ціль у часі; очікувано NULL коли `is_ongoing = true` — `<!-- TBD: чи забезпечувати CHECK, чи лише на рівні domain-коду -->` |
 | `created_at` | timestamptz | NOT NULL DEFAULT now() | |
 | `updated_at` | timestamptz | NOT NULL DEFAULT now() | ціль можна змінити |
+| `status` | TEXT | NOT NULL DEFAULT 'active', CHECK (`status` IN ('active','archived')) | [D-127](../../DECISIONS.md#d-127) — мʼяка архівація окремого блоку-метрики (US-17/AC-20), той самий підхід, що `card.status`: `DELETE .../metric-blocks/{metricBlockId}` позначає `archived`, ніколи фізичне видалення; архівовані блоки більше не входять у `GET .../metric-blocks` |
 
 **Aggregate root:** `card`.
 **Access patterns:** читання всіх блоків картки (відкриття картки, AC-09) → індекс на `card_id`.
-**Constraints:** FK → `card(id)`.
+**Constraints:** FK → `card(id)`; CHECK на `status`.
 
 ### `entry`
 

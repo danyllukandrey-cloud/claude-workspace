@@ -410,6 +410,24 @@ export function createApp(deps: AppDeps): express.Express {
     })
   );
 
+  app.delete(
+    '/api/v1/cards/:cardId/metric-blocks/:metricBlockId',
+    asyncHandler(async (req, res) => {
+      // US-17/AC-20 (D-127): мʼяка архівація ОДНОГО блоку-метрики -- один
+      // UPDATE, без другого запису (на відміну від archiveCard, яка в тій
+      // самій транзакції ще й пише card_lifecycle_event і закриває позицію
+      // Структури) -- жодного cross-feature side-effect тут немає, тож
+      // withTransaction не потрібен.
+      const block = await metricBlockHandlers.archiveMetricBlock(
+        deps.db,
+        ownerUserId(req),
+        param(req, 'cardId'),
+        param(req, 'metricBlockId')
+      );
+      res.status(200).json(block);
+    })
+  );
+
   // --- Entries -----------------------------------------------------------
 
   app.post(

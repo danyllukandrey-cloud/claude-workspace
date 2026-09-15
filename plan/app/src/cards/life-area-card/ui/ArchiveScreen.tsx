@@ -140,7 +140,12 @@ export function ArchiveScreen({
         <CardShell
           isFlipped={false}
           front={
-            <div className="flex flex-col gap-4">
+            // Живе тестування (Андрій, баг 2): CardShell.tsx більше не скролить
+            // себе сам -- цей виклик не має власної кнопки-футера (на відміну
+            // від CardFace/CardBack), тож переносимо той самий патерн
+            // (flex-1 min-h-0 overflow-y-auto) сюди, щоб не втратити скрол при
+            // довгій історії записів.
+            <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
               <h2 className="font-display text-lg font-bold text-ink">{card.name}</h2>
               <p className="text-sm text-ink-muted">Картка в архіві -- новий запис недоступний, поки її не розархівовано</p>
               <Button label="Розархівувати" onClick={handleRestore} disabled={isRestoring} />

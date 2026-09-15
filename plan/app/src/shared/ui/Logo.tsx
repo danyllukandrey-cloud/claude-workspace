@@ -86,7 +86,7 @@ export function Logo({ className }: LogoProps): JSX.Element {
       <Face cells={LEFT_CELLS} />
       <Face cells={RIGHT_CELLS} />
 
-      <g fill="none" className="stroke-ink" strokeWidth={4} strokeLinejoin="round">
+      <g fill="none" className="stroke-ink/40" strokeWidth={1.2} strokeLinejoin="round">
         <polygon points="112,34 60,64 112,94 164,64" />
         <polygon points="60,64 112,94 112,154 60,124" />
         <polygon points="164,64 112,94 112,154 164,124" />
