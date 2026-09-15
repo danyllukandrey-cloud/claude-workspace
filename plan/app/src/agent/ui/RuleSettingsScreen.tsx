@@ -382,7 +382,7 @@ export function RuleSettingsScreen({ targetCards, loadRules, onSave }: RuleSetti
       <Button label="Зберегти" onClick={handleSave} disabled={saving} />
 
       {isCardScope && (
-        <p className="text-xs text-ink-muted">Діє лише на цій картці, глобальне лишається чинним для решти</p>
+        <p className="text-xs italic text-ink-muted">Діє лише на цій картці, глобальне лишається чинним для решти</p>
       )}
 
       {banner !== null && <Banner variant={banner.variant} text={banner.text} />}

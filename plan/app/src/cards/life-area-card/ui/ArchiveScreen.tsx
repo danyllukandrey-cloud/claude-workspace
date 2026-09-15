@@ -147,7 +147,7 @@ export function ArchiveScreen({
             // довгій історії записів.
             <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
               <h2 className="font-display text-lg font-bold text-ink">{card.name}</h2>
-              <p className="text-sm text-ink-muted">Картка в архіві -- новий запис недоступний, поки її не розархівовано</p>
+              <p className="text-sm italic text-ink-muted">Картка в архіві -- новий запис недоступний, поки її не розархівовано</p>
               <Button label="Розархівувати" onClick={handleRestore} disabled={isRestoring} />
               {restoreError !== null && <Banner variant="error" text={restoreError} />}
 

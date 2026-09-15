@@ -23,10 +23,14 @@ const VARIANT_STYLES: Record<BannerVariant, string> = {
 };
 
 export function Banner({ variant, text }: BannerProps): JSX.Element {
+  // Системна підказка (курсив, за зразком CardFace.tsx "Опис ще не
+  // заповнено"): info/success пояснюють контекст чи наслідок, не аварію --
+  // error лишається прямим повідомленням про збій, курсив там недоречний.
+  const isHint = variant !== 'error';
   return (
     <div
       data-variant={variant}
-      className={`rounded-control border px-4 py-3 text-sm font-medium ${VARIANT_STYLES[variant]}`}
+      className={`rounded-control border px-4 py-3 text-sm font-medium ${VARIANT_STYLES[variant]}${isHint ? ' italic' : ''}`}
     >
       {text}
     </div>

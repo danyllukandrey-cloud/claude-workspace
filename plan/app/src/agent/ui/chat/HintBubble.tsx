@@ -20,7 +20,7 @@ export function HintBubble({ text, onDismiss }: HintBubbleProps): JSX.Element {
       role="note"
       className="flex items-start gap-2 rounded-control border border-border bg-surface-solid px-3.5 py-2.5 text-sm text-ink"
     >
-      <span className="flex-1">{text}</span>
+      <span className="flex-1 italic">{text}</span>
       <button
         type="button"
         aria-label="Закрити підказку"

@@ -157,7 +157,7 @@ export function AccountScreen({
     return (
       <div className="flex flex-col gap-2 p-4">
         <h1 className="font-display text-xl font-bold text-ink">Обліковий запис і дані</h1>
-        <p className="text-sm text-ink-muted">Акаунт видалено. Усі дані видалено назавжди.</p>
+        <p className="text-sm italic text-ink-muted">Акаунт видалено. Усі дані видалено назавжди.</p>
       </div>
     );
   }
@@ -254,7 +254,7 @@ export function AccountScreen({
     return (
       <div className="flex flex-col gap-5 p-4">
         <h1 className="font-display text-xl font-bold text-ink">Видалити акаунт і всі дані</h1>
-        <p className="text-sm text-ink-muted">
+        <p className="text-sm italic text-ink-muted">
           Це незворотно. Усі картки, записи, декларація й пам'ять агента будуть видалені назавжди.
         </p>
 

@@ -66,7 +66,7 @@ export function NumberField({
         >
           <div className="flex-1">
             <span className="text-xs font-bold text-ink">{required ? 'Обовʼязково' : 'Необовʼязково'}</span>
-            <p className="mt-0.5 text-xs text-ink-muted">{hint}</p>
+            <p className="mt-0.5 text-xs italic text-ink-muted">{hint}</p>
           </div>
           <button
             type="button"
