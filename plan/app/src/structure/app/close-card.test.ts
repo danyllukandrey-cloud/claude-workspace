@@ -162,12 +162,18 @@ describe('closeCard -- AC-12/AC-15: закриття напрямку', () => {
       metricTransfers: [{ metricBlockId: 'mb-1', targetCardId: 'card-2', newLabel: 'км (перенесено)' }],
     });
 
-    expect(transferMetricBlock).toHaveBeenCalledWith(db, {
-      ownerUserId: OWNER,
-      targetCardId: 'card-2',
-      metricBlockId: 'mb-1',
-      newLabel: 'км (перенесено)',
-    });
+    // Лог дій: recordAction -- 3-й опційний параметр, прокинутий тим самим
+    // (тут не переданий у виклик closeCard -- undefined).
+    expect(transferMetricBlock).toHaveBeenCalledWith(
+      db,
+      {
+        ownerUserId: OWNER,
+        targetCardId: 'card-2',
+        metricBlockId: 'mb-1',
+        newLabel: 'км (перенесено)',
+      },
+      undefined
+    );
 
     // "без торкання власних таблиць Структури" (DoD) -- увесь трансфер пішов
     // через мокнутий transferMetricBlock, жоден db.query цього тесту не

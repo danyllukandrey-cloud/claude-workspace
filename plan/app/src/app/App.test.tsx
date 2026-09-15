@@ -31,7 +31,7 @@ import type {
   AccountScreenResource,
   ChatMessage,
   ChatProposal,
-  ReportViewModel,
+  LogEntryViewModel,
   RuleSettingsScreenRule,
   RuleSettingsScreenTargetCard,
 } from '../agent';
@@ -116,7 +116,7 @@ function baseProps() {
     loadRuleTargetCards: vi.fn().mockResolvedValue([] as RuleSettingsScreenTargetCard[]),
     loadRules: vi.fn().mockResolvedValue([] as RuleSettingsScreenRule[]),
     onSaveRule: vi.fn(),
-    loadReports: vi.fn().mockResolvedValue([] as ReportViewModel[]),
+    loadActionLog: vi.fn().mockResolvedValue([] as LogEntryViewModel[]),
     loadSyncResources: vi.fn().mockResolvedValue([] as AccountScreenResource[]),
     onAddSyncResource: vi.fn(),
     onRemoveSyncResource: vi.fn(),
@@ -688,7 +688,7 @@ test('T29+D-121+D-123: після входу видно і дефолтний е
   // шестерні (верхній бар) у меню, role="menu".
   fireEvent.click(await screen.findByRole('button', { name: 'Меню налаштувань' }));
   expect(await screen.findByRole('menuitem', { name: 'Налаштування правил' })).toBeTruthy();
-  expect(await screen.findByRole('menuitem', { name: 'Звіти активності' })).toBeTruthy();
+  expect(await screen.findByRole('menuitem', { name: 'Лог дій' })).toBeTruthy();
   expect(await screen.findByRole('menuitem', { name: 'Обліковий запис і дані' })).toBeTruthy();
 });
 
@@ -746,17 +746,17 @@ test('T29+D-123: клік "Налаштування правил" у меню ш
   expect(await screen.findByRole('option', { name: 'Спорт' })).toBeTruthy();
 });
 
-test('T29+D-123: клік "Звіти активності" у меню шестерні перемикає екран на ReportsScreen (loadReports)', async () => {
+test('T29+D-123: клік "Лог дій" у меню шестерні перемикає екран на LogScreen (loadActionLog)', async () => {
   const props = validSessionProps();
-  props.loadReports.mockResolvedValue([{ id: 'report-1', periodLabel: 'Тижневий, 01.09–07.09', summary: 'Підсумок тижня', status: 'generated' }]);
+  props.loadActionLog.mockResolvedValue([{ id: 'log-1', occurredAtLabel: '15.09 10:00', action: 'Створено картку «Спорт»' }]);
 
   render(<App {...props} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Меню налаштувань' }));
-  fireEvent.click(await screen.findByRole('menuitem', { name: 'Звіти активності' }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Лог дій' }));
 
-  expect(await screen.findByRole('heading', { name: 'Звіти активності' })).toBeTruthy();
-  expect(await screen.findByText('Підсумок тижня')).toBeTruthy();
-  expect(props.loadReports).toHaveBeenCalledTimes(1);
+  expect(await screen.findByRole('heading', { name: 'Лог дій' })).toBeTruthy();
+  expect(await screen.findByText('Створено картку «Спорт»')).toBeTruthy();
+  expect(props.loadActionLog).toHaveBeenCalledTimes(1);
 });
 
 test('T29+D-123: клік "Обліковий запис і дані" у меню шестерні перемикає екран на AccountScreen (loadSyncResources) і онDeleted завершує сесію', async () => {

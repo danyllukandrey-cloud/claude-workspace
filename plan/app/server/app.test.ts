@@ -21,6 +21,12 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp, type AppDeps } from './app';
 import type { Db } from '../src/cards/life-area-card/infra/postgres-repo';
+// "Лог дій" -- та сама реальна реалізація, що server/index.ts підставляє в
+// AppDeps.recordAction (не мок) -- тест нижче пінить реальний ланцюг
+// composition root -> ports -> use-case -> insertActionLogEntry -> db.query,
+// той самий "пінить реальний SQL, не лише передачу функції" підхід, що
+// cardAndStructureDb вище (AC-09, review 2026-09-11 MUST-FIX 6).
+import { recordAction } from '../src/agent/app/record-action';
 
 const ERROR_SHAPE = {
   code: expect.stringMatching(/^[a-z_]+\.[a-z_]+$/),
@@ -849,6 +855,13 @@ const REPORT_ROW = {
   generated_at: new Date('2026-01-08T00:00:00Z'),
 };
 
+const ACTION_LOG_ROW = {
+  id: 'log-1',
+  owner_user_id: 'user-42',
+  action: 'Створено картку «Спорт»',
+  occurred_at: new Date('2026-01-01T00:00:00Z'),
+};
+
 const SYNC_RESOURCE_ROW = {
   id: 'resource-1',
   user_id: 'user-42',
@@ -878,6 +891,7 @@ function agentDb(
     activeProposal?: typeof PROPOSAL_ROW | null;
     rules?: (typeof RULE_ROW)[];
     reports?: (typeof REPORT_ROW)[];
+    actionLog?: (typeof ACTION_LOG_ROW)[];
     syncResources?: (typeof SYNC_RESOURCE_ROW)[];
     hasAnyChatMessage?: boolean;
     activeCards?: unknown[];
@@ -908,6 +922,10 @@ function agentDb(
     }
     if (text.includes('activity_report')) {
       return { rows: opts.reports ?? [] };
+    }
+    if (text.includes('action_log')) {
+      if (sql.startsWith('INSERT')) return { rows: [ACTION_LOG_ROW] };
+      return { rows: opts.actionLog ?? [] };
     }
     if (text.includes('sync_resource')) {
       if (sql.startsWith('INSERT')) return { rows: [SYNC_RESOURCE_ROW] };
@@ -1026,6 +1044,22 @@ describe('composition root -- маршрути агента змонтовані
 
       expect(res.status).toBe(200);
       expect(body.items).toEqual([expect.objectContaining({ id: 'report-1', periodType: 'weekly' })]);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('GET /api/v1/action-log returns the owner’s Лог дій, newest first (заміна GET /reports у UI, D-123)', async () => {
+    const query = agentDb({ actionLog: [ACTION_LOG_ROW] });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/action-log`, { headers: AUTHED });
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(body.items).toEqual([{ id: 'log-1', action: 'Створено картку «Спорт»', occurredAt: '2026-01-01T00:00:00.000Z' }]);
     } finally {
       server.close();
     }
@@ -1327,6 +1361,75 @@ describe('AC-20: generic error-middleware branch best-effort files an agent-dete
       expect(res.status).toBe(500);
       expect(body).toEqual({ code: 'internal.error', message: 'Internal server error' });
       expect(query.mock.calls.some(([sql]: [string]) => sql.includes('INSERT INTO developer_report'))).toBe(false);
+    } finally {
+      server.close();
+    }
+  });
+});
+
+// --- "Лог дій" -- deps.recordAction реально прокинутий у маршрути ----------
+//
+// Той самий урок, що AC-09/MUST-FIX 6 і MUST-FIX 1 вище: у цьому проєкті вже
+// траплялось, що use-case приймав опційний DI-колаборатор, а composition
+// root його НІКОЛИ не передавав -- тож можливість лишалась недосяжною в
+// production, попри зелені юніт-тести нижчого рівня. Тест нижче пінить
+// РЕАЛЬНИЙ SQL (INSERT INTO action_log), що доходить до межі db.query, коли
+// deps.recordAction реально задано -- не лише сам факт виклику мокнутої функції.
+
+describe('composition root -- "Лог дій" (deps.recordAction) реально прокинутий у маршрути', () => {
+  it('POST /api/v1/cards записує рядок у action_log, коли deps.recordAction задано', async () => {
+    const query = vi.fn(async (text: string) => {
+      const sql = text.trim().toUpperCase();
+      if (text.includes('action_log')) return { rows: [ACTION_LOG_ROW] };
+      if (text.includes('card_lifecycle_event')) {
+        return { rows: [{ id: 'lifecycle-1', card_id: CARD_ROW.id, transition: 'created', occurred_at: new Date() }] };
+      }
+      if (text.includes('structure')) return { rows: [] }; // Структури ще нема -- assignDefaultLayoutPosition no-op
+      if (sql.startsWith('INSERT INTO CARD')) return { rows: [CARD_ROW] };
+      throw new Error(`Непередбачений запит у тесті (recordAction wiring): ${text}`);
+    });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer({ ...noopDeps({ query }, verifyJwt), recordAction });
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/cards`, {
+        method: 'POST',
+        headers: AUTHED_JSON,
+        body: JSON.stringify({ name: CARD_ROW.name }),
+      });
+
+      expect(res.status).toBe(201);
+      const actionLogInsert = query.mock.calls.find(([text]: [string]) => text.includes('INSERT INTO action_log'));
+      expect(actionLogInsert).toBeTruthy();
+      const [, params] = actionLogInsert as unknown as [string, unknown[]];
+      expect(params).toEqual([expect.any(String), 'user-42', `Створено картку «${CARD_ROW.name}»`]);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('POST /api/v1/cards не пише в action_log, коли deps.recordAction не задано (наявна поведінка без регресії)', async () => {
+    const query = vi.fn(async (text: string) => {
+      const sql = text.trim().toUpperCase();
+      if (text.includes('card_lifecycle_event')) {
+        return { rows: [{ id: 'lifecycle-1', card_id: CARD_ROW.id, transition: 'created', occurred_at: new Date() }] };
+      }
+      if (text.includes('structure')) return { rows: [] };
+      if (sql.startsWith('INSERT INTO CARD')) return { rows: [CARD_ROW] };
+      throw new Error(`Непередбачений запит у тесті (recordAction wiring): ${text}`);
+    });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/cards`, {
+        method: 'POST',
+        headers: AUTHED_JSON,
+        body: JSON.stringify({ name: CARD_ROW.name }),
+      });
+
+      expect(res.status).toBe(201);
+      expect(query.mock.calls.some(([text]: [string]) => text.includes('action_log'))).toBe(false);
     } finally {
       server.close();
     }

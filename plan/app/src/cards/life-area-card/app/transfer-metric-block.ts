@@ -46,6 +46,9 @@ import {
 import type { Db, MetricBlockRecord } from '../infra/postgres-repo';
 import { AppError } from '../../../shared/errors';
 
+/** Лог дій -- сигнатура збігається з agent/app/record-action.ts's `recordAction` (create-card.ts докладніше). */
+export type RecordAction = (db: Db, input: { ownerUserId: string; action: string }) => Promise<void>;
+
 export interface TransferMetricBlockInput {
   ownerUserId: string;
   targetCardId: string;
@@ -60,7 +63,11 @@ export interface TransferMetricBlockInput {
  * призначенні відхиляється (AC-15), якщо ефективна назва (newLabel ?? поточна
  * label) уже зайнята іншим блоком тієї ж картки -- жодного мовчазного злиття.
  */
-export async function transferMetricBlock(db: Db, input: TransferMetricBlockInput): Promise<MetricBlockRecord> {
+export async function transferMetricBlock(
+  db: Db,
+  input: TransferMetricBlockInput,
+  recordAction?: RecordAction
+): Promise<MetricBlockRecord> {
   const [block, targetCard] = await Promise.all([
     findMetricBlockById(db, input.metricBlockId),
     findCardById(db, input.ownerUserId, input.targetCardId),
@@ -105,6 +112,10 @@ export async function transferMetricBlock(db: Db, input: TransferMetricBlockInpu
   // Обов'язкова пара з updateMetricBlock вище (postgres-repo.ts reassignEntriesToCard) --
   // entry.card_id денормалізовано, тому переносимо записи саме тепер, тим самим id.
   await reassignEntriesToCard(db, input.metricBlockId, input.targetCardId);
+
+  if (recordAction) {
+    await recordAction(db, { ownerUserId: input.ownerUserId, action: `Перенесено блок-метрику «${effectiveLabel}» на картку «${targetCard.name}»` });
+  }
 
   return updated;
 }

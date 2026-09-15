@@ -2,7 +2,7 @@
 status: Draft
 owner: "Андрій"
 reviewers: []
-updated_at: "2026-08-27"
+updated_at: "2026-09-15"
 feature_size: "M"
 ---
 
@@ -28,6 +28,7 @@ erDiagram
     APP_USER ||--o{ ACTIVITY_REPORT : receives
     APP_USER ||--o{ SYNC_RESOURCE : configures
     APP_USER ||--o{ DEVELOPER_REPORT : files
+    APP_USER ||--o{ ACTION_LOG : acts
 
     APP_USER {
         uuid id PK
@@ -111,6 +112,12 @@ erDiagram
         text description
         text delivery_status
         timestamptz sent_at
+    }
+    ACTION_LOG {
+        uuid id PK
+        uuid owner_user_id FK
+        text action
+        timestamptz occurred_at
     }
 ```
 
@@ -266,6 +273,21 @@ erDiagram
 **Access patterns:** ретроспективний перегляд надісланих звітів (підтримка/дебаг) → індекс на `sent_at DESC`.
 **Constraints:** FK → `app_user(id)` (`SET NULL`); CHECK на `trigger_type`/`delivery_status`.
 
+### `action_log`
+
+*Додано 2026-09-15 (US-15, AC-21/AC-21b) — «Лог дій», заміна UI-екрана US-08/AC-11 (SCR-03 "Звіти активності") у навігації. Андрій: «Звіт активності — це дублює Аналітику. Це має бути Лог. В нього тупо пишемо кожну дію — час, дія, все.» Проста, ДОДАТКОВА таблиця — не чіпає `activity_report` (лишається backend-only механізмом agent-worker, D-70).*
+
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `id` | UUID | PK, app-generated | |
+| `owner_user_id` | UUID | NOT NULL, FK → `app_user(id)` ON DELETE CASCADE | на відміну від `developer_report.user_id` (SET NULL) — запис Логу дії не має сенсу пережити акаунт, чию дію він фіксує |
+| `action` | TEXT | NOT NULL | короткий людяний опис дії, напр. «Створено картку «Спорт»», «Заархівовано блок-метрику «Читання»», «Підтверджено запис +5 разів» — жодної категоризації/типізації в v1 (свідоме обмеження обсягу) |
+| `occurred_at` | timestamptz | NOT NULL DEFAULT now() | |
+
+**Aggregate root:** root (append-only лог, ніколи не редагується/видаляється — той самий підхід, що `agent_audit_event`/`developer_report`).
+**Access patterns:** хронологічний список дій власника, найновіші перші (AC-21, `GET /api/v1/action-log`, `ports/action-log-handler.ts`) → індекс на `(owner_user_id, occurred_at DESC)`.
+**Constraints:** FK → `app_user(id)` ON DELETE CASCADE.
+
 ## Indexes
 
 | Index | Columns | Query it serves |
@@ -287,6 +309,7 @@ erDiagram
 | `idx_sync_resource_user` | `sync_resource(user_id)` | ресурси одного користувача (AC-18, SCR-04); заодно FK-покриття |
 | `idx_sync_resource_active` | `sync_resource(status)` WHERE `status = 'active'` | щоденний прохід `worker`'а по активних ресурсах (AC-18) |
 | `idx_developer_report_sent` | `developer_report(sent_at DESC)` | ретроспективний перегляд надісланих звітів (AC-20/AC-20b) |
+| `idx_action_log_owner_time` | `action_log(owner_user_id, occurred_at DESC)` | хронологічний список дій власника, найновіші перші (AC-21); заодно FK-покриття |
 
 ## Test fixtures
 
@@ -299,3 +322,4 @@ erDiagram
 - `buildActivityReport({ userId, periodType, periodStart, periodEnd, status })` — звіт активності, за замовчуванням `status: 'generated'`.
 - `buildSyncResource({ userId, url, status, lastSyncedAt, lastError })` — ресурс синхронізації, за замовчуванням `status: 'active'`.
 - `buildDeveloperReport({ userId, triggerType, description, deliveryStatus })` — звіт про проблему, за замовчуванням `triggerType: 'user_requested'`, `deliveryStatus: 'sent'`.
+- `buildActionLogEntry({ ownerUserId, action, occurredAt })` — рядок Логу дій.

@@ -19,6 +19,7 @@
 
 import { listCards as listCardsUseCase } from '../app/list-cards';
 import { createCard as createCardUseCase } from '../app/create-card';
+import type { RecordAction } from '../app/create-card';
 import { getCardWithProgress } from '../app/get-card';
 import type { CallClaude } from '../app/get-card';
 import { updateCard as updateCardUseCase } from '../app/update-card';
@@ -145,8 +146,8 @@ export interface CreateCardBody {
  * це САМ, ДО будь-якого запису в базу -- пропускаємо як є, не обгортаємо в
  * AppError (той самий формат {code, message}, лише інший клас помилки).
  */
-export async function createCard(db: Db, ownerUserId: string, body: CreateCardBody): Promise<CardDto> {
-  const record = await createCardUseCase(db, { ownerUserId, name: body.name });
+export async function createCard(db: Db, ownerUserId: string, body: CreateCardBody, recordAction?: RecordAction): Promise<CardDto> {
+  const record = await createCardUseCase(db, { ownerUserId, name: body.name }, undefined, recordAction);
   return toCardDto(record);
 }
 
@@ -189,7 +190,8 @@ export async function updateCard(
   ownerUserId: string,
   cardId: string,
   body: UpdateCardBody,
-  recordRenameEvent?: RecordCardRenameEvent
+  recordRenameEvent?: RecordCardRenameEvent,
+  recordAction?: RecordAction
 ): Promise<CardDto> {
   const input: { ownerUserId: string; cardId: string; name?: string; description?: string | null; markFilled?: boolean } = {
     ownerUserId,
@@ -205,7 +207,7 @@ export async function updateCard(
     input.markFilled = body.markFilled;
   }
 
-  const record = await updateCardUseCase(db, input, recordRenameEvent);
+  const record = await updateCardUseCase(db, input, recordRenameEvent, recordAction);
   return toCardDto(record);
 }
 
@@ -223,9 +225,10 @@ export async function archiveCard(
   db: Db,
   ownerUserId: string,
   cardId: string,
-  closeStructurePosition?: CloseStructurePositionForCard
+  closeStructurePosition?: CloseStructurePositionForCard,
+  recordAction?: RecordAction
 ): Promise<CardDto> {
-  const record = await archiveCardUseCase(db, { ownerUserId, cardId }, closeStructurePosition);
+  const record = await archiveCardUseCase(db, { ownerUserId, cardId }, closeStructurePosition, recordAction);
   return toCardDto(record);
 }
 
@@ -238,7 +241,7 @@ export async function archiveCard(
 // (T21) уже приймає status='archived' і повертає ту саму CardPage, той самий
 // ендпоінт GET /cards, лише інший query-параметр (contracts/openapi.yaml).
 
-export async function restoreCard(db: Db, ownerUserId: string, cardId: string): Promise<CardDto> {
-  const record = await restoreCardUseCase(db, ownerUserId, cardId);
+export async function restoreCard(db: Db, ownerUserId: string, cardId: string, recordAction?: RecordAction): Promise<CardDto> {
+  const record = await restoreCardUseCase(db, ownerUserId, cardId, recordAction);
   return toCardDto(record);
 }

@@ -30,6 +30,9 @@ import { findCardById, insertMetricBlock } from '../infra/postgres-repo';
 import type { Db, MetricBlockRecord } from '../infra/postgres-repo';
 import { AppError } from '../../../shared/errors';
 
+/** Лог дій -- сигнатура збігається з agent/app/record-action.ts's `recordAction` (create-card.ts докладніше). */
+export type RecordAction = (db: Db, input: { ownerUserId: string; action: string }) => Promise<void>;
+
 export interface CreateMetricBlockInput {
   ownerUserId: string;
   cardId: string;
@@ -52,7 +55,11 @@ export interface CreateMetricBlockInput {
  * Ownership картки перевіряється тут (findCardById); сам блок-метрика власного
  * owner_user_id не має (лише через card), як зазначено в postgres-repo.ts.
  */
-export async function createMetricBlock(db: Db, input: CreateMetricBlockInput): Promise<MetricBlockRecord> {
+export async function createMetricBlock(
+  db: Db,
+  input: CreateMetricBlockInput,
+  recordAction?: RecordAction
+): Promise<MetricBlockRecord> {
   const card = await findCardById(db, input.ownerUserId, input.cardId);
   if (!card) {
     throw new AppError('card.not_found', 'Картку не знайдено', 404);
@@ -67,7 +74,7 @@ export async function createMetricBlock(db: Db, input: CreateMetricBlockInput): 
     throw new AppError('metric_block.invalid_target_count', 'Ціль має бути додатним числом', 422);
   }
 
-  return insertMetricBlock(db, {
+  const block = await insertMetricBlock(db, {
     id: randomUUID(),
     cardId: input.cardId,
     label: input.label,
@@ -77,4 +84,10 @@ export async function createMetricBlock(db: Db, input: CreateMetricBlockInput): 
     isOngoing: input.isOngoing,
     targetDate: input.targetDate,
   });
+
+  if (recordAction) {
+    await recordAction(db, { ownerUserId: input.ownerUserId, action: `Додано блок-метрику «${block.label}» на картці «${card.name}»` });
+  }
+
+  return block;
 }

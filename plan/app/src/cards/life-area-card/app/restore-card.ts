@@ -15,7 +15,10 @@ import { AppError } from '../../../shared/errors';
 import { findCardById, insertLifecycleEvent, updateCard } from '../infra/postgres-repo';
 import type { CardRecord, Db } from '../infra/postgres-repo';
 
-export async function restoreCard(db: Db, ownerUserId: string, cardId: string): Promise<CardRecord> {
+/** Лог дій -- сигнатура збігається з agent/app/record-action.ts's `recordAction` (create-card.ts докладніше). */
+export type RecordAction = (db: Db, input: { ownerUserId: string; action: string }) => Promise<void>;
+
+export async function restoreCard(db: Db, ownerUserId: string, cardId: string, recordAction?: RecordAction): Promise<CardRecord> {
   const card = await findCardById(db, ownerUserId, cardId);
   if (!card) {
     // Non-disclosure (AC-04): чужа й неіснуюча картка -- та сама відповідь.
@@ -36,6 +39,10 @@ export async function restoreCard(db: Db, ownerUserId: string, cardId: string): 
   }
 
   await insertLifecycleEvent(db, { id: crypto.randomUUID(), cardId, transition: 'restored' });
+
+  if (recordAction) {
+    await recordAction(db, { ownerUserId, action: `Відновлено картку «${restored.name}»` });
+  }
 
   return restored;
 }

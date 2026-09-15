@@ -82,8 +82,8 @@ import type {
   ChatProposal,
   ComposerSendInput,
   ImperativeRuleCategory,
+  LogEntryViewModel,
   OnboardingResult,
-  ReportViewModel,
   RuleSettingsScreenRule,
   RuleSettingsScreenSaveInput,
   RuleSettingsScreenTargetCard,
@@ -1436,59 +1436,50 @@ async function onSaveRule(input: RuleSettingsScreenSaveInput): Promise<RuleSetti
   return toRuleSettingsRule((await response.json()) as AgentRuleDto);
 }
 
-const REPORT_PERIOD_LABELS: Record<'weekly' | 'monthly' | 'quarterly', string> = {
-  weekly: 'Тижневий',
-  monthly: 'Місячний',
-  quarterly: 'Квартальний',
-};
-
-/** "18.08–24.08" -- той самий формат-стиль, що formatRecordedAtLabel вище (dd.mm), для короткого підпису періоду. */
-function formatPeriodRange(periodStart: string, periodEnd: string): string {
-  const formatter = new Intl.DateTimeFormat('uk-UA', { day: '2-digit', month: '2-digit' });
-  return `${formatter.format(new Date(periodStart))}–${formatter.format(new Date(periodEnd))}`;
+/** "15.09 14:32" -- dd.mm (той самий формат-стиль, що formatRecordedAtLabel вище) + hh:mm, для рядка Логу дій. */
+function formatActionLogTimestampLabel(occurredAt: string): string {
+  const date = new Date(occurredAt);
+  const dateLabel = new Intl.DateTimeFormat('uk-UA', { day: '2-digit', month: '2-digit' }).format(date);
+  const timeLabel = new Intl.DateTimeFormat('uk-UA', { hour: '2-digit', minute: '2-digit' }).format(date);
+  return `${dateLabel} ${timeLabel}`;
 }
 
-interface AgentReportDto {
+interface AgentActionLogEntryDto {
   id: string;
-  periodType: 'weekly' | 'monthly' | 'quarterly';
-  periodStart: string;
-  periodEnd: string;
-  content: string;
-  status: 'generated' | 'dead_letter';
-  generatedAt: string;
+  action: string;
+  occurredAt: string;
 }
 
-interface AgentReportPageDto {
-  items: AgentReportDto[];
+interface AgentActionLogPageDto {
+  items: AgentActionLogEntryDto[];
   has_next: boolean;
   has_prev: boolean;
   next_cursor: string | null;
 }
 
-/** GET /api/v1/reports -- звіти активності (ReportsScreen.loadReports, AC-11). */
-async function loadReports(): Promise<ReportViewModel[]> {
-  const reports = await collectAllPages<AgentReportDto>(async (after) => {
+/** GET /api/v1/action-log -- Лог дій (LogScreen.loadActionLog), заміна GET /api/v1/reports/ReportsScreen у навігації. */
+async function loadActionLog(): Promise<LogEntryViewModel[]> {
+  const entries = await collectAllPages<AgentActionLogEntryDto>(async (after) => {
     const query = new URLSearchParams();
     if (after) query.set('after', after);
-    const response = await fetch(`/api/v1/reports?${query.toString()}`, { headers: authHeaders() });
+    const response = await fetch(`/api/v1/action-log?${query.toString()}`, { headers: authHeaders() });
 
     if (!response.ok) {
       const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
       throw new AppError(
         body?.code ?? 'agent.request_failed',
-        body?.message ?? 'Не вдалося завантажити звіти активності',
+        body?.message ?? 'Не вдалося завантажити Лог дій',
         response.status,
       );
     }
 
-    return (await response.json()) as AgentReportPageDto;
+    return (await response.json()) as AgentActionLogPageDto;
   });
 
-  return reports.map((report) => ({
-    id: report.id,
-    periodLabel: `${REPORT_PERIOD_LABELS[report.periodType]}, ${formatPeriodRange(report.periodStart, report.periodEnd)}`,
-    summary: report.content,
-    status: report.status,
+  return entries.map((entry) => ({
+    id: entry.id,
+    occurredAtLabel: formatActionLogTimestampLabel(entry.occurredAt),
+    action: entry.action,
   }));
 }
 
@@ -1612,7 +1603,7 @@ createRoot(root).render(
       loadRuleTargetCards={loadRuleTargetCards}
       loadRules={loadRules}
       onSaveRule={onSaveRule}
-      loadReports={loadReports}
+      loadActionLog={loadActionLog}
       loadSyncResources={loadSyncResources}
       onAddSyncResource={onAddSyncResource}
       onRemoveSyncResource={onRemoveSyncResource}

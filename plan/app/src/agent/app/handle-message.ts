@@ -95,6 +95,14 @@ export interface HandleMessageResult {
 export interface HandleMessageDeps {
   /** AC-20b -- повертає фактичний статус доставки (не лише "не впало"), щоб handleMessage міг чесно повідомити користувача, якщо лист не пішов. */
   reportUserIssue?: (userDescription: string) => Promise<{ deliveryStatus: 'sent' | 'failed' }>;
+  /**
+   * Лог дій (Андрій: "тупо пишемо кожну дію -- час, дія, все.") -- сигнатура
+   * збігається з ./record-action.ts's `recordAction`, той самий опційний
+   * DI-стиль, що reportUserIssue вище. Логується сам факт "надіслано
+   * повідомлення" одразу на вході, незалежно від того, чим хід завершиться
+   * (пропозиція чи уточнення) -- дія користувача вже відбулась.
+   */
+  recordAction?: (db: Db, input: { ownerUserId: string; action: string }) => Promise<void>;
 }
 
 // --- Claude's structured decision (this file's own wire contract) ---------
@@ -661,6 +669,13 @@ export async function handleMessage(
   deps?: HandleMessageDeps
 ): Promise<HandleMessageResult> {
   const sessionDate = toSessionDate(input.now ?? new Date());
+
+  // Лог дій -- на самому вході, до будь-якого запису: дія користувача ("надіслав
+  // повідомлення") вже відбулась незалежно від того, чим хід завершиться
+  // (пропозиція чи уточнення) -- не пост-успіх, як у решти use-case-ів.
+  if (deps?.recordAction) {
+    await deps.recordAction(db, { ownerUserId: input.userId, action: 'Надіслано повідомлення агенту' });
+  }
 
   // AC-15: короткий контекст поточної сесії -- repo вже скоупив на
   // (user_id, session_date), domain (T10) повторно застосовує той самий

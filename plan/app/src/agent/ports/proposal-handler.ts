@@ -34,7 +34,7 @@
 import { findActiveProposalByUser } from '../infra/postgres-repo';
 import type { Db, ProposalRecord } from '../infra/postgres-repo';
 import { confirmProposal as confirmProposalUseCase } from '../app/confirm';
-import type { ConfirmProposalInput } from '../app/confirm';
+import type { ConfirmProposalInput, RecordAction } from '../app/confirm';
 
 /** Точно форма схеми Proposal контракту (openapi.yaml). */
 export interface ProposalResponse {
@@ -104,11 +104,16 @@ export async function getActiveProposal(db: Db, ownerUserId: string): Promise<Ac
  * domain invariant "мовчазного запису не буває" (D-30, AC-03).
  * Обидва коди -- AppError з ../app/confirm.ts, пропускаються нагору без змін.
  */
-export async function confirmProposal(db: Db, ownerUserId: string, proposalId: string): Promise<ProposalResponse> {
+export async function confirmProposal(
+  db: Db,
+  ownerUserId: string,
+  proposalId: string,
+  recordAction?: RecordAction
+): Promise<ProposalResponse> {
   const input: ConfirmProposalInput = {
     userId: ownerUserId,
     proposalId,
   };
-  const confirmed = await confirmProposalUseCase(db, input);
+  const confirmed = await confirmProposalUseCase(db, input, recordAction);
   return toProposalResponse(confirmed);
 }

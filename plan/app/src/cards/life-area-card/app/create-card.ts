@@ -54,10 +54,20 @@ export type AssignDefaultLayoutPosition = (
   cardId: string
 ) => Promise<void>;
 
+/**
+ * Лог дій (Андрій: "тупо пишемо кожну дію -- час, дія, все.") -- сигнатура
+ * збігається з agent/app/record-action.ts's `recordAction`, той самий DI-стиль,
+ * що AssignDefaultLayoutPosition вище/CloseStructurePositionForCard
+ * (archive-card.ts): опційний колаборатор, composition root підставляє
+ * реальну реалізацію один раз для всіх use-case-ів.
+ */
+export type RecordAction = (db: Db, input: { ownerUserId: string; action: string }) => Promise<void>;
+
 export async function createCard(
   db: Db,
   input: CreateCardInput,
-  assignDefaultLayoutPosition?: AssignDefaultLayoutPosition
+  assignDefaultLayoutPosition?: AssignDefaultLayoutPosition,
+  recordAction?: RecordAction
 ): Promise<CardRecord> {
   // Доменна валідація (T9) -- кидає CardValidationError на порожню/пробільну
   // назву раніше за будь-який виклик db.query. buildCard також повертає назву
@@ -84,6 +94,10 @@ export async function createCard(
   // успішного insertCard -- позиція посилається на картку по FK.
   if (assignDefaultLayoutPosition) {
     await assignDefaultLayoutPosition(db, input.ownerUserId, record.id);
+  }
+
+  if (recordAction) {
+    await recordAction(db, { ownerUserId: input.ownerUserId, action: `Створено картку «${record.name}»` });
   }
 
   return record;

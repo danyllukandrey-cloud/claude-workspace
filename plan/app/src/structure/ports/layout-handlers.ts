@@ -20,7 +20,7 @@
 import { listActiveLayoutPositionsByOwner, findStructureByOwner } from '../infra/postgres-repo';
 import type { Db, LayoutPositionRecord, LayoutPositionStatusRow } from '../infra/postgres-repo';
 import { findHistoryEventsAsOf, type HistoryEventRecord } from '../infra/history-repo';
-import { moveCard } from '../app/move-card';
+import { moveCard, type RecordAction } from '../app/move-card';
 import { closeCard, type CloseCardMetricTransfer } from '../app/close-card';
 import { AppError } from '../../shared/errors';
 
@@ -200,14 +200,19 @@ export async function moveCardPosition(
   db: Db,
   ownerUserId: string,
   cardId: string,
-  body: MoveCardPositionBody
+  body: MoveCardPositionBody,
+  recordAction?: RecordAction
 ): Promise<LayoutPositionDto> {
-  const moved = await moveCard(db, {
-    ownerUserId,
-    cardId,
-    cellIndex: body.cellIndex,
-    positionUpdatedAt: body.positionUpdatedAt,
-  });
+  const moved = await moveCard(
+    db,
+    {
+      ownerUserId,
+      cardId,
+      cellIndex: body.cellIndex,
+      positionUpdatedAt: body.positionUpdatedAt,
+    },
+    recordAction
+  );
   return toLayoutPositionDto(moved);
 }
 
@@ -231,7 +236,8 @@ export async function closeCardPosition(
   db: Db,
   ownerUserId: string,
   cardId: string,
-  body: CloseCardPositionBody = {}
+  body: CloseCardPositionBody = {},
+  recordAction?: RecordAction
 ): Promise<LayoutPositionDto> {
   const activePositions = await listActiveLayoutPositionsByOwner(db, ownerUserId);
   const current = activePositions.find((position) => position.cardId === cardId);
@@ -240,7 +246,7 @@ export async function closeCardPosition(
   }
 
   try {
-    await closeCard(db, { ownerUserId, cardId, metricTransfers: body.metricTransfers ?? [] });
+    await closeCard(db, { ownerUserId, cardId, metricTransfers: body.metricTransfers ?? [] }, recordAction);
   } catch (error) {
     if (error instanceof AppError && error.code === 'card.not_found') {
       throw new AppError('structure.metric_transfer_target_invalid', error.message, 422);

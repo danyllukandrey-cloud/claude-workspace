@@ -34,10 +34,14 @@ export interface ArchiveCardInput {
 /** Сигнатура збігається з structure/infra/postgres-repo.ts closeActiveLayoutPositionForCard. */
 export type CloseStructurePositionForCard = (db: Db, cardId: string) => Promise<void>;
 
+/** Лог дій -- сигнатура збігається з agent/app/record-action.ts's `recordAction` (create-card.ts докладніше). */
+export type RecordAction = (db: Db, input: { ownerUserId: string; action: string }) => Promise<void>;
+
 export async function archiveCard(
   db: Db,
   input: ArchiveCardInput,
-  closeStructurePosition?: CloseStructurePositionForCard
+  closeStructurePosition?: CloseStructurePositionForCard,
+  recordAction?: RecordAction
 ): Promise<CardRecord> {
   const record = await updateCard(db, input.ownerUserId, input.cardId, { status: 'archived' });
   if (!record) {
@@ -56,6 +60,10 @@ export async function archiveCard(
   // обгортає обидва кроки в BEGIN/COMMIT, use-case сам транзакцій не відкриває).
   if (closeStructurePosition) {
     await closeStructurePosition(db, record.id);
+  }
+
+  if (recordAction) {
+    await recordAction(db, { ownerUserId: input.ownerUserId, action: `Заархівовано картку «${record.name}»` });
   }
 
   return record;

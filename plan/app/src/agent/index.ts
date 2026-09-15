@@ -29,8 +29,13 @@ export type {
   RuleSettingsScreenSaveInput,
 } from './ui/RuleSettingsScreen';
 
-export { ReportsScreen } from './ui/ReportsScreen';
-export type { ReportsScreenProps, ReportViewModel, ReportStatus } from './ui/ReportsScreen';
+// "Лог дій" -- заміна ReportsScreen.tsx у навігації (той самий слот меню
+// шестерні, D-123; Андрій: "Звіт активності -- дублює Аналітику. Це має
+// бути Лог -- час, дія, все."). Backend-механізм періодичних звітів
+// agent-worker (GET /api/v1/reports) лишається як є, просто більше не має
+// UI-екрана -- ReportsScreen.tsx видалено разом із цим підключенням.
+export { LogScreen } from './ui/LogScreen';
+export type { LogScreenProps, LogEntryViewModel } from './ui/LogScreen';
 
 export { AccountScreen } from './ui/AccountScreen';
 export type { AccountScreenProps, AccountScreenResource } from './ui/AccountScreen';

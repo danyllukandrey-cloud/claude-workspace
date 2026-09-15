@@ -7,7 +7,7 @@
 // через публічні двері модуля), не лише факт, що символ експортується.
 
 import { render, screen, waitFor } from '@testing-library/react';
-import { ChatPanel, RuleSettingsScreen, ReportsScreen, AccountScreen } from './index';
+import { ChatPanel, RuleSettingsScreen, LogScreen, AccountScreen } from './index';
 
 test('публічний вхід агента віддає робочий ChatPanel (D-121, колишній SCR-01)', async () => {
   render(
@@ -39,10 +39,10 @@ test('публічний вхід агента віддає робочий RuleS
   expect(await screen.findByRole('heading', { name: 'Налаштування правил' })).toBeTruthy();
 });
 
-test('публічний вхід агента віддає робочий ReportsScreen (SCR-03)', async () => {
-  render(<ReportsScreen loadReports={vi.fn().mockResolvedValue([])} />);
+test('публічний вхід агента віддає робочий LogScreen (заміна SCR-03, D-123)', async () => {
+  render(<LogScreen loadActionLog={vi.fn().mockResolvedValue([])} />);
 
-  await waitFor(() => expect(screen.getByRole('heading', { name: 'Звіти активності' })).toBeTruthy());
+  await waitFor(() => expect(screen.getByRole('heading', { name: 'Лог дій' })).toBeTruthy());
 });
 
 test('публічний вхід агента віддає робочий AccountScreen (SCR-04)', async () => {
