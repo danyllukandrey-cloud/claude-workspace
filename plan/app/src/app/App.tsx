@@ -89,8 +89,16 @@ export interface AppProps {
   onFlagEntry: (cardId: string, entryId: string) => Promise<CardBackData>;
   /** T24 (sad.md §5, GET /api/v1/structure -- DeclarationScreen.loadStructure). */
   loadStructure: () => Promise<DeclarationScreenState>;
-  /** T24 (sad.md §5, PATCH /api/v1/structure -- DeclarationScreen.onSave). */
-  onSaveDeclaration: (input: { declaration: string; layoutMode: LayoutMode }) => Promise<void>;
+  /**
+   * T24 (sad.md §5, PATCH /api/v1/structure) -- ЧАСТКОВИЙ вхід (обидва поля
+   * опційні, бекенд і так приймає PATCH-семантику, structure-handlers.ts
+   * StructureUpdateBody). Живе тестування (Андрій): "Налаштування розкладки
+   * схеми переносимо в сторінку схеми" -- один реальний виклик (main.tsx),
+   * два DI-споживачі: DeclarationScreen.onSave передає лише `declaration`,
+   * LayoutBoard.onSaveLayoutMode (нижче) передає лише `layoutMode` -- той
+   * самий проп, структурно сумісний з обома вужчими сигнатурами.
+   */
+  onSaveDeclaration: (input: { declaration?: string; layoutMode?: LayoutMode }) => Promise<void>;
   /** T24 (sad.md §5, GET /api/v1/structure/layout -- LayoutBoard.loadLayout). */
   loadLayout: () => Promise<LayoutBoardState>;
   /** T24 (sad.md §5, PUT /api/v1/structure/layout/{cardId} -- LayoutBoard.onMoveCard). */
@@ -441,6 +449,11 @@ export function App({
             <LayoutBoard
               loadLayout={loadLayout}
               onMoveCard={onMoveCard}
+              // Живе тестування (Андрій): "Конфігурація" зберігає layoutMode --
+              // той самий реальний PATCH /api/v1/structure, що DeclarationScreen
+              // нижче використовує для declaration (одне DI-джерело onSaveDeclaration,
+              // структурно сумісне з обома вужчими сигнатурами -- AppProps коментар вище).
+              onSaveLayoutMode={onSaveDeclaration}
               loadCloseCardOptions={loadCloseCardOptions}
               onCloseCard={onCloseCard}
             />

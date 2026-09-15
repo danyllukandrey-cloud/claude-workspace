@@ -267,17 +267,54 @@ test('перемикання між колишніми підвидами "за 
   expect((await props.loadLayout()).justReset).toBe(true);
 });
 
-test('AC-11b: картки лише в треї (cellIndex=null) -- розкладати нічого, hasArrangedCards=false', async () => {
-  // Підтвердження "картки скинуться вниз екрана" не має питатись, коли жодна
-  // картка не сидить у клітинці. Після міграції 06 активна позиція БЕЗ клітинки
-  // -- норма, тож "позицій > 0" більше не означає "є що скидати".
+// Живе тестування (Андрій): "Налаштування розкладки схеми переносимо в
+// сторінку схеми" -- `hasArrangedCards` більше не поле DeclarationScreenState
+// (loadStructure тепер несе лише `declaration`, того самого GET /structure
+// без побічного запиту активних позицій) -- LayoutBoard рахує його напряму
+// з `cards`, що вже приходять через loadLayout (перевірено в
+// LayoutBoard.test.tsx, не тут).
+test('loadStructure несе лише declaration -- жодного зайвого запиту /structure/layout для нього', async () => {
   const server = makeServer({
+    structure: { layoutMode: 'focus' },
     cards: [{ id: 'card-a', name: 'Картка A' }],
     positions: [{ cardId: 'card-a', cellIndex: null }],
   });
   const props = await loadMain(server);
 
-  expect((await props.loadStructure()).hasArrangedCards).toBe(false);
+  const state = await props.loadStructure();
+  expect(state).toEqual({ declaration: 'декларація' });
+});
+
+test('живе тестування: onSaveDeclaration лише з declaration (без ключа layoutMode) НЕ показує банер скидання і не зачіпає layoutMode на сервері', async () => {
+  const server = makeServer({
+    structure: { layoutMode: 'focus' },
+    cards: [{ id: 'card-a', name: 'Картка A' }],
+    positions: [{ cardId: 'card-a', cellIndex: 0 }],
+  });
+  const props = await loadMain(server);
+
+  await props.loadLayout(); // той самий крок, що LayoutBoard.useEffect -- наповнює lastKnownLayoutChoice.
+  await props.onSaveDeclaration({ declaration: 'лише текст' });
+
+  // Тіло PATCH не несе layoutMode ВЗАГАЛІ (не лише не змінює його) --
+  // JSON.stringify сам відкидає ключ зі значенням undefined.
+  expect(server.patchBodies).toEqual([{ declaration: 'лише текст' }]);
+  expect((await props.loadLayout()).justReset).toBe(false);
+});
+
+test('живе тестування: onSaveDeclaration лише з layoutMode (LayoutBoard.onSaveLayoutMode) не несе declaration і поводиться як AC-11b', async () => {
+  const server = makeServer({
+    structure: { layoutMode: 'free' },
+    cards: [{ id: 'card-a', name: 'Картка A' }],
+    positions: [{ cardId: 'card-a', cellIndex: null }],
+  });
+  const props = await loadMain(server);
+
+  await props.loadLayout();
+  await props.onSaveDeclaration({ layoutMode: 'focus' });
+
+  expect(server.patchBodies).toEqual([{ layoutMode: 'focus' }]);
+  expect((await props.loadLayout()).justReset).toBe(true);
 });
 
 test('AC-10: збереження лише декларації (той самий layoutMode) НЕ показує банер скидання', async () => {

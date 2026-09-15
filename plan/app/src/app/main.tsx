@@ -790,7 +790,7 @@ function consumeLayoutJustReset(): boolean {
   return justReset;
 }
 
-/** GET /api/v1/structure -- декларація + спосіб розкладки (DeclarationScreen.loadStructure). `hasArrangedCards` (AC-11b confirm-reset) -- поза Structure DTO, похідне з активних позицій розкладки. */
+/** GET /api/v1/structure -- декларація (DeclarationScreen.loadStructure). Живе тестування (Андрій): режим розкладки (layoutMode) і "чи є що скинути" (hasArrangedCards) переїхали цілком на LayoutBoard -- цей запит більше НЕ тягне активні позиції, вони йому не потрібні. */
 async function loadStructure(): Promise<DeclarationScreenState> {
   const response = await fetch('/api/v1/structure', { headers: authHeaders() });
 
@@ -800,17 +800,11 @@ async function loadStructure(): Promise<DeclarationScreenState> {
   }
 
   const structure = (await response.json()) as StructureDto;
+  // Бухгалтерія lastKnownLayoutChoice лишається тут же -- будь-який екран, що
+  // читає Структуру, тримає її свіжою (той самий виклик, що loadLayout нижче).
   rememberLayoutChoice(structure);
-  const activePositions = await fetchActiveLayoutPositions();
 
-  return {
-    declaration: structure.declaration,
-    layoutMode: structure.layoutMode,
-    // AC-11b: картка в треї (cellIndex === null) вже НЕ розкладена --
-    // підтвердження "картки скинуться вниз" не має питатись, коли скидати
-    // нічого. Після міграції 06 таких позицій реально повно.
-    hasArrangedCards: activePositions.some((position) => position.cellIndex !== null),
-  };
+  return { declaration: structure.declaration };
 }
 
 /** Єдине місце, де запам'ятовується спосіб розкладки з відповіді сервера. */
@@ -818,8 +812,16 @@ function rememberLayoutChoice(structure: StructureDto): void {
   lastKnownLayoutChoice = { layoutMode: structure.layoutMode };
 }
 
-/** PATCH /api/v1/structure -- зберігає декларацію/режим розкладки (DeclarationScreen.onSave). */
-async function onSaveDeclaration(input: { declaration: string; layoutMode: LayoutMode }): Promise<void> {
+/**
+ * PATCH /api/v1/structure -- ЧАСТКОВЕ оновлення (declaration та/або
+ * layoutMode, кожне опційне). Два DI-споживачі одного реального виклику
+ * (живе тестування, Андрій): DeclarationScreen.onSave передає лише
+ * `declaration`, LayoutBoard.onSaveLayoutMode передає лише `layoutMode` --
+ * `JSON.stringify` сам відкидає ключ із значенням `undefined`, тож тіло PATCH
+ * завжди несе РІВНО ті поля, що передав викликач (structure-handlers.ts
+ * StructureUpdateBody вже й так підтримує частковий body).
+ */
+async function onSaveDeclaration(input: { declaration?: string; layoutMode?: LayoutMode }): Promise<void> {
   const response = await fetch('/api/v1/structure', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -832,17 +834,26 @@ async function onSaveDeclaration(input: { declaration: string; layoutMode: Layou
   }
 
   // AC-11b: та сама умова, за якою сервер скидає позиції
-  // (app/update-structure.ts). Прапорець ставиться ЛИШЕ після успішної
-  // відповіді -- збій PATCH нічого на сервері не скинув, тож банер був би
-  // брехнею.
+  // (app/update-structure.ts). `input.layoutMode !== undefined` -- ОБОВ'ЯЗКОВА
+  // частина умови тепер, коли виклик буває декларація-only (layoutMode
+  // взагалі не переданий): без цієї перевірки `undefined !== previous.layoutMode`
+  // був би завжди true, і кожне збереження самої декларації хибно виставляло б
+  // прапорець reset. Сам прапорець ставиться ЛИШЕ після успішної відповіді --
+  // збій PATCH нічого на сервері не скинув, тож банер був би брехнею.
   const previous = lastKnownLayoutChoice;
-  if (previous !== null && input.layoutMode !== previous.layoutMode) {
+  if (input.layoutMode !== undefined && previous !== null && input.layoutMode !== previous.layoutMode) {
     layoutJustReset = true;
   }
 
   const saved = (await response.json().catch(() => null)) as StructureDto | null;
-  if (saved) rememberLayoutChoice(saved);
-  else lastKnownLayoutChoice = { layoutMode: input.layoutMode };
+  if (saved) {
+    rememberLayoutChoice(saved);
+  } else if (input.layoutMode !== undefined) {
+    // Fallback лише коли справді знаємо НОВЕ значення -- декларація-only
+    // виклик з нерозпарсеною відповіддю не має затирати lastKnownLayoutChoice
+    // значенням `undefined` (зламало б наступне порівняння вище).
+    lastKnownLayoutChoice = { layoutMode: input.layoutMode };
+  }
 }
 
 /**

@@ -1,13 +1,13 @@
 // T21 -- SCR-02 Схема, screens.md: component test for LayoutBoard --
-// default/empty/loading/reset-basic-order/staging/error-cell-occupied/error
-// states (spec.md AC-02, AC-08, AC-11b).
+// default/empty/loading/reset-basic-order/staging/error-cell-occupied/error/
+// config states (spec.md AC-02, AC-08, AC-11, AC-11b).
 //
 // DI style (plan/app/CLAUDE.md, matches AnalyticsScreen/DeclarationScreen):
-// `loadLayout` / `onMoveCard` are injected prop-functions, no fetch() inside
-// the component. `onMoveCard` maps 1:1 to `PUT /structure/layout/{cardId}`
-// (contracts/openapi.yaml `moveCard`, app/move-card.ts's MoveCardInput
-// minus ownerUserId/positionUpdatedAt -- those are the ports/http layer's
-// job, out of scope here).
+// `loadLayout` / `onMoveCard` / `onSaveLayoutMode` are injected
+// prop-functions, no fetch() inside the component. `onMoveCard` maps 1:1 to
+// `PUT /structure/layout/{cardId}` (contracts/openapi.yaml `moveCard`,
+// app/move-card.ts's MoveCardInput minus ownerUserId/positionUpdatedAt --
+// those are the ports/http layer's job, out of scope here).
 //
 // AC-11b (screens.md "reset-basic-order"): the screen does not itself decide
 // *why* a reset happened -- `loadLayout` already reports the fact via
@@ -26,6 +26,13 @@
 // AC-08: a successful drop calls `onMoveCard` with the dragged card's id
 // and the target cell's index -- the actual PUT happens one layer up
 // (ports/), not asserted here.
+//
+// Живе тестування (Андрій): "Налаштування розкладки схеми переносимо в
+// сторінку схеми" -- LAYOUT_MODE_OPTIONS-пікер і ConfirmDialog-попередження
+// (AC-11/AC-11b) переїхали сюди цілком з колишнього DeclarationScreen.test.tsx.
+// Плаваюча кнопка знизу по центру "Конфігурація" перемикає на CONFIG-екран;
+// `hasArrangedCards` рахується напряму з `cards` (перевірки нижче), а не з
+// окремого прапорця.
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { LayoutBoard } from './LayoutBoard';
@@ -58,6 +65,7 @@ function baseProps(stateOverrides: Partial<LayoutBoardState> = {}) {
   return {
     loadLayout: vi.fn().mockResolvedValue(baseState(stateOverrides)),
     onMoveCard: vi.fn().mockResolvedValue(undefined),
+    onSaveLayoutMode: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -67,7 +75,7 @@ test('loading: показує Spinner, поки GET /structure/layout ще в п
     () => new Promise<LayoutBoardState>((resolve) => { resolveLoad = resolve; }),
   );
 
-  render(<LayoutBoard loadLayout={loadLayout} onMoveCard={vi.fn()} />);
+  render(<LayoutBoard loadLayout={loadLayout} onMoveCard={vi.fn()} onSaveLayoutMode={vi.fn()} />);
 
   expect(screen.getByRole('status')).toBeTruthy();
   void resolveLoad;
@@ -179,7 +187,7 @@ test('error-cell-occupied (AC-02, 409 structure.cell_occupied): показуєт
     code: 'structure.cell_occupied',
     httpStatus: 409,
   });
-  const props = { loadLayout: vi.fn().mockResolvedValue(baseState()), onMoveCard };
+  const props = { loadLayout: vi.fn().mockResolvedValue(baseState()), onMoveCard, onSaveLayoutMode: vi.fn() };
   render(<LayoutBoard {...props} />);
 
   const card = await screen.findByText('Картка A');
@@ -196,7 +204,7 @@ test('error-cell-occupied (AC-02, 409 structure.cell_occupied): показуєт
 
 test('error: мережева помилка при збереженні позиції -- банер, не toast/alert', async () => {
   const onMoveCard = vi.fn().mockRejectedValue(new Error('Failed to fetch'));
-  const props = { loadLayout: vi.fn().mockResolvedValue(baseState()), onMoveCard };
+  const props = { loadLayout: vi.fn().mockResolvedValue(baseState()), onMoveCard, onSaveLayoutMode: vi.fn() };
   render(<LayoutBoard {...props} />);
 
   const card = await screen.findByText('Картка A');
@@ -287,7 +295,12 @@ test('AC-12: після успішного закриття діалог зни�
     .mockResolvedValueOnce(
       baseState({ cards: [{ cardId: 'card-b', cardTitle: 'Картка B', cellIndex: 1, baseOrder: 1 }] }),
     );
-  const props = { loadLayout, onMoveCard: vi.fn().mockResolvedValue(undefined), ...closeCapability() };
+  const props = {
+    loadLayout,
+    onMoveCard: vi.fn().mockResolvedValue(undefined),
+    onSaveLayoutMode: vi.fn().mockResolvedValue(undefined),
+    ...closeCapability(),
+  };
   render(<LayoutBoard {...props} />);
 
   fireEvent.click(await screen.findByRole('button', { name: 'Закрити напрямок «Картка A»' }));
@@ -344,4 +357,114 @@ test('AC-12 + AC-11b: картку з треї нерозкладених теж
 
   fireEvent.click(openA);
   expect(props.loadCloseCardOptions).toHaveBeenCalledWith('card-a');
+});
+
+// --- Живе тестування: "Конфігурація" -- пікер режиму розкладки переїхав
+// сюди цілком з DeclarationScreen.tsx (AC-11/AC-11b) --------------------
+
+test('живе тестування: плаваюча кнопка "Конфігурація" знизу по центру перемикає на пікер 5 режимів', async () => {
+  const props = baseProps({ layoutMode: 'free', cards: [{ cardId: 'card-a', cardTitle: 'Картка A', cellIndex: null, baseOrder: 0 }] });
+  render(<LayoutBoard {...props} />);
+
+  await screen.findByTestId('unassigned-tray');
+  fireEvent.click(screen.getByRole('button', { name: 'Конфігурація' }));
+
+  for (const label of ['Баланс навколо ядра', 'Фокус і спостереження', 'Причина і наслідок', 'Вільна розкладка', 'Готово до розкладання']) {
+    expect(screen.getByRole('radio', { name: label })).toBeTruthy();
+  }
+  expect((screen.getByRole('radio', { name: 'Вільна розкладка' }) as HTMLInputElement).checked).toBe(true);
+});
+
+test('AC-11: обрання нового layoutMode без уже розкладених карток застосовує його одразу, без ConfirmDialog, і повертає на BOARD', async () => {
+  const props = baseProps({
+    layoutMode: 'free',
+    cards: [
+      { cardId: 'card-a', cardTitle: 'Картка A', cellIndex: null, baseOrder: 0 },
+      { cardId: 'card-b', cardTitle: 'Картка B', cellIndex: null, baseOrder: 1 },
+    ],
+  });
+  render(<LayoutBoard {...props} />);
+
+  await screen.findByTestId('unassigned-tray');
+  fireEvent.click(screen.getByRole('button', { name: 'Конфігурація' }));
+
+  fireEvent.click(await screen.findByRole('radio', { name: 'Баланс навколо ядра' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+
+  expect(screen.queryByRole('dialog')).toBeNull();
+  await waitFor(() => expect(props.onSaveLayoutMode).toHaveBeenCalledWith({ layoutMode: 'balance' }));
+  // Джерело правди -- сервер: loadLayout перечитаний після успішного збереження.
+  await waitFor(() => expect(props.loadLayout).toHaveBeenCalledTimes(2));
+  // Повернулись на BOARD -- пікер зник, видно сітку/трей знову.
+  await waitFor(() => expect(screen.queryByRole('radio', { name: 'Баланс навколо ядра' })).toBeNull());
+});
+
+test('AC-11b: зміна layoutMode з уже розкладеними картками показує ConfirmDialog ПЕРЕД onSaveLayoutMode', async () => {
+  // baseState -- обидві картки вже мають cellIndex -- hasArrangedCards true.
+  const props = baseProps({ layoutMode: 'free' });
+  render(<LayoutBoard {...props} />);
+
+  await screen.findByTestId('cell-0');
+  fireEvent.click(screen.getByRole('button', { name: 'Конфігурація' }));
+
+  fireEvent.click(await screen.findByRole('radio', { name: 'Баланс навколо ядра' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+
+  expect(await screen.findByRole('dialog')).toBeTruthy();
+  expect(props.onSaveLayoutMode).not.toHaveBeenCalled();
+});
+
+test('AC-11b: підтвердження в ConfirmDialog викликає onSaveLayoutMode з новим layoutMode і повертає на BOARD', async () => {
+  const props = baseProps({ layoutMode: 'free' });
+  render(<LayoutBoard {...props} />);
+
+  await screen.findByTestId('cell-0');
+  fireEvent.click(screen.getByRole('button', { name: 'Конфігурація' }));
+  fireEvent.click(await screen.findByRole('radio', { name: 'Баланс навколо ядра' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Змінити' }));
+
+  await waitFor(() => expect(props.onSaveLayoutMode).toHaveBeenCalledWith({ layoutMode: 'balance' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  await waitFor(() => expect(screen.queryByRole('radio', { name: 'Баланс навколо ядра' })).toBeNull());
+});
+
+test('AC-11b: скасування в ConfirmDialog не викликає onSaveLayoutMode, лишає попередній режим обраним, CONFIG не закривається', async () => {
+  const props = baseProps({ layoutMode: 'free' });
+  render(<LayoutBoard {...props} />);
+
+  await screen.findByTestId('cell-0');
+  fireEvent.click(screen.getByRole('button', { name: 'Конфігурація' }));
+  fireEvent.click(await screen.findByRole('radio', { name: 'Баланс навколо ядра' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Скасувати' }));
+
+  expect(props.onSaveLayoutMode).not.toHaveBeenCalled();
+  expect((screen.getByRole('radio', { name: 'Вільна розкладка' }) as HTMLInputElement).checked).toBe(true);
+});
+
+test('CONFIG: onSaveLayoutMode падає з AppError -- Banner variant="error" у CONFIG, режим не збережено, екран лишається в CONFIG', async () => {
+  const onSaveLayoutMode = vi.fn().mockRejectedValue({
+    name: 'AppError',
+    message: 'layoutMode must be one of: balance, focus, cause_effect, free, staging',
+    code: 'structure.invalid_layout_mode',
+    httpStatus: 422,
+  });
+  const props = { ...baseProps({ layoutMode: 'free' }), onSaveLayoutMode };
+  render(<LayoutBoard {...props} />);
+
+  await screen.findByTestId('cell-0');
+  // Той самий режим, що вже збережений ('free' -> 'free') -- layoutChanged
+  // false, ConfirmDialog не питає навіть із розкладеними картками; тут
+  // перевіряємо саму помилку збереження, не гілку підтвердження.
+  fireEvent.click(screen.getByRole('button', { name: 'Конфігурація' }));
+  fireEvent.click(await screen.findByRole('radio', { name: 'Вільна розкладка' })); // той самий режим -- без діалогу
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+
+  const banner = await screen.findByText('layoutMode must be one of: balance, focus, cause_effect, free, staging');
+  expect(banner.closest('[data-variant]')?.getAttribute('data-variant')).toBe('error');
+  // Лишились у CONFIG -- пікер і досі на екрані.
+  expect(screen.getByRole('radio', { name: 'Вільна розкладка' })).toBeTruthy();
 });

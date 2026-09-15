@@ -1,29 +1,26 @@
 // T20 — SCR-01 Декларація, screens.md: component test for DeclarationScreen
-// -- default/empty/loading/saved/offline-queued/confirm-reset/error states
-// (spec.md AC-09, AC-10, AC-11, AC-11b).
+// -- default/empty/loading/edit/saved/offline-queued/error states
+// (spec.md AC-09, AC-10).
 //
 // DI style (plan/app/CLAUDE.md, matches CardDetailScreen/ArchiveCardDialog):
 // loadStructure/onSave are injected props, no fetch() inside the component.
 //
-// Вимоги 14/15 (Андрій, чат) — ПЛОСКА модель. "Одна картка" скасована
-// повністю (вимога 14): жодного значення 'single' більше немає, і тесту на
-// нього теж. Дворівневий вибір (LAYOUT_MODE_OPTIONS + умовний
-// LOGIC_VARIANT_OPTIONS) замінено на ОДИН список 5 пігулок у порядку
-// вимоги 15: Баланс навколо ядра / Фокус і спостереження / Причина і
-// наслідок / Вільна розкладка / Готово до розкладання.
+// Живе тестування (Андрій): екран має ДВА стани -- VIEW (read-only текст,
+// за замовчуванням) і EDIT (textarea, той самий, що був завжди). Перемикач
+// -- одна плаваюча кнопка "Змінити декларацію" знизу по центру: у VIEW вона
+// ВІДКРИВАЄ EDIT, у EDIT та сама кнопка (той самий підпис) ЗБЕРІГАЄ і
+// повертає на VIEW. LAYOUT_MODE_OPTIONS/ConfirmDialog (колишні AC-11/AC-11b
+// тут) переїхали цілком на LayoutBoard.test.tsx -- цей файл їх більше не
+// перевіряє.
 //
 // Save-failure discrimination (mirrors src/app/main.tsx's
 // AppError-vs-network-error split): onSave rejecting with an AppError
-// (structure.invalid_layout_mode / 401) means the SERVER answered ->
-// `error` state (Banner variant="error"). onSave rejecting with a plain
-// Error (fetch itself failed -- offline) means the write was accepted
-// locally and will sync later (spec.md §6 NFR) -> `offline-queued` state
-// (Banner variant="info").
-//
-// confirm-reset (AC-11b): switching layoutMode to any of the other 4 values
-// when the user already has cards arranged (`hasArrangedCards: true`) shows
-// a ConfirmDialog BEFORE onSave is called -- cancelling must never call
-// onSave and must leave the previously-saved choice selected.
+// (структура.* / 401) means the SERVER answered -> `error` state (Banner
+// variant="error"), екран ЛИШАЄТЬСЯ в EDIT (значення не збереглось). onSave
+// rejecting with a plain Error (fetch itself failed -- offline) means the
+// write was accepted locally and will sync later (spec.md §6 NFR) ->
+// `offline-queued` state (Banner variant="info"), екран повертається на VIEW
+// (той самий принцип, що спроба вважається прийнятою).
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { DeclarationScreen } from './DeclarationScreen';
@@ -32,8 +29,6 @@ import type { DeclarationScreenState } from './DeclarationScreen';
 function baseState(overrides: Partial<DeclarationScreenState> = {}): DeclarationScreenState {
   return {
     declaration: 'Навчання й здоров’я зараз важливіші за кар’єру.',
-    layoutMode: 'free',
-    hasArrangedCards: false,
     ...overrides,
   };
 }
@@ -59,160 +54,90 @@ test('loading: показує Spinner, поки GET /structure ще в поль�
   void resolveLoad;
 });
 
-test('empty: layoutMode null (AC-09) — жоден із 5 варіантів розкладки не обраний', async () => {
-  const props = baseProps({ declaration: null, layoutMode: null });
+test('empty (AC-09): декларація ще не написана -- VIEW показує курсивом "Тексту декларації поки немає", жодного textarea', async () => {
+  const props = baseProps({ declaration: null });
   render(<DeclarationScreen {...props} />);
 
-  const textarea = await screen.findByLabelText('Картина світу, навіщо, пріоритет');
-  expect((textarea as HTMLTextAreaElement).value).toBe('');
-
-  for (const label of ['Баланс навколо ядра', 'Фокус і спостереження', 'Причина і наслідок', 'Вільна розкладка', 'Готово до розкладання']) {
-    expect((screen.getByRole('radio', { name: label }) as HTMLInputElement).checked).toBe(false);
-  }
-  // 'Одна картка' скасована повністю (вимога 14) — навіть у списку немає.
-  expect(screen.queryByRole('radio', { name: 'Одна картка' })).toBeNull();
+  const hint = await screen.findByText('Тексту декларації поки немає');
+  expect(hint.className).toContain('italic');
+  expect(screen.queryByLabelText('Картина світу, навіщо, пріоритет')).toBeNull();
+  expect(await screen.findByRole('button', { name: 'Змінити декларацію' })).toBeTruthy();
 });
 
-test('default: декларація й обраний режим завантажені та показані, у правильному порядку (вимога 15)', async () => {
-  const props = baseProps({ layoutMode: 'balance' });
-  render(<DeclarationScreen {...props} />);
-
-  const textarea = await screen.findByLabelText('Картина світу, навіщо, пріоритет');
-  expect((textarea as HTMLTextAreaElement).value).toBe('Навчання й здоров’я зараз важливіші за кар’єру.');
-  expect((screen.getByRole('radio', { name: 'Баланс навколо ядра' }) as HTMLInputElement).checked).toBe(true);
-
-  const radios = screen.getAllByRole('radio') as HTMLInputElement[];
-  expect(radios.map((radio) => radio.getAttribute('aria-label') ?? radio.closest('label')?.textContent)).toEqual([
-    'Баланс навколо ядра',
-    'Фокус і спостереження',
-    'Причина і наслідок',
-    'Вільна розкладка',
-    'Готово до розкладання',
-  ]);
-});
-
-test('усі 5 плоских режимів показані як один спільний список пігулок', async () => {
-  const props = baseProps({ layoutMode: 'staging' });
-  render(<DeclarationScreen {...props} />);
-
-  await screen.findByLabelText('Картина світу, навіщо, пріоритет');
-  for (const label of ['Баланс навколо ядра', 'Фокус і спостереження', 'Причина і наслідок', 'Вільна розкладка', 'Готово до розкладання']) {
-    expect(screen.getByRole('radio', { name: label })).toBeTruthy();
-  }
-  expect((screen.getByRole('radio', { name: 'Готово до розкладання' }) as HTMLInputElement).checked).toBe(true);
-});
-
-test('AC-10: збереження декларації викликає onSave лише з declaration і показує Banner "saved"', async () => {
+test('default: VIEW показує вже збережений текст декларації read-only, без textarea', async () => {
   const props = baseProps();
   render(<DeclarationScreen {...props} />);
 
+  expect(await screen.findByText('Навчання й здоров’я зараз важливіші за кар’єру.')).toBeTruthy();
+  expect(screen.queryByLabelText('Картина світу, навіщо, пріоритет')).toBeNull();
+});
+
+test('живе тестування: клік "Змінити декларацію" у VIEW перемикає на EDIT -- textarea з поточним текстом', async () => {
+  const props = baseProps();
+  render(<DeclarationScreen {...props} />);
+
+  await screen.findByText('Навчання й здоров’я зараз важливіші за кар’єру.');
+  fireEvent.click(screen.getByRole('button', { name: 'Змінити декларацію' }));
+
+  const textarea = await screen.findByLabelText('Картина світу, навіщо, пріоритет');
+  expect((textarea as HTMLTextAreaElement).value).toBe('Навчання й здоров’я зараз важливіші за кар’єру.');
+  // Кнопка лишається тим самим підписом -- тепер діє як "Зберегти".
+  expect(screen.getByRole('button', { name: 'Змінити декларацію' })).toBeTruthy();
+});
+
+test('AC-10: збереження в EDIT викликає onSave лише з declaration, показує Banner "saved" і повертає на VIEW', async () => {
+  const props = baseProps();
+  render(<DeclarationScreen {...props} />);
+
+  await screen.findByText('Навчання й здоров’я зараз важливіші за кар’єру.');
+  fireEvent.click(screen.getByRole('button', { name: 'Змінити декларацію' }));
+
   const textarea = await screen.findByLabelText('Картина світу, навіщо, пріоритет');
   fireEvent.change(textarea, { target: { value: 'нова декларація' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Змінити декларацію' }));
 
-  await screen.findByText(/Зберег/);
-  expect(props.onSave).toHaveBeenCalledWith(expect.objectContaining({ declaration: 'нова декларація' }));
+  await screen.findByText('Збережено');
+  expect(props.onSave).toHaveBeenCalledWith({ declaration: 'нова декларація' });
+  // Жодного layoutMode -- той пропс на цьому екрані більше не існує.
+  expect(props.onSave.mock.calls[0][0]).not.toHaveProperty('layoutMode');
+  // Повернулись на VIEW -- textarea зникла, видно свіжий текст.
+  await waitFor(() => expect(screen.queryByLabelText('Картина світу, навіщо, пріоритет')).toBeNull());
+  expect(await screen.findByText('нова декларація')).toBeTruthy();
 });
 
-test('AC-11: обрання нового layoutMode без уже розкладених карток застосовує його одразу, без ConfirmDialog', async () => {
-  const props = baseProps({ layoutMode: 'free', hasArrangedCards: false });
-  render(<DeclarationScreen {...props} />);
-
-  await screen.findByLabelText('Картина світу, навіщо, пріоритет');
-  fireEvent.click(screen.getByRole('radio', { name: 'Баланс навколо ядра' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
-
-  expect(screen.queryByRole('dialog')).toBeNull();
-  await waitFor(() =>
-    expect(props.onSave).toHaveBeenCalledWith(expect.objectContaining({ layoutMode: 'balance' })),
-  );
-});
-
-test('AC-11b: зміна layoutMode з уже розкладеними картками показує ConfirmDialog ПЕРЕД onSave', async () => {
-  const props = baseProps({ layoutMode: 'free', hasArrangedCards: true });
-  render(<DeclarationScreen {...props} />);
-
-  await screen.findByLabelText('Картина світу, навіщо, пріоритет');
-  fireEvent.click(screen.getByRole('radio', { name: 'Баланс навколо ядра' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
-
-  expect(await screen.findByRole('dialog')).toBeTruthy();
-  expect(props.onSave).not.toHaveBeenCalled();
-});
-
-test('AC-11b: підтвердження в ConfirmDialog викликає onSave з новим layoutMode', async () => {
-  const props = baseProps({ layoutMode: 'free', hasArrangedCards: true });
-  render(<DeclarationScreen {...props} />);
-
-  await screen.findByLabelText('Картина світу, навіщо, пріоритет');
-  fireEvent.click(screen.getByRole('radio', { name: 'Баланс навколо ядра' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
-
-  fireEvent.click(await screen.findByRole('button', { name: 'Змінити' }));
-
-  await waitFor(() =>
-    expect(props.onSave).toHaveBeenCalledWith(expect.objectContaining({ layoutMode: 'balance' })),
-  );
-});
-
-test('AC-11b: скасування в ConfirmDialog не викликає onSave і лишає попередній режим обраним', async () => {
-  const props = baseProps({ layoutMode: 'free', hasArrangedCards: true });
-  render(<DeclarationScreen {...props} />);
-
-  await screen.findByLabelText('Картина світу, навіщо, пріоритет');
-  fireEvent.click(screen.getByRole('radio', { name: 'Баланс навколо ядра' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
-
-  fireEvent.click(await screen.findByRole('button', { name: 'Скасувати' }));
-
-  expect(props.onSave).not.toHaveBeenCalled();
-  expect((screen.getByRole('radio', { name: 'Вільна розкладка' }) as HTMLInputElement).checked).toBe(true);
-});
-
-// Плоска модель (вимоги 14/15): перемикання МІЖ колишніми підвидами "за
-// логікою" ('balance' -> 'focus') тепер звичайна зміна layoutMode -- той
-// самий ConfirmDialog-шлях, що й будь-яка інша зміна режиму, без окремого
-// колишнього AC-16b-випадку.
-test('перемикання між колишніми підвидами "за логікою" з уже розкладеними картками теж проходить через ConfirmDialog', async () => {
-  const props = baseProps({ layoutMode: 'balance', hasArrangedCards: true });
-  render(<DeclarationScreen {...props} />);
-
-  await screen.findByLabelText('Картина світу, навіщо, пріоритет');
-  fireEvent.click(screen.getByRole('radio', { name: 'Фокус і спостереження' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
-
-  expect(await screen.findByRole('dialog')).toBeTruthy();
-  expect(props.onSave).not.toHaveBeenCalled();
-});
-
-test('offline-queued: onSave, що падає зі звичайною мережевою помилкою (не AppError), показує Banner variant="info"', async () => {
+test('offline-queued: onSave, що падає зі звичайною мережевою помилкою (не AppError), показує Banner variant="info" і повертає на VIEW', async () => {
   const onSave = vi.fn().mockRejectedValue(new Error('network request failed'));
   const props = { ...baseProps(), onSave };
   render(<DeclarationScreen {...props} />);
 
+  await screen.findByText('Навчання й здоров’я зараз важливіші за кар’єру.');
+  fireEvent.click(screen.getByRole('button', { name: 'Змінити декларацію' }));
   const textarea = await screen.findByLabelText('Картина світу, навіщо, пріоритет');
   fireEvent.change(textarea, { target: { value: 'новий текст' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Змінити декларацію' }));
 
   const banner = await screen.findByText(/офлайн|синхронізу/i);
   expect(banner.closest('[data-variant]')?.getAttribute('data-variant')).toBe('info');
+  await waitFor(() => expect(screen.queryByLabelText('Картина світу, навіщо, пріоритет')).toBeNull());
 });
 
-test('error: onSave, що падає з AppError (422 structure.invalid_layout_mode), показує Banner variant="error" з повідомленням', async () => {
+test('error: onSave, що падає з AppError, показує Banner variant="error" і ЛИШАЄ екран в EDIT', async () => {
   class FakeAppError extends Error {
-    code = 'structure.invalid_layout_mode';
-    httpStatus = 422;
+    code = 'structure.request_failed';
+    httpStatus = 500;
   }
-  const onSave = vi.fn().mockRejectedValue(
-    new FakeAppError('layoutMode must be one of: balance, focus, cause_effect, free, staging'),
-  );
+  const onSave = vi.fn().mockRejectedValue(new FakeAppError('Не вдалося зберегти'));
   const props = { ...baseProps(), onSave };
   render(<DeclarationScreen {...props} />);
 
+  await screen.findByText('Навчання й здоров’я зараз важливіші за кар’єру.');
+  fireEvent.click(screen.getByRole('button', { name: 'Змінити декларацію' }));
   const textarea = await screen.findByLabelText('Картина світу, навіщо, пріоритет');
   fireEvent.change(textarea, { target: { value: 'текст' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Змінити декларацію' }));
 
-  const banner = await screen.findByText('layoutMode must be one of: balance, focus, cause_effect, free, staging');
+  const banner = await screen.findByText('Не вдалося зберегти');
   expect(banner.closest('[data-variant]')?.getAttribute('data-variant')).toBe('error');
+  // Значення не збереглось -- textarea й досі тут, з тим самим текстом.
+  expect(screen.getByLabelText('Картина світу, навіщо, пріоритет')).toBeTruthy();
 });

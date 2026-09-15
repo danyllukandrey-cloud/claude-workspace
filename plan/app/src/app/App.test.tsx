@@ -92,7 +92,7 @@ function baseProps() {
     // structure/ui/LayoutBoard.tsx (loadLayout/onMoveCard) і
     // structure/ui/AnalyticsScreen.tsx (loadAnalytics) -- App лише
     // прокидає їх без змін (той самий DI-стиль, що loadCards).
-    loadStructure: vi.fn().mockResolvedValue({ declaration: null, layoutMode: null, hasArrangedCards: false }),
+    loadStructure: vi.fn().mockResolvedValue({ declaration: null }),
     onSaveDeclaration: vi.fn().mockResolvedValue(undefined),
     loadLayout: vi.fn().mockResolvedValue({ cellCount: 0, justReset: false, cards: [] }),
     onMoveCard: vi.fn().mockResolvedValue(undefined),
@@ -611,8 +611,10 @@ test('T24: клік "Декларація" в нав-меню перемикає
 
   fireEvent.click(await screen.findByRole('button', { name: 'Декларація' }));
 
-  // DeclarationScreen.tsx -- унікальне поле "Картина світу, навіщо, пріоритет".
-  expect(await screen.findByLabelText('Картина світу, навіщо, пріоритет')).toBeTruthy();
+  // DeclarationScreen.tsx -- VIEW за замовчуванням (declaration: null з мока
+  // вище) -- унікальний курсивний текст-підказка цього екрана.
+  expect(await screen.findByText('Тексту декларації поки немає')).toBeTruthy();
+  expect(await screen.findByRole('button', { name: 'Змінити декларацію' })).toBeTruthy();
   expect(props.loadStructure).toHaveBeenCalledTimes(1);
   expect(screen.queryByText('Тут ще немає жодної картки')).toBeNull();
 });
