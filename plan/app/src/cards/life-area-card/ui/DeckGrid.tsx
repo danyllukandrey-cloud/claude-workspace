@@ -88,35 +88,50 @@ export function DeckGrid({ items, renderFront }: DeckGridProps): JSX.Element {
           підлаштовується під висоту сторінки. */}
       <div className="relative h-[85%] w-full">
         {/* Задні картки першими в DOM -- передня (layer 0) малюється останньою, зверху. */}
+        {/* Анімація перельоту (живе тестування): ОДИН тип обгортки (<div>) для
+            всіх шарів -- і переднього, і задніх, з тим самим key={item.id}.
+            React звіряє елементи по (key + тип тегу): якби передній шар був
+            <div>, а задній -- <button>, зміна типу при переході "передня
+            стала задньою" примусила б React розмонтувати й змонтувати вузол
+            наново -- і CSS transition було б нічим анімувати (вузол щойно
+            з'явився в DOM одразу в кінцевій позиції). Один стабільний <div>
+            зберігає вузол картки живим при будь-якій зміні layer, тож
+            transform/opacity нижче -- це не "стрибок", а перерахунок
+            inline-стилю того самого DOM-вузла, і transition-[...] його плавно
+            анімує від старої позиції в стосі до нової. z-index не анімується
+            (властивість не інтерполюється), тому свіжа передня картка миттєво
+            опиняється зверху, а колишня передня так само миттєво йде під низ
+            (найменший z-index) -- і водночас "летить" по transform/opacity
+            туди, у позицію найдальшого заднього шару. Разом це і дає ефект
+            "картка перелітає під низ колоди". */}
         {[...layers].reverse().map(({ layer, item }) => {
           const isFront = layer === 0;
 
-          if (isFront) {
-            // D-121: передня картка -- це те, що повернув renderFront (повний
-            // CardShell чи кнопка-назва залежно від виклику), не власна кнопка
-            // DeckGrid. key={item.id} на цьому wrapper -- React ремонтує
-            // DeckFrontCard при кожній зміні передньої картки (скидає `side`).
-            return (
-              <div key={item.id} style={{ zIndex: layerCount }} className="absolute inset-0">
-                {renderFront(item)}
-              </div>
-            );
-          }
-
           return (
-            <button
+            <div
               key={item.id}
-              type="button"
-              onClick={() => setFrontIndex(items.indexOf(item))}
               style={{
                 transform: `translate(${layer * 10}px, ${-layer * 12}px) scale(${1 - layer * 0.05})`,
                 zIndex: layerCount - layer,
                 opacity: 1 - layer * 0.16,
               }}
-              className="absolute inset-0 flex items-start rounded-card border border-border bg-surface-solid p-5 text-left font-display text-lg font-semibold text-ink shadow-soft transition-transform hover:-translate-y-0.5"
+              className="absolute inset-0 transition-[transform,opacity] duration-300 ease-out"
             >
-              {item.name}
-            </button>
+              {isFront ? (
+                // D-121: передня картка -- це те, що повернув renderFront
+                // (повний CardShell чи кнопка-назва залежно від виклику), не
+                // власна кнопка DeckGrid.
+                renderFront(item)
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setFrontIndex(items.indexOf(item))}
+                  className="flex h-full w-full items-start rounded-card border border-border bg-surface-solid p-5 text-left font-display text-lg font-semibold text-ink shadow-soft transition-transform hover:-translate-y-0.5"
+                >
+                  {item.name}
+                </button>
+              )}
+            </div>
           );
         })}
       </div>
