@@ -1,5 +1,5 @@
 // T15 -- Ports: GET/PATCH /structure handlers.
-// RED (unit level, mocked Db -- test-plan.md маркує AC-11/AC-16 як integration,
+// RED (unit level, mocked Db -- test-plan.md маркує AC-11 як integration,
 // AC-10 як unit; Docker/Neon недоступні в цьому середовищі, тож повноцінний
 // integration-рівень (реальний Postgres, contracts/openapi.yaml повний цикл)
 // лишається NON-red тут -- цей файл робить задачу TDD-водимою локально без
@@ -12,11 +12,11 @@
 //   на перший вхід, з `declaration: null`, `layoutMode: null` (AC-09/AC-10).
 // - PATCH updateMyStructure: 200 happy path (AC-10 декларація незалежна,
 //   AC-11 обраний layoutMode застосовується надалі); 422
-//   structure.invalid_layout_mode / structure.invalid_logic_variant --
-//   значення поза допустимим enum'ом контракту, ПЕРЕВІРЕНО ДО будь-якого
-//   запису (той самий підхід, що app/update-structure.ts -- validate-first);
-//   422 structure.logic_variant_requires_logic_mode -- пропускається як є з
-//   use-case-шару (T11), порт нічого зверху не додає й не ховає.
+//   structure.invalid_layout_mode -- значення поза допустимим enum'ом
+//   контракту, ПЕРЕВІРЕНО ДО будь-якого запису (той самий підхід, що
+//   app/update-structure.ts -- validate-first).
+// - Вимоги 14/15 (Андрій, чат): плоска модель, ОДНЕ поле layoutMode з 5
+//   значень -- колишній logicVariant і його окремі 422 прибрані разом з ним.
 // - AC-03 (non-disclosure): Структура -- singleton, адресується лише через
 //   ownerUserId з Bearer-токена (openapi.yaml `info.description`) -- немає
 //   параметра "чужий id", тому тест перевіряє, що читання/запис завжди
@@ -36,8 +36,7 @@ function structureRow(
     id: string;
     owner_user_id: string;
     declaration: string | null;
-    layout_mode: 'single' | 'free' | 'logic' | null;
-    logic_variant: 'balance' | 'focus' | 'cause_effect' | null;
+    layout_mode: 'balance' | 'focus' | 'cause_effect' | 'free' | 'staging' | null;
     created_at: Date;
     updated_at: Date;
   }> = {}
@@ -47,7 +46,6 @@ function structureRow(
     owner_user_id: overrides.owner_user_id ?? OWNER,
     declaration: overrides.declaration ?? null,
     layout_mode: overrides.layout_mode ?? null,
-    logic_variant: overrides.logic_variant ?? null,
     created_at: overrides.created_at ?? new Date('2026-01-01T00:00:00Z'),
     updated_at: overrides.updated_at ?? new Date('2026-01-01T00:00:00Z'),
   };
@@ -86,7 +84,6 @@ describe('getStructure handler', () => {
       id: STRUCTURE_ID,
       declaration: null,
       layoutMode: null,
-      logicVariant: null,
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
     });
@@ -175,7 +172,7 @@ describe('updateStructure handler', () => {
   });
 
   // 422 structure.invalid_layout_mode -- значення поза enum'ом контракту
-  // (single/free/logic/null), перевірено ДО будь-якого запиту в базу.
+  // (5 плоских значень, вимоги 14/15), перевірено ДО будь-якого запиту в базу.
   it('rejects an out-of-enum layoutMode with 422 structure.invalid_layout_mode before any query', async () => {
     const db = fakeUpdateStructureDb({ current: structureRow() });
 
@@ -186,27 +183,30 @@ describe('updateStructure handler', () => {
     expect(db.query).not.toHaveBeenCalled();
   });
 
-  // 422 structure.invalid_logic_variant -- значення поза enum'ом контракту
-  // (balance/focus/cause_effect/null), перевірено ДО будь-якого запиту.
-  it('rejects an out-of-enum logicVariant with 422 structure.invalid_logic_variant before any query', async () => {
-    const db = fakeUpdateStructureDb({ current: structureRow({ layout_mode: 'logic' }) });
+  // 'single' скасований повністю (вимога 14) -- поза enum'ом, той самий 422,
+  // що будь-яке інше вигадане значення.
+  it('rejects the removed "single" mode with the same 422 structure.invalid_layout_mode', async () => {
+    const db = fakeUpdateStructureDb({ current: structureRow() });
 
-    const error = await updateStructure(db, OWNER, { logicVariant: 'not-a-real-variant' as never }).catch((e) => e);
+    const error = await updateStructure(db, OWNER, { layoutMode: 'single' as never }).catch((e) => e);
 
     expect(error).toBeInstanceOf(AppError);
-    expect(error).toMatchObject({ code: 'structure.invalid_logic_variant', httpStatus: 422 });
+    expect(error).toMatchObject({ code: 'structure.invalid_layout_mode', httpStatus: 422 });
     expect(db.query).not.toHaveBeenCalled();
   });
 
-  // 422 structure.logic_variant_requires_logic_mode (AC-16) -- валідний enum,
-  // але layoutMode (збережений чи цим-таки запитом) не 'logic'. Порт нічого
-  // зверху не додає -- пропускає помилку use-case-шару (T11) як є.
-  it('propagates structure.logic_variant_requires_logic_mode from the use-case as-is', async () => {
-    const db = fakeUpdateStructureDb({ current: structureRow({ layout_mode: 'free' }) });
+  // Плоска модель: колишні підвиди "за логікою" -- звичайні, валідні
+  // top-level значення layoutMode тепер, і 'staging' -- новий п'ятий.
+  it('accepts every one of the 5 flat layoutMode values', async () => {
+    for (const layoutMode of ['balance', 'focus', 'cause_effect', 'free', 'staging'] as const) {
+      const db = fakeUpdateStructureDb({
+        current: structureRow({ layout_mode: null }),
+        updated: structureRow({ layout_mode: layoutMode }),
+        activePositions: [],
+      });
 
-    const error = await updateStructure(db, OWNER, { logicVariant: 'focus' }).catch((e) => e);
-
-    expect(error).toBeInstanceOf(AppError);
-    expect(error).toMatchObject({ code: 'structure.logic_variant_requires_logic_mode', httpStatus: 422 });
+      const result = await updateStructure(db, OWNER, { layoutMode });
+      expect(result.layoutMode).toBe(layoutMode);
+    }
   });
 });

@@ -4,11 +4,15 @@
 // знахідки рев'ю 2026-09-11 (Частина 3), через які екрани Структури показували
 // заглушки замість даних:
 //
-// 1. `justReset: false` хардкодом -- банер "Розклади заново" (AC-11b/AC-16b) не
+// 1. `justReset: false` хардкодом -- банер "Розклади заново" (AC-11b) не
 //    показувався НІКОЛИ, попри те, що сервер реально скидає позиції.
 // 2. `gap: null, trend: null, unmaintained: false, trendAvailable: false`
 //    хардкодом -- AC-06/AC-06b/AC-07 на екрані мертві, а банер "тренд
 //    недоступний" висів для всіх користувачів завжди.
+//
+// Вимоги 14/15 (Андрій, чат, плоска модель): layoutMode -- ОДНЕ поле з 5
+// значень ('balance'/'focus'/'cause_effect'/'free'/'staging'); logicVariant
+// прибраний з фейкового сервера й тіл PATCH нижче разом з ним.
 //
 // Як тестуємо: App підмінений (vi.mock) компонентом, що лише ЗАПАМ'ЯТОВУЄ
 // передані пропи -- далі тест викликає самі ці функції з підробленим fetch.
@@ -37,7 +41,7 @@ interface FakePosition {
 }
 
 interface FakeServer {
-  structure: { layoutMode: string | null; logicVariant: string | null };
+  structure: { layoutMode: string | null };
   positions: FakePosition[];
   cards: { id: string; name: string }[];
   progressByCard: Record<string, number | null>;
@@ -54,7 +58,7 @@ interface FakeServer {
 
 function makeServer(overrides: Partial<FakeServer> = {}): FakeServer {
   return {
-    structure: { layoutMode: 'logic', logicVariant: 'focus' },
+    structure: { layoutMode: 'focus' },
     positions: [],
     cards: [],
     progressByCard: {},
@@ -93,7 +97,6 @@ function fakeFetch(server: FakeServer): typeof fetch {
       id: 'structure-1',
       declaration: 'декларація',
       layoutMode: server.structure.layoutMode,
-      logicVariant: server.structure.logicVariant,
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-02T00:00:00.000Z',
     };
@@ -135,10 +138,9 @@ function fakeFetch(server: FakeServer): typeof fetch {
 
     if (url === '/api/v1/structure') {
       if (method === 'PATCH') {
-        const body = JSON.parse(String(init?.body)) as { layoutMode?: string | null; logicVariant?: string | null };
+        const body = JSON.parse(String(init?.body)) as { layoutMode?: string | null };
         server.patchBodies.push(body);
         if (body.layoutMode !== undefined) server.structure.layoutMode = body.layoutMode;
-        if (body.logicVariant !== undefined) server.structure.logicVariant = body.logicVariant;
         return jsonResponse(structureDto);
       }
       return jsonResponse(structureDto);
@@ -225,11 +227,11 @@ async function loadMainExports(server: FakeServer): Promise<typeof import('./mai
   return import('./main');
 }
 
-// --- AC-11b / AC-16b: банер "Розклади заново" --------------------------------
+// --- AC-11b: банер "Розклади заново" --------------------------------
 
 test('AC-11b: після PATCH, що змінив layoutMode, наступне відкриття Схеми несе justReset=true -- і лише один раз', async () => {
   const server = makeServer({
-    structure: { layoutMode: 'free', logicVariant: null },
+    structure: { layoutMode: 'free' },
     cards: [{ id: 'card-a', name: 'Картка A' }],
     positions: [{ cardId: 'card-a', cellIndex: null }],
   });
@@ -237,7 +239,7 @@ test('AC-11b: після PATCH, що змінив layoutMode, наступне �
 
   // Клієнт спершу бачить поточний стан Структури (екран Декларації).
   await props.loadStructure();
-  await props.onSaveDeclaration({ declaration: 'декларація', layoutMode: 'logic', logicVariant: 'focus' });
+  await props.onSaveDeclaration({ declaration: 'декларація', layoutMode: 'focus' });
 
   const afterSwitch = await props.loadLayout();
   expect(afterSwitch.justReset).toBe(true);
@@ -248,16 +250,19 @@ test('AC-11b: після PATCH, що змінив layoutMode, наступне �
   expect(secondOpen.justReset).toBe(false);
 });
 
-test('AC-16b: зміна лише підвиду "за логікою" (режим лишається logic) теж дає justReset=true', async () => {
+// Плоска модель (вимоги 14/15): перемикання МІЖ колишніми підвидами "за
+// логікою" ('balance' <-> 'focus') -- тепер звичайна зміна layoutMode, той
+// самий AC-11b-шлях, без окремого AC-16b-випадку.
+test('перемикання між колишніми підвидами "за логікою" напряму теж дає justReset=true', async () => {
   const server = makeServer({
-    structure: { layoutMode: 'logic', logicVariant: 'balance' },
+    structure: { layoutMode: 'balance' },
     cards: [{ id: 'card-a', name: 'Картка A' }],
     positions: [{ cardId: 'card-a', cellIndex: null }],
   });
   const props = await loadMain(server);
 
   await props.loadStructure();
-  await props.onSaveDeclaration({ declaration: 'декларація', layoutMode: 'logic', logicVariant: 'focus' });
+  await props.onSaveDeclaration({ declaration: 'декларація', layoutMode: 'focus' });
 
   expect((await props.loadLayout()).justReset).toBe(true);
 });
@@ -275,19 +280,19 @@ test('AC-11b: картки лише в треї (cellIndex=null) -- розкла
   expect((await props.loadStructure()).hasArrangedCards).toBe(false);
 });
 
-test('AC-10: збереження лише декларації (режим і підвид ті самі) НЕ показує банер скидання', async () => {
+test('AC-10: збереження лише декларації (той самий layoutMode) НЕ показує банер скидання', async () => {
   const server = makeServer({
-    structure: { layoutMode: 'logic', logicVariant: 'focus' },
+    structure: { layoutMode: 'focus' },
     cards: [{ id: 'card-a', name: 'Картка A' }],
     positions: [{ cardId: 'card-a', cellIndex: 0 }],
   });
   const props = await loadMain(server);
 
   await props.loadStructure();
-  await props.onSaveDeclaration({ declaration: 'новий текст', layoutMode: 'logic', logicVariant: 'focus' });
+  await props.onSaveDeclaration({ declaration: 'новий текст', layoutMode: 'focus' });
 
   // Сервер у цьому випадку нічого не скидає (update-structure.ts: reset лише
-  // коли режим/підвид реально змінились) -- банер збрехав би.
+  // коли layoutMode реально змінився) -- банер збрехав би.
   expect((await props.loadLayout()).justReset).toBe(false);
 });
 
@@ -295,7 +300,7 @@ test('AC-10: збереження лише декларації (режим і �
 
 test('AC-06: у розкладці "за логікою" кожна розкладена картка отримує реальний ранг-розрив', async () => {
   const server = makeServer({
-    structure: { layoutMode: 'logic', logicVariant: 'focus' },
+    structure: { layoutMode: 'focus' },
     cards: [
       { id: 'card-a', name: 'Картка A' },
       { id: 'card-b', name: 'Картка B' },
@@ -326,7 +331,7 @@ test('AC-06: у розкладці "за логікою" кожна розкла
 
 test('AC-07: минула розкладка з /structure/layout/history дає напрямок тренду', async () => {
   const server = makeServer({
-    structure: { layoutMode: 'logic', logicVariant: 'focus' },
+    structure: { layoutMode: 'focus' },
     cards: [{ id: 'card-a', name: 'Картка A' }],
     positions: [{ cardId: 'card-a', cellIndex: 0 }],
     progressByCard: { 'card-a': 0.4 },
@@ -348,7 +353,7 @@ test('AC-07: минула розкладка з /structure/layout/history дає
 
 test('AC-07: історія не відповіла -- trendAvailable=false, але розрив усе одно порахований', async () => {
   const server = makeServer({
-    structure: { layoutMode: 'logic', logicVariant: 'focus' },
+    structure: { layoutMode: 'focus' },
     cards: [{ id: 'card-a', name: 'Картка A' }],
     positions: [{ cardId: 'card-a', cellIndex: 0 }],
     progressByCard: { 'card-a': 0.4 },
@@ -366,7 +371,7 @@ test('AC-07: історія не відповіла -- trendAvailable=false, а�
 
 test('AC-06b: у розкладці без схеми пріоритету розриву немає, зате видно "заявлено -- не ведеться"', async () => {
   const server = makeServer({
-    structure: { layoutMode: 'free', logicVariant: null },
+    structure: { layoutMode: 'free' },
     cards: [
       { id: 'card-a', name: 'Картка A' },
       { id: 'card-b', name: 'Картка B' },

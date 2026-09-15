@@ -16,7 +16,6 @@ import type {
   LayoutBoardCloseCardOptions,
   LayoutBoardState,
   LayoutMode,
-  LogicVariant,
 } from '../structure';
 // T29 -- реєстрація агента в app-shell (D-25 "агент -- єдиний канал прямого
 // вводу продукту ПЛАН"). Імпортується ЛИШЕ через ../agent's index.ts
@@ -91,7 +90,7 @@ export interface AppProps {
   /** T24 (sad.md §5, GET /api/v1/structure -- DeclarationScreen.loadStructure). */
   loadStructure: () => Promise<DeclarationScreenState>;
   /** T24 (sad.md §5, PATCH /api/v1/structure -- DeclarationScreen.onSave). */
-  onSaveDeclaration: (input: { declaration: string; layoutMode: LayoutMode; logicVariant: LogicVariant }) => Promise<void>;
+  onSaveDeclaration: (input: { declaration: string; layoutMode: LayoutMode }) => Promise<void>;
   /** T24 (sad.md §5, GET /api/v1/structure/layout -- LayoutBoard.loadLayout). */
   loadLayout: () => Promise<LayoutBoardState>;
   /** T24 (sad.md §5, PUT /api/v1/structure/layout/{cardId} -- LayoutBoard.onMoveCard). */

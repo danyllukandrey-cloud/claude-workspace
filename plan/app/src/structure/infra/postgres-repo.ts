@@ -39,12 +39,16 @@ export async function closeActiveLayoutPositionForCard(db: Db, cardId: string): 
 }
 
 // T9 -- решта репозиторію (CRUD над `structure` + `structure_layout_position`,
-// AC-03/08/09/12/16, data-model.md). Той самий DI-контракт `Db` вище, той самий
+// AC-03/08/09/12, data-model.md). Той самий DI-контракт `Db` вище, той самий
 // стиль (RETURNING на write, camelCase-мапінг на межі) що й
 // life-area-card/infra/postgres-repo.ts.
-
-export type LayoutModeRow = 'single' | 'free' | 'logic';
-export type LogicVariantRow = 'balance' | 'focus' | 'cause_effect';
+//
+// Вимоги 14/15 (Андрій, чат), staged-міграція 07_flatten_layout_mode -- ОДНЕ
+// поле з 5 значеннями замість layout_mode('single'|'free'|'logic') +
+// logic_variant('balance'|'focus'|'cause_effect') (два поля). Колишні три
+// підвиди стають топ-рівневими значеннями, 'single' скасований, 'staging' --
+// новий.
+export type LayoutModeRow = 'balance' | 'focus' | 'cause_effect' | 'free' | 'staging';
 export type LayoutPositionStatusRow = 'active' | 'closed';
 
 export interface StructureRecord {
@@ -52,7 +56,6 @@ export interface StructureRecord {
   ownerUserId: string;
   declaration: string | null;
   layoutMode: LayoutModeRow | null;
-  logicVariant: LogicVariantRow | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -80,7 +83,6 @@ interface RawStructureRow extends QueryResultRow {
   owner_user_id: string;
   declaration: string | null;
   layout_mode: LayoutModeRow | null;
-  logic_variant: LogicVariantRow | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -91,13 +93,12 @@ function toStructureRecord(row: RawStructureRow): StructureRecord {
     ownerUserId: row.owner_user_id,
     declaration: row.declaration,
     layoutMode: row.layout_mode,
-    logicVariant: row.logic_variant,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-const STRUCTURE_COLUMNS = 'id, owner_user_id, declaration, layout_mode, logic_variant, created_at, updated_at';
+const STRUCTURE_COLUMNS = 'id, owner_user_id, declaration, layout_mode, created_at, updated_at';
 
 /** Non-disclosure (AC-03): чужа Структура й неіснуюча повертають однаковий null. */
 export async function findStructureByOwner(db: Db, ownerUserId: string): Promise<StructureRecord | null> {
@@ -115,26 +116,25 @@ export async function insertStructure(
     ownerUserId: string;
     declaration?: string | null;
     layoutMode?: LayoutModeRow | null;
-    logicVariant?: LogicVariantRow | null;
   }
 ): Promise<StructureRecord> {
   const { rows } = await db.query<RawStructureRow>(
-    `INSERT INTO structure (id, owner_user_id, declaration, layout_mode, logic_variant)
-     VALUES ($1, $2, $3, $4, $5) RETURNING ${STRUCTURE_COLUMNS}`,
-    [input.id, input.ownerUserId, input.declaration ?? null, input.layoutMode ?? null, input.logicVariant ?? null]
+    `INSERT INTO structure (id, owner_user_id, declaration, layout_mode)
+     VALUES ($1, $2, $3, $4) RETURNING ${STRUCTURE_COLUMNS}`,
+    [input.id, input.ownerUserId, input.declaration ?? null, input.layoutMode ?? null]
   );
   return toStructureRecord(rows[0]);
 }
 
 /**
  * Часткове оновлення Структури (AC-10 декларація, AC-11/AC-11b режим
- * розкладки, AC-16 subvariant) -- лише передані поля міняються. Non-disclosure
- * (AC-03): чужий owner_user_id повертає null, нічого не пишеться.
+ * розкладки) -- лише передані поля міняються. Non-disclosure (AC-03): чужий
+ * owner_user_id повертає null, нічого не пишеться.
  */
 export async function updateStructure(
   db: Db,
   ownerUserId: string,
-  patch: { declaration?: string | null; layoutMode?: LayoutModeRow | null; logicVariant?: LogicVariantRow | null }
+  patch: { declaration?: string | null; layoutMode?: LayoutModeRow | null }
 ): Promise<StructureRecord | null> {
   const sets: string[] = [];
   const values: unknown[] = [];
@@ -146,7 +146,6 @@ export async function updateStructure(
 
   if (patch.declaration !== undefined) assign('declaration', patch.declaration);
   if (patch.layoutMode !== undefined) assign('layout_mode', patch.layoutMode);
-  if (patch.logicVariant !== undefined) assign('logic_variant', patch.logicVariant);
 
   if (sets.length === 0) {
     return findStructureByOwner(db, ownerUserId);
@@ -205,7 +204,10 @@ const NEVER_MOVED_SENTINEL = new Date(0);
 
 export async function insertLayoutPosition(
   db: Db,
-  input: { id: string; structureId: string; cardId: string; cellIndex: number }
+  // cellIndex: null -- вимога 15 ('staging'): нова картка йде прямо в трей
+  // нерозкладених, без автоматичної клітинки (defaultPositionForNewCard,
+  // domain/layout.ts).
+  input: { id: string; structureId: string; cardId: string; cellIndex: number | null }
 ): Promise<LayoutPositionRecord> {
   const { rows } = await db.query<RawLayoutPositionRow>(
     `INSERT INTO structure_layout_position (id, structure_id, card_id, cell_index, position_updated_at)

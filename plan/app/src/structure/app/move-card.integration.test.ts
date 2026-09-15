@@ -44,8 +44,10 @@ describe('moveCard (integration) -- AC-02/AC-08/AC-15 проти реально�
     ]);
 
     structureId = crypto.randomUUID();
+    // 'logic' скасований разом із logic_variant (вимоги 14/15, плоска
+    // модель) -- 'balance' є одним з 5 нових значень, той самий грід-режим.
     await db.query(
-      "INSERT INTO structure (id, owner_user_id, layout_mode) VALUES ($1, $2, 'logic')",
+      "INSERT INTO structure (id, owner_user_id, layout_mode) VALUES ($1, $2, 'balance')",
       [structureId, ownerId]
     );
 

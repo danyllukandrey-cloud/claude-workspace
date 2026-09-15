@@ -116,7 +116,6 @@ describe('recordCardRenameEvent -- AC-15/D-115 (rename wired via life-area-card 
       owner_user_id: 'owner-1',
       declaration: null,
       layout_mode: null,
-      logic_variant: null,
       created_at: new Date('2026-01-01T00:00:00Z'),
       updated_at: new Date('2026-01-01T00:00:00Z'),
       ...overrides,

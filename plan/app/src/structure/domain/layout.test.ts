@@ -1,10 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   defaultPositionForNewCard,
-  assertLogicVariantAllowed,
-  assertLogicVariantSwitchable,
   switchLayoutMode,
-  switchLogicVariant,
   assertCellAvailable,
   resolvePositionConflict,
   closeLayoutPosition,
@@ -13,9 +10,9 @@ import {
 import type { LayoutPosition, LayoutPositionRow, TimestampedPosition } from './layout';
 
 // T4 -- лише "ядро": чисті доменні правила без I/O. Реальний запис у БД
-// (транзакційний reset одразу з layoutMode/logicVariant у самому рядку
-// structure) -- предмет T11 (App: updateStructure use-case), тут
-// перевіряється лише ЩО має статись (план), не ЯК він потрапляє в базу.
+// (транзакційний reset одразу з layoutMode у самому рядку structure) --
+// предмет T11 (App: updateStructure use-case), тут перевіряється лише ЩО має
+// статись (план), не ЯК він потрапляє в базу.
 
 describe('defaultPositionForNewCard — AC-09 (немає обраного режиму -- не блокує)', () => {
   it('places a new card using a default position even when layoutMode is not chosen yet (null)', () => {
@@ -36,7 +33,7 @@ describe('defaultPositionForNewCard — AC-09 (немає обраного ре�
   });
 
   // Рев'ю 2026-09-11 (міграція 06): cellIndex = null -- картка в треї
-  // нерозкладених (AC-11b/AC-16b/AC-17). Вона не займає жодної клітинки, тож
+  // нерозкладених (AC-11b/AC-17). Вона не займає жодної клітинки, тож
   // НЕ має зсувати номер наступної вільної.
   it('ignores cards with no cell at all (tray) when picking the next free cell', () => {
     const onlyTray: LayoutPosition[] = [
@@ -49,37 +46,22 @@ describe('defaultPositionForNewCard — AC-09 (немає обраного ре�
       { cardId: 'card-1', cellIndex: null },
       { cardId: 'card-2', cellIndex: 3 },
     ];
-    expect(defaultPositionForNewCard(mixed, 'logic').cellIndex).toBe(4);
-  });
-});
-
-describe('assertLogicVariantAllowed — AC-16 (logicVariant валідний лише коли layoutMode = logic)', () => {
-  it('accepts a valid subvariant when layoutMode is logic', () => {
-    expect(() => assertLogicVariantAllowed('logic', 'balance')).not.toThrow();
-    expect(() => assertLogicVariantAllowed('logic', 'focus')).not.toThrow();
-    expect(() => assertLogicVariantAllowed('logic', 'cause_effect')).not.toThrow();
+    expect(defaultPositionForNewCard(mixed, 'balance').cellIndex).toBe(4);
   });
 
-  it('accepts logicVariant left null regardless of layoutMode (not chosen yet)', () => {
-    expect(() => assertLogicVariantAllowed('logic', null)).not.toThrow();
-    expect(() => assertLogicVariantAllowed('single', null)).not.toThrow();
-    expect(() => assertLogicVariantAllowed(null, null)).not.toThrow();
-  });
-
-  it('rejects a logicVariant set while layoutMode is not logic', () => {
-    expect(() => assertLogicVariantAllowed('single', 'balance')).toThrow(LayoutValidationError);
-    expect(() => assertLogicVariantAllowed('free', 'focus')).toThrow(LayoutValidationError);
-    expect(() => assertLogicVariantAllowed(null, 'cause_effect')).toThrow(LayoutValidationError);
-  });
-
-  it('rejects an out-of-enum logicVariant value even when layoutMode is logic', () => {
-    expect(() => assertLogicVariantAllowed('logic', 'made_up' as never)).toThrow(LayoutValidationError);
+  // Вимога 15 (Андрій, чат): 'staging' ("Готово до розкладання") -- нова
+  // картка НЕ отримує клітинку автоматично, навіть коли вільні клітинки є.
+  // Це і є сенс режиму: усе внизу екрана, користувач розкладає сам.
+  it('gives no cell at all (null) for a new card while layoutMode is "staging", even with free cells available', () => {
+    const existing: LayoutPosition[] = [{ cardId: 'card-1', cellIndex: 0 }];
+    expect(defaultPositionForNewCard(existing, 'staging').cellIndex).toBeNull();
+    expect(defaultPositionForNewCard([], 'staging').cellIndex).toBeNull();
   });
 });
 
 describe('switchLayoutMode — AC-11 / AC-11b (зміна режиму -- reset у базовий порядок)', () => {
   it('applies a first-time mode choice with no existing positions to reset (AC-11 happy path)', () => {
-    const plan = switchLayoutMode([], 'single');
+    const plan = switchLayoutMode([], 'free');
     expect(plan.positions).toEqual([]);
   });
 
@@ -90,7 +72,7 @@ describe('switchLayoutMode — AC-11 / AC-11b (зміна режиму -- reset 
       { cardId: 'card-c', cellIndex: 2 },
     ];
 
-    const plan = switchLayoutMode(existing, 'logic');
+    const plan = switchLayoutMode(existing, 'balance');
 
     // Базовий порядок фіксований (за попереднім cellIndex зростанням) --
     // не довільний порядок вставки в масив, і жодна картка не лишає собі
@@ -123,49 +105,28 @@ describe('switchLayoutMode — AC-11 / AC-11b (зміна режиму -- reset 
       { cardId: 'tray-2', baseOrder: 3, cellIndex: null },
     ]);
   });
-});
 
-describe('switchLogicVariant — AC-16b (зміна підвиду "за логікою" -- той самий reset-план)', () => {
-  it('resets active positions to the same fixed-base-order shape as a layoutMode switch', () => {
+  // Плоска модель (вимоги 14/15): перемикання між колишніми "підвидами"
+  // ('balance' <-> 'focus' <-> 'cause_effect') тепер ЗВИЧАЙНА зміна
+  // layoutMode -- той самий reset-план, без окремої AC-16b-перевірки.
+  it('resets the same way when switching between the former "за логікою" subvariants directly', () => {
     const existing: LayoutPosition[] = [
       { cardId: 'card-a', cellIndex: 3 },
       { cardId: 'card-b', cellIndex: 1 },
     ];
 
-    const fromModeSwitch = switchLayoutMode(existing, 'logic');
-    const fromVariantSwitch = switchLogicVariant('logic', existing, 'focus');
+    const plan = switchLayoutMode(existing, 'focus');
 
-    // AC-16b: "the system treats the switch the same way as AC-11b" --
-    // однаковий механізм має віддати однакову форму плану для тих самих
-    // вхідних позицій.
-    expect(fromVariantSwitch.positions).toEqual(fromModeSwitch.positions);
-  });
-
-  it('rejects switching logicVariant when the Structure is not currently in logic layout mode', () => {
-    const existing: LayoutPosition[] = [{ cardId: 'card-a', cellIndex: 0 }];
-    expect(() => switchLogicVariant('free', existing, 'balance')).toThrow(LayoutValidationError);
+    expect(plan.positions).toEqual([
+      { cardId: 'card-b', baseOrder: 0, cellIndex: null },
+      { cardId: 'card-a', baseOrder: 1, cellIndex: null },
+    ]);
   });
 });
 
-// Рев'ю 2026-09-11 (похідний дефект AC-16): та сама перевірка окремо від
-// побудови плану -- use-case мусить мати чим відмовити ДО будь-якого запису,
-// і саме доменною помилкою (LayoutValidationError -> 422), а не невідомою
-// серверу 500 із середини reset-циклу.
-describe('assertLogicVariantSwitchable — AC-16b (підвид перемикають лише всередині режиму "за логікою")', () => {
-  it('passes while the Structure is in logic mode', () => {
-    expect(() => assertLogicVariantSwitchable('logic')).not.toThrow();
-  });
-
-  it('throws the typed domain error for every non-logic mode, including "ще не обрано" (null)', () => {
-    expect(() => assertLogicVariantSwitchable('free')).toThrow(LayoutValidationError);
-    expect(() => assertLogicVariantSwitchable('single')).toThrow(LayoutValidationError);
-    expect(() => assertLogicVariantSwitchable(null)).toThrow(LayoutValidationError);
-  });
-});
-
-// T5 -- AC-02: у "за логікою" (D-62 -- одна клітинка = одна картка) кожна
-// активна клітинка тримає рівно одну картку; перетягування картки на вже
-// зайняту клітинку блокується, а не переписує сусіда.
+// T5 -- AC-02: у розкладках із фіксованою сіткою (D-62 -- одна клітинка =
+// одна картка) кожна активна клітинка тримає рівно одну картку; перетягування
+// картки на вже зайняту клітинку блокується, а не переписує сусіда.
 describe('assertCellAvailable — AC-02 (колізія активної клітинки блокується)', () => {
   it('rejects placing a card onto a cell already occupied by a different active card', () => {
     const activePositions: LayoutPosition[] = [

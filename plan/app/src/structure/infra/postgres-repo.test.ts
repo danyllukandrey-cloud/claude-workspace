@@ -11,7 +11,8 @@
 // Same mocking convention as
 // ../../cards/life-area-card/infra/postgres-repo.test.ts: fake `Db.query`
 // (vi.fn), assert both the SQL text (owner_user_id scoping) and the mapped
-// return shape (camelCase, including logicVariant).
+// return shape (camelCase). Вимоги 14/15: layout_mode -- ОДНЕ плоске поле
+// (5 значень), logic_variant прибраний.
 
 import { describe, it, expect, vi } from 'vitest';
 import type { Db } from './postgres-repo';
@@ -29,8 +30,7 @@ function rawStructureRow(overrides: Partial<Record<string, unknown>> = {}) {
     id: 'structure-1',
     owner_user_id: 'owner-1',
     declaration: null,
-    layout_mode: 'logic',
-    logic_variant: 'focus',
+    layout_mode: 'focus',
     created_at: new Date('2026-01-01T00:00:00Z'),
     updated_at: new Date('2026-01-02T00:00:00Z'),
     ...overrides,
@@ -50,8 +50,8 @@ function rawLayoutPositionRow(overrides: Partial<Record<string, unknown>> = {}) 
   };
 }
 
-describe('findStructureByOwner -- AC-03 (non-disclosure) + AC-16 (logicVariant round-trips)', () => {
-  it('scopes the SELECT by owner_user_id and maps logic_variant onto logicVariant', async () => {
+describe('findStructureByOwner -- AC-03 (non-disclosure)', () => {
+  it('scopes the SELECT by owner_user_id and maps layout_mode onto layoutMode', async () => {
     const query = vi.fn().mockResolvedValue({ rows: [rawStructureRow()] });
     const db: Db = { query };
 
@@ -61,8 +61,7 @@ describe('findStructureByOwner -- AC-03 (non-disclosure) + AC-16 (logicVariant r
       id: 'structure-1',
       ownerUserId: 'owner-1',
       declaration: null,
-      layoutMode: 'logic',
-      logicVariant: 'focus',
+      layoutMode: 'focus',
       createdAt: new Date('2026-01-01T00:00:00Z'),
       updatedAt: new Date('2026-01-02T00:00:00Z'),
     });
@@ -82,8 +81,8 @@ describe('findStructureByOwner -- AC-03 (non-disclosure) + AC-16 (logicVariant r
   });
 });
 
-describe('insertStructure -- writes logicVariant alongside layoutMode', () => {
-  it('persists logicVariant and returns the camelCase record', async () => {
+describe('insertStructure -- writes layoutMode', () => {
+  it('persists layoutMode and returns the camelCase record', async () => {
     const query = vi.fn().mockResolvedValue({
       rows: [rawStructureRow({ declaration: 'картина світу' })],
     });
@@ -93,30 +92,29 @@ describe('insertStructure -- writes logicVariant alongside layoutMode', () => {
       id: 'structure-1',
       ownerUserId: 'owner-1',
       declaration: 'картина світу',
-      layoutMode: 'logic',
-      logicVariant: 'focus',
+      layoutMode: 'focus',
     });
 
-    expect(created.logicVariant).toBe('focus');
+    expect(created.layoutMode).toBe('focus');
     const [sql, params] = query.mock.calls[0];
-    expect(sql).toMatch(/logic_variant/);
+    expect(sql).toMatch(/layout_mode/);
     expect(params).toContain('focus');
   });
 });
 
-describe('updateStructure -- AC-10/AC-11/AC-16 partial write, scoped by owner (AC-03)', () => {
-  it('updates declaration/layoutMode/logicVariant scoped to the given owner_user_id', async () => {
+describe('updateStructure -- AC-10/AC-11 partial write, scoped by owner (AC-03)', () => {
+  it('updates declaration/layoutMode scoped to the given owner_user_id', async () => {
     const query = vi.fn().mockResolvedValue({
-      rows: [rawStructureRow({ declaration: 'нова декларація', logic_variant: 'balance' })],
+      rows: [rawStructureRow({ declaration: 'нова декларація', layout_mode: 'balance' })],
     });
     const db: Db = { query };
 
     const updated = await updateStructure(db, 'owner-1', {
       declaration: 'нова декларація',
-      logicVariant: 'balance',
+      layoutMode: 'balance',
     });
 
-    expect(updated?.logicVariant).toBe('balance');
+    expect(updated?.layoutMode).toBe('balance');
     const [sql, params] = query.mock.calls[0];
     expect(sql).toMatch(/owner_user_id/);
     expect(params).toContain('owner-1');

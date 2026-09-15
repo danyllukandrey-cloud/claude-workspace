@@ -1,7 +1,6 @@
-// RED (T21 -- SCR-02 Схема, screens.md): component test for LayoutBoard --
-// default/empty/loading/reset-basic-order/error-cell-occupied/error states
-// (spec.md AC-02, AC-08, AC-11b, AC-16b). Component does not exist yet --
-// this is the RED step, no production code written (test-author role).
+// T21 -- SCR-02 Схема, screens.md: component test for LayoutBoard --
+// default/empty/loading/reset-basic-order/staging/error-cell-occupied/error
+// states (spec.md AC-02, AC-08, AC-11b).
 //
 // DI style (plan/app/CLAUDE.md, matches AnalyticsScreen/DeclarationScreen):
 // `loadLayout` / `onMoveCard` are injected prop-functions, no fetch() inside
@@ -10,14 +9,16 @@
 // minus ownerUserId/positionUpdatedAt -- those are the ports/http layer's
 // job, out of scope here).
 //
-// AC-11b/AC-16b (screens.md "reset-basic-order"): the screen does not itself
-// decide *why* a reset happened -- `loadLayout` already reports the fact via
+// AC-11b (screens.md "reset-basic-order"): the screen does not itself decide
+// *why* a reset happened -- `loadLayout` already reports the fact via
 // `justReset` (mirrors AnalyticsScreen's `trendAvailable` pattern: a single
-// upstream flag, not two separate ones per trigger). Both a layoutMode
-// switch (AC-11b) and a logicVariant switch while layoutMode stays 'logic'
-// (AC-16b) must drive the exact same banner + bottom-base-order rendering --
-// asserted below with two separate scenarios that differ only in *why*
-// `justReset` is true, never in what's rendered.
+// upstream flag). Плоска модель (вимоги 14/15) прибрала колишню окрему
+// AC-16b (зміна підвиду "за логікою") -- перемикання між колишніми
+// підвидами тепер звичайна зміна layoutMode, той самий єдиний механізм.
+//
+// Вимога 15 ("Готово до розкладання"): 'staging' -- новий режим, де картки
+// БЕЗ клітинки внизу екрана -- не одноразовий факт скидання (justReset), а
+// СТІЙКИЙ, явно видимий стан цього режиму (`layoutMode: 'staging'` у стані).
 //
 // AC-02 (D-62, `409 structure.cell_occupied`): rejection is shown inline
 // next to the cell that was dropped on, never a toast/alert
@@ -44,6 +45,7 @@ function baseState(overrides: Partial<LayoutBoardState> = {}): LayoutBoardState 
   return {
     cellCount: 6,
     justReset: false,
+    layoutMode: null,
     cards: [
       { cardId: 'card-a', cardTitle: 'Картка A', cellIndex: 0, baseOrder: 0 },
       { cardId: 'card-b', cardTitle: 'Картка B', cellIndex: 1, baseOrder: 1 },
@@ -127,26 +129,47 @@ test('reset-basic-order (AC-11b): щойно змінено layoutMode -- бан
   expect(screen.getByTestId('cell-0').textContent).not.toContain('Картка');
 });
 
-test('reset-basic-order (AC-16b): той самий банер і та сама розкладка, коли скинуто через зміну logicVariant (не layoutMode)', async () => {
+// Вимога 15: 'staging' -- підказка з'являється, поки лишається хоч одна
+// нерозкладена картка, НЕ лише одразу після reset (на відміну від justReset,
+// який одноразовий).
+test('staging: "Готово до розкладання" з нерозкладеними картками показує стійку підказку внизу', async () => {
   const props = baseProps({
-    justReset: true,
+    justReset: false,
+    layoutMode: 'staging',
     cards: [
       { cardId: 'card-a', cardTitle: 'Картка A', cellIndex: null, baseOrder: 0 },
       { cardId: 'card-b', cardTitle: 'Картка B', cellIndex: null, baseOrder: 1 },
     ],
   });
-  // layoutMode лишається 'logic' в обидва боки -- єдине, що змінилось
-  // "нагорі" (T5, switchLogicVariant), це logicVariant; loadLayout уже
-  // згорнув причину в той самий `justReset` прапорець (той самий підхід,
-  // що AnalyticsScreen's trendAvailable), тож рендер має бути ідентичним
-  // AC-11b-сценарію вище -- це і є суть DoD "не лише layoutMode".
   render(<LayoutBoard {...props} />);
 
-  const banner = await screen.findByText(/розклад.*заново/i);
-  expect(banner).toBeTruthy();
+  const hint = await screen.findByText(/готово до розкладання/i);
+  expect(hint.closest('[data-variant]')?.getAttribute('data-variant')).toBe('info');
 
   const tray = screen.getByTestId('unassigned-tray');
-  expect(tray.querySelectorAll('[data-card-id]')).toHaveLength(2);
+  const trayCardIds = Array.from(tray.querySelectorAll('[data-card-id]')).map((el) =>
+    el.getAttribute('data-card-id'),
+  );
+  expect(trayCardIds).toEqual(['card-a', 'card-b']);
+});
+
+test('staging: коли всі картки вже розкладені по клітинках, підказки немає', async () => {
+  const props = baseProps({ layoutMode: 'staging' }); // baseState -- обидві картки вже в клітинках
+  render(<LayoutBoard {...props} />);
+
+  await screen.findByTestId('cell-0');
+  expect(screen.queryByText(/готово до розкладання/i)).toBeNull();
+});
+
+test('staging: режим інший (не "staging") -- підказки немає навіть із нерозкладеними картками', async () => {
+  const props = baseProps({
+    layoutMode: 'free',
+    cards: [{ cardId: 'card-a', cardTitle: 'Картка A', cellIndex: null, baseOrder: 0 }],
+  });
+  render(<LayoutBoard {...props} />);
+
+  await screen.findByTestId('unassigned-tray');
+  expect(screen.queryByText(/готово до розкладання/i)).toBeNull();
 });
 
 test('error-cell-occupied (AC-02, 409 structure.cell_occupied): показується inline біля клітинки, не toast/alert', async () => {

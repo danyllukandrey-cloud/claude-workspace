@@ -1,6 +1,6 @@
 // T11 -- App: updateStructure use-case, integration level (test-plan.md:
-// AC-11/AC-11b/AC-16/AC-16b -- "integration"; AC-10 is covered at unit level
-// in ./update-structure.test.ts).
+// AC-11/AC-11b -- "integration"; AC-10 is covered at unit level in
+// ./update-structure.test.ts).
 //
 // Проти РЕАЛЬНОЇ Neon (server/db.ts createDb(), ADR-0006) -- та сама
 // конвенція, що вже використовує migrations.integration.test.ts (структурні
@@ -10,15 +10,19 @@
 // одразу в beforeAll, чи запит впаде на мережі), не GOOD red; unit-рівневий
 // тест поруч лишається джерелом TDD-циклу локально.
 //
-// DoD (tracker.md T11): PATCH updates declaration/layoutMode/logicVariant;
-// changing layoutMode or logicVariant to a new value resets every active
-// position to base order "in the same transaction" -- транзакційність як
-// така (BEGIN/COMMIT навколо обох кроків) належить composition root (T15,
-// ще не збудований, ADR-0006 withTransaction) -- цей тест перевіряє
-// СПОСТЕРЕЖУВАНИЙ результат (обидва кроки видно в БД після виклику), не
-// сам факт відкриття транзакції -- та перевірка природно приєднається до
-// майбутнього server/*.integration.test.ts для /structure (T15/T40-стиль),
-// коли ports-шар реально відкриватиме withTransaction навколо use-case.
+// DoD (tracker.md T11): PATCH updates declaration/layoutMode; changing
+// layoutMode to a new value resets every active position to base order "in
+// the same transaction" -- транзакційність як така (BEGIN/COMMIT навколо
+// обох кроків) належить composition root (T15, ще не збудований, ADR-0006
+// withTransaction) -- цей тест перевіряє СПОСТЕРЕЖУВАНИЙ результат (обидва
+// кроки видно в БД після виклику), не сам факт відкриття транзакції -- та
+// перевірка природно приєднається до майбутнього server/*.integration.test.ts
+// для /structure (T15/T40-стиль), коли ports-шар реально відкриватиме
+// withTransaction навколо use-case.
+//
+// Плоска модель (вимоги 14/15): logicVariant і його інваріант (AC-16/AC-16b)
+// прибрані повністю -- layoutMode тепер одне поле з 5 значеннями
+// ('balance'/'focus'/'cause_effect'/'free'/'staging').
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { updateStructure } from './update-structure';
@@ -32,7 +36,7 @@ beforeAll(() => {
   }
 });
 
-describe('updateStructure (integration) -- AC-10/AC-11/AC-11b/AC-16/AC-16b проти реальної Neon', () => {
+describe('updateStructure (integration) -- AC-10/AC-11/AC-11b проти реальної Neon', () => {
   let db: DbWithTransaction;
   let ownerId: string;
   let structureId: string;
@@ -59,7 +63,7 @@ describe('updateStructure (integration) -- AC-10/AC-11/AC-11b/AC-16/AC-16b пр�
     await db.end();
   });
 
-  it('updates declaration/layoutMode/logicVariant and resets every active position to base order when layoutMode changes', async () => {
+  it('updates declaration/layoutMode and resets every active position to base order when layoutMode changes', async () => {
     // Дві реально розкладені картки (life-area-card's `card` таблиця тут
     // навмисно НЕ використовується -- FK card_id вимагає реального рядка
     // `card`, тож ставимо позиції на живі картки owner-а, як і
@@ -83,11 +87,11 @@ describe('updateStructure (integration) -- AC-10/AC-11/AC-11b/AC-16/AC-16b пр�
     const result = await updateStructure(db, {
       ownerUserId: ownerId,
       declaration: "картина світу, навіщо, пріоритет",
-      layoutMode: 'logic',
+      layoutMode: 'balance',
     });
 
     expect(result.declaration).toBe("картина світу, навіщо, пріоритет");
-    expect(result.layoutMode).toBe('logic');
+    expect(result.layoutMode).toBe('balance');
 
     const { rows: positionsAfter } = await db.query<{ id: string; cell_index: number }>(
       'SELECT id, cell_index FROM structure_layout_position WHERE structure_id = $1 ORDER BY id',
@@ -100,17 +104,18 @@ describe('updateStructure (integration) -- AC-10/AC-11/AC-11b/AC-16/AC-16b пр�
     expect(byId.get(positionTwoId)).not.toBe(1);
   });
 
-  it('rejects logicVariant when the resulting layoutMode is not "logic" -- no write happens', async () => {
-    await expect(
-      updateStructure(db, { ownerUserId: ownerId, layoutMode: 'free', logicVariant: 'focus' })
-    ).rejects.toMatchObject({ code: 'structure.logic_variant_requires_logic_mode' });
+  // Плоска модель (вимоги 14/15): перемикання між колишніми підвидами
+  // ('balance' <-> 'focus') тепер звичайна зміна layoutMode -- той самий
+  // reset-механізм, без окремого AC-16b-шляху.
+  it('resets active positions again when switching between the former "за логікою" subvariants directly', async () => {
+    const result = await updateStructure(db, { ownerUserId: ownerId, layoutMode: 'focus' });
 
-    const { rows } = await db.query<{ layout_mode: string; logic_variant: string | null }>(
-      'SELECT layout_mode, logic_variant FROM structure WHERE id = $1',
+    expect(result.layoutMode).toBe('focus');
+
+    const { rows } = await db.query<{ cell_index: number | null }>(
+      'SELECT cell_index FROM structure_layout_position WHERE structure_id = $1',
       [structureId]
     );
-    // Попередній успішний PATCH цього тесту вже перевів режим на 'logic' --
-    // цей відхилений запит НЕ мав перезаписати layout_mode назад на 'free'.
-    expect(rows[0].layout_mode).toBe('logic');
+    expect(rows.every((row) => row.cell_index === null)).toBe(true);
   });
 });

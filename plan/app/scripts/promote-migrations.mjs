@@ -62,6 +62,10 @@ const TO_PROMOTE = [
   // D-127 (US-17/AC-20): архівація окремого блоку-метрики -- лише додає
   // metric_block.status, жодних крос-фічевих залежностей, тож у самому кінці.
   { slug: 'life-area-card', staged: '08_add_metric_block_status', name: 'add-metric-block-status' },
+  // Вимоги 14/15 (Андрій, чат): 'single' скасовується, три підвиди "за логікою"
+  // (D-83) стають топ-рівневими режимами, додається новий 'staging' -- layout_mode
+  // + logic_variant (два поля) зливаються в ОДИН layout_mode із 5 значеннями.
+  { slug: 'structure', staged: 'backend/07_flatten_layout_mode', name: 'flatten-layout-mode' },
 ];
 
 function readReadme() {
