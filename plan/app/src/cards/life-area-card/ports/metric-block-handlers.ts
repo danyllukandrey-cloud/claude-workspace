@@ -47,6 +47,7 @@
 import { createMetricBlock as createMetricBlockUseCase } from '../app/create-metric-block';
 import { transferMetricBlock as transferMetricBlockUseCase } from '../app/transfer-metric-block';
 import { archiveMetricBlock as archiveMetricBlockUseCase } from '../app/archive-metric-block';
+import type { RecordAction } from '../app/archive-metric-block';
 import { findCardById, listMetricBlocksByCard } from '../infra/postgres-repo';
 import type { Db, MetricBlockRecord } from '../infra/postgres-repo';
 import { AppError } from '../../../shared/errors';
@@ -143,17 +144,27 @@ export async function listMetricBlocks(db: Db, ownerUserId: string, cardId: stri
  * (AC-05/AC-07/AC-08). Кидає (пропускає) AppError('card.not_found', ..., 404)
  * від use-case шару для чужої чи неіснуючої картки (non-disclosure, AC-04).
  */
-export async function createMetricBlock(db: Db, ownerUserId: string, cardId: string, body: MetricBlockCreateBody): Promise<MetricBlock> {
-  const record = await createMetricBlockUseCase(db, {
-    ownerUserId,
-    cardId,
-    label: body.label,
-    unit: body.unit,
-    frequency: body.frequency,
-    targetCount: body.targetCount,
-    isOngoing: body.isOngoing,
-    targetDate: body.targetDate,
-  });
+export async function createMetricBlock(
+  db: Db,
+  ownerUserId: string,
+  cardId: string,
+  body: MetricBlockCreateBody,
+  recordAction?: RecordAction
+): Promise<MetricBlock> {
+  const record = await createMetricBlockUseCase(
+    db,
+    {
+      ownerUserId,
+      cardId,
+      label: body.label,
+      unit: body.unit,
+      frequency: body.frequency,
+      targetCount: body.targetCount,
+      isOngoing: body.isOngoing,
+      targetDate: body.targetDate,
+    },
+    recordAction
+  );
   return toMetricBlock(record);
 }
 
@@ -173,14 +184,19 @@ export async function transferMetricBlock(
   db: Db,
   ownerUserId: string,
   cardId: string,
-  body: MetricBlockTransferRequestBody
+  body: MetricBlockTransferRequestBody,
+  recordAction?: RecordAction
 ): Promise<MetricBlock> {
-  const record = await transferMetricBlockUseCase(db, {
-    ownerUserId,
-    targetCardId: cardId,
-    metricBlockId: body.sourceMetricBlockId,
-    newLabel: body.newLabel ?? undefined,
-  });
+  const record = await transferMetricBlockUseCase(
+    db,
+    {
+      ownerUserId,
+      targetCardId: cardId,
+      metricBlockId: body.sourceMetricBlockId,
+      newLabel: body.newLabel ?? undefined,
+    },
+    recordAction
+  );
   return toMetricBlock(record);
 }
 
@@ -191,7 +207,13 @@ export async function transferMetricBlock(
  * "блок чужий" і "cardId зі шляху не відповідає справжній картці блоку"
  * (non-disclosure AC-04, той самий код, що ISS-30 уже встановив для transfer).
  */
-export async function archiveMetricBlock(db: Db, ownerUserId: string, cardId: string, metricBlockId: string): Promise<MetricBlock> {
-  const record = await archiveMetricBlockUseCase(db, { ownerUserId, cardId, metricBlockId });
+export async function archiveMetricBlock(
+  db: Db,
+  ownerUserId: string,
+  cardId: string,
+  metricBlockId: string,
+  recordAction?: RecordAction
+): Promise<MetricBlock> {
+  const record = await archiveMetricBlockUseCase(db, { ownerUserId, cardId, metricBlockId }, recordAction);
   return toMetricBlock(record);
 }

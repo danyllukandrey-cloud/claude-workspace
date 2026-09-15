@@ -23,14 +23,14 @@ import type {
 // (правило залежностей, plan/app/CLAUDE.md) -- ніколи напряму з agent/ui/.
 // D-121 (docs/app-shell.md): ChatPanel (колишній ChatScreen) рендериться
 // нижче ЯВНО ПОЗА перемикачем `direction` -- постійна панель, не напрямок.
-import { AccountScreen, ChatPanel, ReportsScreen, RuleSettingsScreen } from '../agent';
+import { AccountScreen, ChatPanel, LogScreen, RuleSettingsScreen } from '../agent';
 import type {
   AccountScreenResource,
   ChatMessage,
   ChatProposal,
   ComposerSendInput,
+  LogEntryViewModel,
   OnboardingResult,
-  ReportViewModel,
   RuleSettingsScreenRule,
   RuleSettingsScreenSaveInput,
   RuleSettingsScreenTargetCard,
@@ -125,8 +125,13 @@ export interface AppProps {
   loadRules: (scopeCardId: string | null) => Promise<RuleSettingsScreenRule[]>;
   /** POST /api/v1/rules (RuleSettingsScreen.onSave, AC-07/AC-08/AC-12/AC-14). */
   onSaveRule: (input: RuleSettingsScreenSaveInput) => Promise<RuleSettingsScreenRule>;
-  /** GET /api/v1/reports (ReportsScreen.loadReports, AC-11). */
-  loadReports: () => Promise<ReportViewModel[]>;
+  /**
+   * GET /api/v1/action-log (LogScreen.loadActionLog) -- "Лог дій", заміна
+   * ReportsScreen.loadReports/AC-11 у навігації (Андрій: "тупо пишемо кожну
+   * дію -- час, дія, все."). Backend-механізм періодичних звітів (GET
+   * /reports, agent-worker, D-70) лишається як є, просто без UI-виклику.
+   */
+  loadActionLog: () => Promise<LogEntryViewModel[]>;
   /** GET /api/v1/sync-resources (AccountScreen.loadResources, AC-18). */
   loadSyncResources: () => Promise<AccountScreenResource[]>;
   /** POST /api/v1/sync-resources (AccountScreen.onAddResource, AC-18). */
@@ -156,7 +161,7 @@ type Screen = { screen: 'deck' } | { screen: 'create' } | { screen: 'archive'; f
 // (Screen лишається під-навігацією "Картки" -- deck/create/archive, D-122
 // прибрав 'detail' -- той самий стан переживає перехід на інший напрямок і
 // назад -- тест "клік Картки повертає на DeckScreen"). Три напрямки --
-// Налаштування правил/Звіти активності/Обліковий запис і дані -- один екран
+// Налаштування правил/Лог дій/Обліковий запис і дані -- один екран
 // кожен, без власної під-навігації (на відміну від "cards"); D-123 переніс
 // доступ до них із нав-меню в меню шестерні верхнього бару, самі напрямки
 // (Direction) не змінились -- лише ЗВІДКИ до них можна дійти.
@@ -167,7 +172,7 @@ type Screen = { screen: 'deck' } | { screen: 'create' } | { screen: 'archive'; f
 // нижнього нав-меню (переїхали під шестерню) -- перший крок ієрархії,
 // решта (4 напрямки нижче) досі рівний список без пріоритету, ISS-117
 // лишається відкритим не повністю закритим цим комітом.
-type Direction = 'cards' | 'declaration' | 'layout' | 'analytics' | 'agent-rules' | 'agent-reports' | 'agent-account';
+type Direction = 'cards' | 'declaration' | 'layout' | 'analytics' | 'agent-rules' | 'agent-log' | 'agent-account';
 
 function isSessionValid(session: StoredSession | null, now: () => Date): boolean {
   if (!session) return false;
@@ -209,7 +214,7 @@ export function App({
   loadRuleTargetCards,
   loadRules,
   onSaveRule,
-  loadReports,
+  loadActionLog,
   loadSyncResources,
   onAddSyncResource,
   onRemoveSyncResource,
@@ -226,7 +231,7 @@ export function App({
   // напрямок за замовчуванням).
   const [direction, setDirection] = useState<Direction>('cards');
   // D-123 (живе тестування): меню налаштувань у верхньому барі -- три
-  // напрямки (agent-rules/agent-account/agent-reports), що ISS-117 називав
+  // напрямки (agent-rules/agent-account/agent-log), що ISS-117 називав
   // "другорядними", переїхали з рівного нижнього нав-меню сюди, під значок
   // шестерні. Той самий локальний toggle-стан, що CardFace.tsx's isMenuOpen
   // (меню "..."). Клік по шестерні знову або вибір пункту закривають меню, як
@@ -404,12 +409,12 @@ export function App({
                 type="button"
                 role="menuitem"
                 onClick={() => {
-                  setDirection('agent-reports');
+                  setDirection('agent-log');
                   setIsSettingsMenuOpen(false);
                 }}
                 className="w-full rounded-control px-3 py-2 text-left text-sm font-medium text-ink transition-colors hover:bg-border"
               >
-                Звіти активності
+                Лог дій
               </button>
             </div>
           )}
@@ -449,7 +454,7 @@ export function App({
           {direction === 'agent-rules' && (
             <RuleSettingsScreen targetCards={ruleTargetCards} loadRules={loadRules} onSave={onSaveRule} />
           )}
-          {direction === 'agent-reports' && <ReportsScreen loadReports={loadReports} />}
+          {direction === 'agent-log' && <LogScreen loadActionLog={loadActionLog} />}
           {direction === 'agent-account' && (
             <AccountScreen
               loadResources={loadSyncResources}
@@ -531,7 +536,7 @@ export function App({
             за межі екрана й не змушували сторінку скролитись горизонтально.
             D-121: "Чат" звідси прибрано -- він більше не напрямок (ChatPanel
             нижче, поза цим <nav>). D-123 (живе тестування): ще 3 пункти
-            (Налаштування правил/Звіти активності/Обліковий запис і дані)
+            (Налаштування правил/Лог дій/Обліковий запис і дані)
             переїхали в меню шестерні верхнього бару -- перший крок ієрархії,
             яку ISS-117 називав відкритою (не закриває питання повністю: 4
             пункти нижче лишаються рівним списком, який ще потребує

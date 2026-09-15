@@ -48,6 +48,9 @@ export interface UpdateStructureInput {
   logicVariant?: LogicVariant;
 }
 
+/** Лог дій -- сигнатура збігається з agent/app/record-action.ts's `recordAction` (life-area-card/app/create-card.ts докладніше). */
+export type RecordAction = (db: Db, input: { ownerUserId: string; action: string }) => Promise<void>;
+
 /**
  * Часткове оновлення Структури -- declaration/layoutMode/logicVariant кожен
  * незалежний (AC-10). Зміна layoutMode чи logicVariant на нове значення знімає
@@ -55,7 +58,7 @@ export interface UpdateStructureInput {
  * у треї нерозкладених) -- користувач розкладає картки під новий режим сам
  * (AC-11b/AC-16b). Вихід із режиму 'logic' до того ж обнуляє збережений підвид.
  */
-export async function updateStructure(db: Db, input: UpdateStructureInput): Promise<StructureRecord> {
+export async function updateStructure(db: Db, input: UpdateStructureInput, recordAction?: RecordAction): Promise<StructureRecord> {
   const current = await findStructureByOwner(db, input.ownerUserId);
   if (!current) {
     throw new AppError('structure.not_found', 'Структуру не знайдено', 404);
@@ -146,6 +149,15 @@ export async function updateStructure(db: Db, input: UpdateStructureInput): Prom
       // composition root (withTransaction, ADR-0006) обгортає і UPDATE
       // структури, і всі N UPDATE позицій в ОДНУ транзакцію (DoD T11).
       await updateLayoutPositionCell(db, input.ownerUserId, position.cardId, position.cellIndex, resetAt);
+    }
+  }
+
+  if (recordAction) {
+    if (input.declaration !== undefined) {
+      await recordAction(db, { ownerUserId: input.ownerUserId, action: 'Оновлено декларацію Структури' });
+    }
+    if (layoutModeChanged) {
+      await recordAction(db, { ownerUserId: input.ownerUserId, action: `Змінено режим розкладки Структури на «${effectiveLayoutMode}»` });
     }
   }
 

@@ -35,6 +35,9 @@ export interface CloseCardInput {
   metricTransfers?: CloseCardMetricTransfer[];
 }
 
+/** Лог дій -- сигнатура збігається з agent/app/record-action.ts's `recordAction` (life-area-card/app/create-card.ts докладніше). */
+export type RecordAction = (db: Db, input: { ownerUserId: string; action: string }) => Promise<void>;
+
 /**
  * Закриває активну позицію картки в розкладці Структури (AC-12) і записує
  * подію 'closed' у Літопис (AC-15). Опційні metricTransfers переносять
@@ -42,7 +45,7 @@ export interface CloseCardInput {
  * transferMetricBlock -- без цього параметра відхилені метрики лишаються
  * на закритій картці, жодного автоматичного переносу.
  */
-export async function closeCard(db: Db, input: CloseCardInput): Promise<void> {
+export async function closeCard(db: Db, input: CloseCardInput, recordAction?: RecordAction): Promise<void> {
   const activePositions = await listActiveLayoutPositionsByOwner(db, input.ownerUserId);
   const current = activePositions.find((position) => position.cardId === input.cardId);
   if (!current) {
@@ -63,12 +66,20 @@ export async function closeCard(db: Db, input: CloseCardInput): Promise<void> {
     eventType: 'closed',
   });
 
+  if (recordAction) {
+    await recordAction(db, { ownerUserId: input.ownerUserId, action: 'Закрито напрямок у Структурі' });
+  }
+
   for (const transfer of input.metricTransfers ?? []) {
-    await transferMetricBlock(db, {
-      ownerUserId: input.ownerUserId,
-      targetCardId: transfer.targetCardId,
-      metricBlockId: transfer.metricBlockId,
-      newLabel: transfer.newLabel,
-    });
+    await transferMetricBlock(
+      db,
+      {
+        ownerUserId: input.ownerUserId,
+        targetCardId: transfer.targetCardId,
+        metricBlockId: transfer.metricBlockId,
+        newLabel: transfer.newLabel,
+      },
+      recordAction
+    );
   }
 }

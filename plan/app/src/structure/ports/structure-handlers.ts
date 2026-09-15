@@ -25,6 +25,7 @@
 import { findStructureByOwner, insertStructure } from '../infra/postgres-repo';
 import type { StructureRecord, Db, LayoutModeRow, LogicVariantRow } from '../infra/postgres-repo';
 import { updateStructure as updateStructureUseCase } from '../app/update-structure';
+import type { RecordAction } from '../app/update-structure';
 import { AppError } from '../../shared/errors';
 
 // --- DTO -- форма відповіді, camelCase, точно як components.schemas.Structure ---
@@ -81,7 +82,12 @@ const VALID_LOGIC_VARIANTS: LogicVariantRow[] = ['balance', 'focus', 'cause_effe
  * значення поза enum'ом контракту, перевірено ДО будь-якого запиту в базу
  * (жоден із двох `if` нижче не викликає db.query).
  */
-export async function updateStructure(db: Db, ownerUserId: string, body: StructureUpdateBody): Promise<StructureDto> {
+export async function updateStructure(
+  db: Db,
+  ownerUserId: string,
+  body: StructureUpdateBody,
+  recordAction?: RecordAction
+): Promise<StructureDto> {
   if (body.layoutMode !== undefined && body.layoutMode !== null && !VALID_LAYOUT_MODES.includes(body.layoutMode)) {
     throw new AppError('structure.invalid_layout_mode', 'layoutMode must be one of: single, free, logic', 422);
   }
@@ -89,11 +95,15 @@ export async function updateStructure(db: Db, ownerUserId: string, body: Structu
     throw new AppError('structure.invalid_logic_variant', 'logicVariant must be one of: balance, focus, cause_effect', 422);
   }
 
-  const updated = await updateStructureUseCase(db, {
-    ownerUserId,
-    ...(body.declaration !== undefined ? { declaration: body.declaration } : {}),
-    ...(body.layoutMode !== undefined ? { layoutMode: body.layoutMode } : {}),
-    ...(body.logicVariant !== undefined ? { logicVariant: body.logicVariant } : {}),
-  });
+  const updated = await updateStructureUseCase(
+    db,
+    {
+      ownerUserId,
+      ...(body.declaration !== undefined ? { declaration: body.declaration } : {}),
+      ...(body.layoutMode !== undefined ? { layoutMode: body.layoutMode } : {}),
+      ...(body.logicVariant !== undefined ? { logicVariant: body.logicVariant } : {}),
+    },
+    recordAction
+  );
   return toStructureDto(updated);
 }

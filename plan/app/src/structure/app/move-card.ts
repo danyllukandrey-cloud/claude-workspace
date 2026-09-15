@@ -43,13 +43,16 @@ export interface MoveCardInput {
   positionUpdatedAt: string;
 }
 
+/** Лог дій -- сигнатура збігається з agent/app/record-action.ts's `recordAction` (life-area-card/app/create-card.ts докладніше). */
+export type RecordAction = (db: Db, input: { ownerUserId: string; action: string }) => Promise<void>;
+
 /**
  * Перетягування картки в нову клітинку розкладки Структури (AC-08),
  * захищене від колізії (AC-02/D-62) і від застарілого запису з іншого
  * пристрою (ADR-0002 last-write-wins); успішний рух записує подію
  * 'moved' у Літопис (AC-15).
  */
-export async function moveCard(db: Db, input: MoveCardInput): Promise<LayoutPositionRecord> {
+export async function moveCard(db: Db, input: MoveCardInput, recordAction?: RecordAction): Promise<LayoutPositionRecord> {
   const activePositions = await listActiveLayoutPositionsByOwner(db, input.ownerUserId);
   const current = activePositions.find((position) => position.cardId === input.cardId);
   if (!current) {
@@ -105,6 +108,10 @@ export async function moveCard(db: Db, input: MoveCardInput): Promise<LayoutPosi
     eventType: 'moved',
     detail: formatMovedDetail(current.cellIndex, moved.cellIndex),
   });
+
+  if (recordAction) {
+    await recordAction(db, { ownerUserId: input.ownerUserId, action: `Переміщено картку в клітинку ${moved.cellIndex}` });
+  }
 
   return moved;
 }

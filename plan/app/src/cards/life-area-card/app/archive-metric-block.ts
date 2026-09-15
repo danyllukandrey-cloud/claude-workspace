@@ -28,6 +28,9 @@ import { findCardById, findMetricBlockById, updateMetricBlock } from '../infra/p
 import type { Db, MetricBlockRecord } from '../infra/postgres-repo';
 import { AppError } from '../../../shared/errors';
 
+/** Лог дій -- сигнатура збігається з agent/app/record-action.ts's `recordAction` (create-card.ts докладніше). */
+export type RecordAction = (db: Db, input: { ownerUserId: string; action: string }) => Promise<void>;
+
 export interface ArchiveMetricBlockInput {
   ownerUserId: string;
   /** cardId зі шляху DELETE -- НЕ довіряємо для авторизації (див. коментар вгорі файлу), лише звіряємо ПІСЛЯ. */
@@ -35,7 +38,11 @@ export interface ArchiveMetricBlockInput {
   metricBlockId: string;
 }
 
-export async function archiveMetricBlock(db: Db, input: ArchiveMetricBlockInput): Promise<MetricBlockRecord> {
+export async function archiveMetricBlock(
+  db: Db,
+  input: ArchiveMetricBlockInput,
+  recordAction?: RecordAction
+): Promise<MetricBlockRecord> {
   const block = await findMetricBlockById(db, input.metricBlockId);
   const card = block ? await findCardById(db, input.ownerUserId, block.cardId) : null;
 
@@ -52,6 +59,10 @@ export async function archiveMetricBlock(db: Db, input: ArchiveMetricBlockInput)
     // Теоретично недосяжно одразу після знаходження блоку вище, та сама
     // форма помилки, що архівація картки (archive-card.ts).
     throw new AppError('card.not_found', 'Картку чи блок-метрику не знайдено', 404);
+  }
+
+  if (recordAction) {
+    await recordAction(db, { ownerUserId: input.ownerUserId, action: `Заархівовано блок-метрику «${block.label}»` });
   }
 
   return archived;

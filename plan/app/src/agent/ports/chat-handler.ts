@@ -192,6 +192,8 @@ export interface CreateMessageOptions {
    */
   transport?: EmailTransport;
   developerEmail?: string;
+  /** Лог дій -- прокидається в handleMessage як HandleMessageDeps.recordAction (../app/handle-message.ts). */
+  recordAction?: HandleMessageDeps['recordAction'];
 }
 
 /**
@@ -253,7 +255,12 @@ export async function createMessage(
 
   let result: Awaited<ReturnType<typeof handleMessage>>;
   try {
-    result = await handleMessage(db, askClaude, { userId: ownerUserId, text, attachment, now }, { reportUserIssue });
+    result = await handleMessage(
+      db,
+      askClaude,
+      { userId: ownerUserId, text, attachment, now },
+      { reportUserIssue, recordAction: options.recordAction }
+    );
   } finally {
     await insertChatMessage(db, {
       id: randomUUID(),

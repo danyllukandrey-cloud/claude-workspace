@@ -62,6 +62,10 @@ const TO_PROMOTE = [
   // D-127 (US-17/AC-20): архівація окремого блоку-метрики -- лише додає
   // metric_block.status, жодних крос-фічевих залежностей, тож у самому кінці.
   { slug: 'life-area-card', staged: '08_add_metric_block_status', name: 'add-metric-block-status' },
+  // "Лог дій" (2026-09-15): нова, повністю незалежна таблиця (лише FK на
+  // вже промоучений app_user) -- жодних крос-фічевих залежностей, тож у
+  // самому кінці, як і 08 вище.
+  { slug: 'agent', staged: '12_create_action_log', name: 'create-action-log' },
 ];
 
 function readReadme() {
