@@ -84,6 +84,14 @@ export function CardBack({
   // бо це власний catch, не сам refresh(). Той самий isSubmitting-підхід,
   // що T49/MetricBlockCard -- захист від подвійного кліку, поки запит у польоті.
   const [isFlaggingEntry, setIsFlaggingEntry] = useState(false);
+  // Живе тестування (Андрій): після "виправити" нічого видимого не
+  // відбувалось, крім кульки, що червоніє -- сам механізм задуманий
+  // (EntryHistoryList.tsx коментар вгорі) як "виправлення завжди йде через
+  // діалог з агентом", але це ніяк не підказувалось у моменті. Підказка
+  // з'являється одразу після успішного flag і лишається видимою (не
+  // автоховається -- користувач сам іде в чат, коли готовий, не поки
+  // читає текст).
+  const [showFlagHint, setShowFlagHint] = useState(false);
   // Review 2026-09-07 E (T52): фоновий refresh (після успішної мутації) --
   // окремий, неблокуючий стан помилки, ніколи не `setState('error')` (той
   // самий шлях, що ПОЧАТКОВЕ завантаження) -- інакше невдалий фоновий
@@ -160,6 +168,7 @@ export function CardBack({
         if (refreshRequestIdRef.current !== requestId) return;
         setData(fresh);
         setRefreshError(null);
+        setShowFlagHint(true);
       })
       .catch((err: unknown) => {
         if (refreshRequestIdRef.current !== requestId) return;
@@ -295,6 +304,9 @@ export function CardBack({
             onFlagEntry={onFlagEntry ? handleFlagEntry : undefined}
             isFlagEntryDisabled={isFlaggingEntry}
           />
+        )}
+        {historyExpanded && showFlagHint && (
+          <Banner variant="info" text="Позначено помилковим -- напишіть агенту в чаті, яке значення правильне, і він виправить запис." />
         )}
       </div>
 

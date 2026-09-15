@@ -85,6 +85,15 @@ function trendLabel(trend: AnalyticsTrend): string | null {
 // "Синхронізація"/"Небезпечна зона".
 const ZONE_LABEL_CLASS = 'font-display text-sm font-bold uppercase tracking-wide text-ink-muted';
 
+// Той самий поріг/колірний код, що MetricBlockCard.tsx's progressToneClasses
+// (D-126) -- узгоджено, не вигадуємо другу мову кольору для того самого
+// "% виконання" в іншому екрані. Тут -- заливка смуги-шкали, не бейдж.
+function progressBarFillClass(share: number): string {
+  if (share >= 0.7) return 'bg-good';
+  if (share >= 0.3) return 'bg-warn';
+  return 'bg-bad';
+}
+
 export function AnalyticsScreen({ loadAnalytics, onOpenArchive }: AnalyticsScreenProps): JSX.Element {
   const [loading, setLoading] = useState(true);
   const [state, setState] = useState<AnalyticsScreenState | null>(null);
@@ -151,37 +160,56 @@ export function AnalyticsScreen({ loadAnalytics, onOpenArchive }: AnalyticsScree
           )}
         </div>
 
-        {/* Зона 2 -- показники по картках: та сама назва/progress/rank-gap/
-            trend/unmaintained, тепер у вужчій колонці з власним внутрішнім
-            скролом (min-h-0 + overflow-y-auto), якщо карток багато. */}
+        {/* Зона 2 -- показники по картках: живе тестування (Андрій) -- два
+            стовпчики (grid-cols-2), компактніше форматування (менший
+            padding/шрифт, той самий підхід, що MetricBlockCard.tsx, D-120
+            верстка-прохід), щоб влазило максимально без скролу. Під кожною
+            карткою -- шкала прогресу на всю ширину рядка (текст+% разом --
+            100%), заливка кольором за тим самим порогом, що
+            progressToneClasses у MetricBlockCard.tsx (D-126): <30% червоний,
+            30-70% жовтий, ≥70% зелений. */}
         <div className="flex min-h-0 flex-col gap-2 rounded-card border border-border bg-surface p-4 shadow-soft backdrop-blur-xl sm:p-5">
           <h2 className={ZONE_LABEL_CLASS}>Показники по картках</h2>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {cards.length === 0 ? (
               <p className="px-2 py-8 text-center text-sm text-ink-muted">Немає карток з обчислюваним прогресом</p>
             ) : (
-              <ul className="flex flex-col gap-3">
+              <ul className="grid grid-cols-2 gap-2">
                 {cards.map((card) => {
                   const progressText = formatPercent(card.progress);
                   const trendText = trendAvailable ? trendLabel(card.trend) : null;
                   return (
                     <li
                       key={card.cardId}
-                      className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-control border border-border bg-surface-solid px-4 py-3 shadow-soft"
+                      className="flex flex-col gap-1 rounded-control border border-border bg-surface-solid px-2.5 py-2"
                     >
-                      <span className="font-medium text-ink">{card.cardTitle}</span>
-                      {progressText !== null && (
-                        <span className="font-display text-sm font-bold text-ink">{progressText}</span>
+                      <div className="flex items-baseline justify-between gap-1">
+                        <span className="truncate text-sm font-medium text-ink">{card.cardTitle}</span>
+                        {progressText !== null && (
+                          <span className="shrink-0 font-display text-sm font-bold text-ink">{progressText}</span>
+                        )}
+                      </div>
+                      {card.progress !== null && (
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-border">
+                          <div
+                            className={`h-full rounded-full ${progressBarFillClass(card.progress)}`}
+                            style={{ width: `${Math.round(card.progress * 100)}%` }}
+                          />
+                        </div>
                       )}
-                      {layoutMode === 'logic' && card.gap !== null && (
-                        <span className="text-xs text-ink-muted"> ранг-розрив: {card.gap}</span>
-                      )}
-                      {trendText !== null && <span className="text-xs text-ink-muted"> {trendText}</span>}
-                      {card.unmaintained && (
-                        <span className="rounded-full bg-border px-2 py-0.5 text-xs font-medium text-ink">
-                          заявлено важливим, не підтримується
-                        </span>
-                      )}
+                      {(layoutMode === 'logic' && card.gap !== null) || trendText !== null || card.unmaintained ? (
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                          {layoutMode === 'logic' && card.gap !== null && (
+                            <span className="text-xs text-ink-muted">ранг-розрив: {card.gap}</span>
+                          )}
+                          {trendText !== null && <span className="text-xs text-ink-muted">{trendText}</span>}
+                          {card.unmaintained && (
+                            <span className="rounded-full bg-border px-1.5 py-0.5 text-xs font-medium text-ink">
+                              заявлено важливим, не підтримується
+                            </span>
+                          )}
+                        </div>
+                      ) : null}
                     </li>
                   );
                 })}

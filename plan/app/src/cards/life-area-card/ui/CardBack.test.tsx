@@ -162,6 +162,33 @@ test('SCR-03 AC-12: клік "виправити" в історії виклик
   expect(screen.queryByRole('button', { name: 'виправити' })).toBeNull();
 });
 
+// Живе тестування (Андрій): "натиснув виправити -- нічого не відбувається,
+// тільки кулька червоніє" -- механізм працював як задумано (EntryHistoryList.tsx
+// коментар), але без підказки це виглядало як мертва кнопка. Підказка
+// з'являється одразу після успішного flag.
+test('живе тестування: після успішного "виправити" з\'являється підказка йти в чат з агентом', async () => {
+  const initial: CardBackData = {
+    metricBlocks: [],
+    aggregateProgress: null,
+    entries: [makeEntry({ id: 'e1', status: 'confirmed', summary: '+1 тренування' })],
+  };
+  const corrected: CardBackData = {
+    metricBlocks: [],
+    aggregateProgress: null,
+    entries: [makeEntry({ id: 'e1', status: 'rejected', summary: '+1 тренування (скасовано)' })],
+  };
+  const onFlagEntry = vi.fn().mockResolvedValue(corrected);
+
+  render(<CardBack loadBack={() => Promise.resolve(initial)} onFlip={vi.fn()} onFlagEntry={onFlagEntry} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: /Історія записів/ }));
+  expect(screen.queryByText(/напишіть агенту в чаті/i)).toBeNull();
+
+  fireEvent.click(await screen.findByRole('button', { name: 'виправити' }));
+
+  expect(await screen.findByText(/напишіть агенту в чаті/i)).toBeTruthy();
+});
+
 // Review 2026-09-07, post-ship follow-up review (AC-12/E, RED): невдале
 // onFlagEntry раніше робило те саме, що невдалий ПОЧАТКОВИЙ load
 // (setState('error')) -- стирало вже показані дані заради банера на весь
