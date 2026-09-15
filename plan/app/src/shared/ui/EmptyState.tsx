@@ -13,8 +13,8 @@ export interface EmptyStateProps {
 export function EmptyState({ message, actionHint }: EmptyStateProps): JSX.Element {
   return (
     <div className="flex flex-col items-center gap-1.5 px-6 py-10 text-center">
-      <p className="text-sm font-semibold text-ink">{message}</p>
-      <p className="text-sm text-ink-muted">{actionHint}</p>
+      <p className="text-sm font-semibold italic text-ink">{message}</p>
+      <p className="text-sm italic text-ink-muted">{actionHint}</p>
     </div>
   );
 }
