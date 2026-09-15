@@ -111,6 +111,17 @@ const SCHEMA: Record<string, ForeignKey[]> = {
     { column: 'structure_id', refTable: 'structure', onDelete: 'CASCADE' },
     { column: 'card_id', refTable: 'card', onDelete: 'CASCADE' },
   ],
+  // Кінець-сесії ревю виявив: дві таблиці, додані ЦІЄЮ сесією, не мали
+  // жодного рядка в цьому графі -- action_log несе людяні текстові описи
+  // дій користувача (персональні дані, AC-17 обіцяє "видалити назавжди"),
+  // structure_connection каскадить і через structure_id, і через card_id_a/
+  // card_id_b (agent/12_create-action-log, structure/backend/09).
+  action_log: [{ column: 'owner_user_id', refTable: 'app_user', onDelete: 'CASCADE' }],
+  structure_connection: [
+    { column: 'structure_id', refTable: 'structure', onDelete: 'CASCADE' },
+    { column: 'card_id_a', refTable: 'card', onDelete: 'CASCADE' },
+    { column: 'card_id_b', refTable: 'card', onDelete: 'CASCADE' },
+  ],
 };
 
 /**
@@ -198,14 +209,21 @@ const AGENT_TABLES_THAT_MUST_EMPTY = [
   'chat_message',
   'activity_report',
   'sync_resource',
+  'action_log',
 ] as const;
 
 const LIFE_AREA_CARD_TABLES_THAT_MUST_EMPTY = ['card', 'metric_block', 'entry', 'card_lifecycle_event'] as const;
 
-const STRUCTURE_TABLES_THAT_MUST_EMPTY = ['structure', 'structure_layout_position', 'structure_history_event'] as const;
+const STRUCTURE_TABLES_THAT_MUST_EMPTY = [
+  'structure',
+  'structure_layout_position',
+  'structure_history_event',
+  'structure_connection',
+] as const;
 
 function seedFullUserGraph(db: FakeCascadingDb, userId: string, seed: string): void {
   const cardId = `card-${seed}`;
+  const secondCardId = `card2-${seed}`;
   const metricBlockId = `metric-block-${seed}`;
   const structureId = `structure-${seed}`;
 
@@ -213,6 +231,9 @@ function seedFullUserGraph(db: FakeCascadingDb, userId: string, seed: string): v
 
   // life-area-card: a card with a metric block, an entry, and a lifecycle event.
   db.seed('card', { id: cardId, owner_user_id: userId, name: `Картка ${seed}` });
+  // Друга картка -- лише щоб structure_connection нижче з'єднувала дві РІЗНІ
+  // картки (реалістично, як create-connection.ts заборонив би self-loop).
+  db.seed('card', { id: secondCardId, owner_user_id: userId, name: `Картка 2 ${seed}` });
   db.seed('metric_block', { id: metricBlockId, card_id: cardId, label: 'Пробіжка', unit: 'km' });
   db.seed('entry', { id: `entry-${seed}`, metric_block_id: metricBlockId, card_id: cardId, amount: 5 });
   db.seed('card_lifecycle_event', { id: `lifecycle-${seed}`, card_id: cardId, transition: 'created' });
@@ -231,6 +252,13 @@ function seedFullUserGraph(db: FakeCascadingDb, userId: string, seed: string): v
     structure_id: structureId,
     card_id: cardId,
     event_type: 'created',
+  });
+  db.seed('structure_connection', {
+    id: `connection-${seed}`,
+    structure_id: structureId,
+    card_id_a: cardId,
+    card_id_b: secondCardId,
+    directed: false,
   });
 
   // agent's own tables: a proposal, a rule, a memory fact, a chat message,
@@ -262,6 +290,7 @@ function seedFullUserGraph(db: FakeCascadingDb, userId: string, seed: string): v
     description: 'щось зламалось',
     delivery_status: 'sent',
   });
+  db.seed('action_log', { id: `action-${seed}`, owner_user_id: userId, action: `Створено картку «Картка ${seed}»` });
 }
 
 describe('deleteAccount -- AC-17 cascading deletion across agent/life-area-card/structure (e2e, fake Db)', () => {
@@ -280,7 +309,12 @@ describe('deleteAccount -- AC-17 cascading deletion across agent/life-area-card/
     expect(db.rows('app_user').map((row) => row.id)).toEqual(['user-kept']);
 
     for (const table of AGENT_TABLES_THAT_MUST_EMPTY) {
-      const remainingForDeletedUser = db.rows(table).filter((row) => row.user_id === 'user-deleted');
+      // action_log uses owner_user_id (structure/life-area-card's naming),
+      // every other agent table uses user_id -- check both so a mismatched
+      // column name can't silently produce a false-negative empty filter.
+      const remainingForDeletedUser = db
+        .rows(table)
+        .filter((row) => row.user_id === 'user-deleted' || row.owner_user_id === 'user-deleted');
       expect(remainingForDeletedUser, `expected ${table} to have 0 rows for the deleted user`).toEqual([]);
     }
 
@@ -300,7 +334,7 @@ describe('deleteAccount -- AC-17 cascading deletion across agent/life-area-card/
 
     // The untouched second user's graph survives completely -- deletion was
     // scoped to one user_id, not a blanket truncate.
-    expect(db.rows('card').map((row) => row.id)).toEqual(['card-b']);
+    expect(db.rows('card').map((row) => row.id).sort()).toEqual(['card-b', 'card2-b']);
     expect(db.rows('structure').map((row) => row.id)).toEqual(['structure-b']);
     expect(db.rows('agent_proposal').map((row) => row.id)).toEqual(['proposal-b']);
   });
@@ -361,6 +395,6 @@ describe('deleteAccount -- AC-17 cascading deletion across agent/life-area-card/
 
     // Nothing was touched -- the full graph is still there.
     expect(db.rows('app_user').map((row) => row.id)).toEqual(['user-deleted']);
-    expect(db.rows('card').map((row) => row.id)).toEqual(['card-a']);
+    expect(db.rows('card').map((row) => row.id).sort()).toEqual(['card-a', 'card2-a']);
   });
 });
