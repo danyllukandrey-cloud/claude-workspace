@@ -46,9 +46,10 @@ export type RecordAction = (db: Db, input: { ownerUserId: string; action: string
 
 /**
  * Часткове оновлення Структури -- declaration/layoutMode кожен незалежний
- * (AC-10). Зміна layoutMode на нове значення знімає клітинку з КОЖНОЇ
- * активної позиції (cell_index -> NULL, "картка без клітинки" у треї
- * нерозкладених) -- користувач розкладає картки під новий режим сам (AC-11b).
+ * (AC-10). Зміна layoutMode на нове значення запускає авто-розклад нового
+ * режиму (D-132, applyLayoutMode нижче): рахує й записує реальні x/y для
+ * КОЖНОЇ активної картки власника (і вже розкладених, і з купки
+ * нерозкладених) -- не скидання в трей, як було до D-132 (AC-11b).
  */
 export async function updateStructure(db: Db, input: UpdateStructureInput, recordAction?: RecordAction): Promise<StructureRecord> {
   const current = await findStructureByOwner(db, input.ownerUserId);

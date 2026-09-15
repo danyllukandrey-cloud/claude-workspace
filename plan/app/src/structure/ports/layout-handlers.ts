@@ -181,7 +181,11 @@ export async function getLayoutHistoryAsOf(
   const items: LayoutPositionDto[] = [];
   for (const [cardId, event] of latestMovedByCard) {
     const { x, y } = parsePastPosition(event.detail);
-    if (x === null) continue;
+    // x/y завжди приходять разом (постгре-репо коментар: "x/y завжди
+    // приходять разом... викликач гарантує пару") -- перевіряємо ОБИДВА,
+    // не лише x, інакше зіпсований чи майбутній формат detail міг би
+    // пропустити напівпорожню {x: N, y: null} позицію в DTO.
+    if (x === null || y === null) continue;
     items.push({
       cardId,
       x,
@@ -206,8 +210,9 @@ export interface MoveCardPositionBody {
  * Тонка обгортка над app/move-card.ts's `moveCard` (T12, вже done) --
  * порт лише мапить `LayoutPositionRecord` у той самий `LayoutPositionDto`,
  * що вже виробляє `listLayoutPositions`, і пропускає `AppError`
- * (structure.card_not_found 404, structure.cell_occupied 409) як є --
- * жодного іншого статусу порт не додає (DoD).
+ * (structure.card_not_found 404) як є -- жодного іншого статусу порт не
+ * додає (DoD). `structure.cell_occupied` (409) скасовано разом із
+ * клітинками (D-132) -- вільне полотно дозволяє карткам перекриватись.
  */
 export async function moveCardPosition(
   db: Db,

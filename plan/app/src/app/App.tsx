@@ -65,9 +65,9 @@ export interface AppProps {
   loadCards: () => Promise<DeckGridItem[]>;
   /** Створює нову картку (POST /cards, CreateCardForm.onCreate, ISS-55). */
   createCard: (input: { name: string }) => Promise<void>;
-  /** Завантажує лицьову сторону обраної картки (CardDetailScreen.loadCard, ISS-55 stage 2). */
+  /** Завантажує лицьову сторону обраної картки (DeckScreen -> CardFace, ISS-55 stage 2; D-121 прибрав окремий CardDetailScreen). */
   loadCard: (cardId: string) => Promise<CardFaceData>;
-  /** Завантажує зворот обраної картки (CardDetailScreen.loadBack, ISS-55 stage 2). */
+  /** Завантажує зворот обраної картки (DeckScreen -> CardBack, ISS-55 stage 2; D-121 прибрав окремий CardDetailScreen). */
   loadBack: (cardId: string) => Promise<CardBackData>;
   /** Зберігає нову назву обраної картки (AC-19, PATCH /cards/{id}, ISS-55 stage 2). */
   onRename: (cardId: string, name: string) => Promise<void>;
@@ -569,9 +569,11 @@ export function App({
         </div>
 
         {/* T24 (sad.md §5): постійне нижнє нав-меню -- видиме на всіх
-            напрямках, не лише на "Картки". "Картки" не скидає під-навігацію
-            create/detail/archive -- лише перемикає direction, Screen
-            лишається як був (тест "клік Картки повертає на DeckScreen").
+            напрямках, не лише на "Картки". "Картки" ЗАВЖДИ повертає на
+            deck-екран (скидає під-навігацію create/archive) -- коментар до
+            самої кнопки "Картки" нижче пояснює чому (раніше лише перемикало
+            direction, це виглядало як баг: клік із Архіву повертав в Архів
+            замість Колоди).
             D-111: усі пункти -- одного класу дії (навігація між напрямками)
             -- лишаються згруповані в одному <nav>, тепер з переносом рядків
             (flex-wrap), щоб на вузькому екрані (~360-400px) вони НЕ виходили

@@ -27,7 +27,6 @@ feature_size: "M"
 | AC (spec.md §5) | Test name (intent-based) | Level | Expected outcome |
 |---|---|---|---|
 | AC-01 happy | average progress across computable cards is shown | integration | correct average returned from real card progress values |
-| AC-02 error | dropping a card on an occupied cell is blocked | integration | placement rejected, cell contents unchanged |
 | AC-03 authorization | a request never returns another user's Structure | integration | non-owner gets the same outcome as non-existent |
 | AC-04 domain invariant | layout position never changes the aggregate | unit | reordering cards leaves the average identical |
 | AC-05 cross-context | a corrected card entry updates the Structure's aggregate | integration | Structure reads the same corrected number, never a stale cached one |
@@ -35,22 +34,23 @@ feature_size: "M"
 | AC-06b happy | no-scheme layout flags declared-but-unmaintained cards | unit | flag set only when created but no tracking activity |
 | AC-07 happy | gap trend shown as growing or shrinking over two points in time | integration | trend direction derived from history-log reads |
 | AC-08 happy | dragging a card to a free position saves immediately | integration | new position persisted and returned on next read |
-| AC-09 happy | a new card gets a default position without forcing a mode choice | integration | card placed, no mode-selection prompt required |
+| AC-09 happy | a new card gets no position, regardless of mode chosen | integration | card lands unplaced in the tray, no mode-selection prompt required |
 | AC-10 domain invariant | Structure declaration and card Опис never merge | unit | the two fields stay independent in the model |
 | AC-11 happy | picking a layout mode applies it going forward | integration | subsequent placements follow the chosen mode |
-| AC-11b happy | switching layout mode resets cards to a fixed base order | integration | every card moved to base order, new grid shown, atomically |
+| AC-11b happy | switching layout mode recomputes that mode's coordinate auto-layout for every active card, atomically | integration | every active card (placed + unplaced) gets new x/y + connections in one write; switching TO staging is a no-op |
 | AC-12 happy | closing an overlapping card offers per-metric transfer | integration | closure recorded as a history event; declined metrics stay behind |
 | AC-13 domain invariant | non-computable cards are excluded from the average, counted separately | unit | excluded count shown, average unaffected by them |
-| AC-15 happy | a rename or logic-layout move is recorded as a history event | integration | timestamped event written to the history log table |
-| AC-16 happy | picking a grid-based mode directly applies its grid and root-card rule | integration | mode's cell scheme and root-card marking applied |
-| AC-17 restored-card | archive restore leaves a card without a cell | integration | card lands in the tray, no cell assigned |
-| AC-18 happy | "staging" places new/reset cards in the tray, never auto-assigns a cell | integration | card has no cell while this mode is active, even with free cells available |
+| AC-15 happy | a rename or priority-scheme-mode move is recorded as a history event | integration | timestamped event written to the history log table |
+| AC-16 happy | picking a priority-scheme mode directly computes its coordinate auto-layout and root-card rule | integration | mode's own x/y formula and root/core-card marking applied |
+| AC-17 restored-card | archive restore leaves a card without a position | integration | card lands in the tray, no position assigned |
+| AC-18 happy | "staging" never recomputes -- new cards stay unplaced, switching in leaves existing cards untouched | integration | card has no position while unplaced under this mode; switching mode INTO staging moves nothing |
 
+<!-- AC-02 скасовано (D-132, 2026-09-15) -- клітинкова сітка прибрана повністю, вільне позиціювання не має інваріанту "клітинка зайнята"; тест на блокування розміщення більше не застосовний. -->
 <!-- AC-16b скасовано (вимоги 14/15, плоска модель) -- злито в AC-11b: перемикання між будь-якими двома з 5 режимів, зокрема між колишніми підвидами напряму, тепер один механізм. -->
 
 ## Edge cases / error paths
 
-- Two devices move the same card to different cells at nearly the same time → last-write-wins by `positionUpdatedAt` (ADR-0002), the earlier write is silently superseded, not merged.
+- Two devices move the same card to different positions at nearly the same time → last-write-wins by `positionUpdatedAt` (ADR-0002), the earlier write is silently superseded, not merged.
 - Closing a card with zero metric-blocks → closure proceeds with no per-metric prompt (AC-12's happy path collapses to a plain confirm).
 - Attempting to view/edit a Structure or move a card by a made-up or someone else's id → the same "not found" outcome — existence is never confirmed or denied (AC-03).
 
