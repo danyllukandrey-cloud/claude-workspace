@@ -241,11 +241,18 @@ export function LayoutBoard({
       }));
     };
 
+    // Кінець-сесії ревю виявив: без 'pointercancel' перерваний жест (палець
+    // зісковзнув за межі viewport, системний жест ОС, вхідний дзвінок під час
+    // дотику) видає pointercancel, НЕ pointerup -- draggingCardId лишався б
+    // підвішеним назавжди, картка "приклеєною" до останньої точки. handleUp
+    // однаково коректно скидає стан для обох подій.
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('pointerup', handleUp);
+    window.addEventListener('pointercancel', handleUp);
     return () => {
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
+      window.removeEventListener('pointercancel', handleUp);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draggingCardId]);
@@ -596,8 +603,13 @@ export function LayoutBoard({
               // лінія не торкалась заокругленого кута впритул.
               return Number.isFinite(t) ? t + 1 : 4;
             };
-            const pullbackA = dist > 0 ? Math.min(rectPullback(connection.cardIdA), dist / 2 - 0.5) : 0;
-            const pullbackB = dist > 0 ? Math.min(rectPullback(connection.cardIdB), dist / 2 - 0.5) : 0;
+            // Math.max(0, ...) -- кінець-сесії ревю виявив: коли dist < 1
+            // (дві картки перетягнуті майже впритул -- перекриття дозволене,
+            // domain/layout.ts), "dist / 2 - 0.5" стає ВІД'ЄМНИМ, і без
+            // нижньої межі min() повертав би саме це від'ємне число --
+            // лінія/вістря стрілки виїжджали б у протилежний бік.
+            const pullbackA = dist > 0 ? Math.max(0, Math.min(rectPullback(connection.cardIdA), dist / 2 - 0.5)) : 0;
+            const pullbackB = dist > 0 ? Math.max(0, Math.min(rectPullback(connection.cardIdB), dist / 2 - 0.5)) : 0;
             const x1 = posA.x + ux * pullbackA;
             const y1 = posA.y + uy * pullbackA;
             const x2 = posB.x - ux * pullbackB;
