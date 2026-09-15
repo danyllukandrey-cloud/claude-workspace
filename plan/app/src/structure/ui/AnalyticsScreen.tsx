@@ -177,9 +177,9 @@ export function AnalyticsScreen({
               <span className="font-display text-2xl font-bold text-ink">{averageText}</span>
             </p>
           )}
-          <p className="text-xs italic text-ink-faint">{excludedCount} картки виключено з середнього (немає метрики)</p>
+          <p className="text-xs text-ink-faint">{excludedCount} картки виключено з середнього (немає метрики)</p>
           {!trendAvailable && (
-            <Banner variant="info" text="Тренд наразі недоступний -- не вдалося завантажити історію" />
+            <Banner variant="info" text="Тренд наразі недоступний -- не вдалося завантажити історію" italic={false} />
           )}
         </div>
 
@@ -195,7 +195,7 @@ export function AnalyticsScreen({
           <h2 className={ZONE_LABEL_CLASS}>Показники по картках</h2>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {cards.length === 0 ? (
-              <p className="px-2 py-8 text-center text-sm italic text-ink-muted">Немає карток з обчислюваним прогресом</p>
+              <p className="px-2 py-8 text-center text-sm text-ink-muted">Немає карток з обчислюваним прогресом</p>
             ) : (
               <ul className="grid grid-cols-2 gap-2">
                 {cards.map((card) => {
@@ -259,7 +259,7 @@ export function AnalyticsScreen({
         <h2 className={ZONE_LABEL_CLASS}>Звіти</h2>
         <div ref={reportsScrollRef} className="min-h-0 flex-1 overflow-y-auto pb-16">
           {reportEntries.length === 0 ? (
-            <p className="px-2 py-8 text-center text-sm italic text-ink-muted">Звітів поки немає</p>
+            <p className="px-2 py-8 text-center text-sm text-ink-muted">Звітів поки немає</p>
           ) : (
             <ul className="flex flex-col">
               {reportEntries.map((text, index) => {

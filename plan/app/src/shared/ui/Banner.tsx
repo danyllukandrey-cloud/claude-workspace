@@ -10,6 +10,13 @@ export interface BannerProps {
   variant: BannerVariant;
   /** Текст повідомлення. */
   text: string;
+  /**
+   * Живе тестування (Андрій): "Аналітика ні" — курсив-підказка (нижче) не
+   * має застосовуватись на екрані Аналітики, навіть до info/success. Опційний
+   * явний вимикач для конкретного виклику — за замовчуванням лишається
+   * автоматична поведінка за variant (info/success = italic, error = ні).
+   */
+  italic?: boolean;
 }
 
 // D-120 (оновлено): матовий тон, розбавлений семантичним кольором — не
@@ -22,11 +29,13 @@ const VARIANT_STYLES: Record<BannerVariant, string> = {
   info: 'border-ink/25 bg-ink/10 text-ink',
 };
 
-export function Banner({ variant, text }: BannerProps): JSX.Element {
+export function Banner({ variant, text, italic }: BannerProps): JSX.Element {
   // Системна підказка (курсив, за зразком CardFace.tsx "Опис ще не
   // заповнено"): info/success пояснюють контекст чи наслідок, не аварію --
   // error лишається прямим повідомленням про збій, курсив там недоречний.
-  const isHint = variant !== 'error';
+  // Явний проп italic (коли переданий) перебиває цей дефолт для конкретного
+  // виклику -- напр. AnalyticsScreen.tsx свідомо просить italic={false}.
+  const isHint = italic ?? variant !== 'error';
   return (
     <div
       data-variant={variant}
