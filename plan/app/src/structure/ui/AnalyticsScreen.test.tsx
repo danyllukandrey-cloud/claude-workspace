@@ -26,9 +26,10 @@
 // silently folded into the average or shown as zero -- their count is
 // always shown separately, even in the non-empty states.
 
+import { useState } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { AnalyticsScreen } from './AnalyticsScreen';
-import type { AnalyticsScreenState } from './AnalyticsScreen';
+import type { AnalyticsScreenProps, AnalyticsScreenState } from './AnalyticsScreen';
 
 function baseState(overrides: Partial<AnalyticsScreenState> = {}): AnalyticsScreenState {
   return {
@@ -49,7 +50,32 @@ function baseProps(stateOverrides: Partial<AnalyticsScreenState> = {}) {
     loadAnalytics: vi.fn().mockResolvedValue(baseState(stateOverrides)),
     // D-124 (живе тестування): "Архів" переїхав сюди з Колоди.
     onOpenArchive: vi.fn(),
+    // Живе тестування: reportEntries тепер контрольований -- App.tsx
+    // тримає сам стан (щоб пережити перемикання екранів). Тести, яким
+    // байдужа поведінка "Звіт", просто не рендерять жодного запису.
+    reportEntries: [] as string[],
+    onAddReportEntry: vi.fn(),
   };
+}
+
+/**
+ * Живе тестування: імітує App.tsx -- реальний власник reportEntries-стану,
+ * що переживає розмонтування/перемонтування AnalyticsScreen (та сама
+ * перевірка, що робить App.tsx: direction перемикається геть і назад).
+ */
+function ControlledAnalyticsScreen(
+  props: Omit<AnalyticsScreenProps, 'reportEntries' | 'onAddReportEntry'> & { mounted: boolean }
+) {
+  const { mounted, ...rest } = props;
+  const [reportEntries, setReportEntries] = useState<string[]>([]);
+  if (!mounted) return null;
+  return (
+    <AnalyticsScreen
+      {...rest}
+      reportEntries={reportEntries}
+      onAddReportEntry={() => setReportEntries((prev) => ['звіт за запитом', ...prev])}
+    />
+  );
 }
 
 test('loading: показує Spinner, поки GET /structure/layout (аналітика) ще в польоті', () => {
@@ -58,7 +84,14 @@ test('loading: показує Spinner, поки GET /structure/layout (анал�
     () => new Promise<AnalyticsScreenState>((resolve) => { resolveLoad = resolve; }),
   );
 
-  render(<AnalyticsScreen loadAnalytics={loadAnalytics} onOpenArchive={vi.fn()} />);
+  render(
+    <AnalyticsScreen
+      loadAnalytics={loadAnalytics}
+      onOpenArchive={vi.fn()}
+      reportEntries={[]}
+      onAddReportEntry={vi.fn()}
+    />
+  );
 
   expect(screen.getByRole('status')).toBeTruthy();
   void resolveLoad;
@@ -95,7 +128,7 @@ test('вимога 16/18: "Архів" і "Звіт" плавають знизу
 
 test('живе тестування: кожен клік по "Звіт" ДОДАЄ новий запис у стрічку Зони 3, не замінює попередній', async () => {
   const props = baseProps();
-  render(<AnalyticsScreen {...props} />);
+  render(<ControlledAnalyticsScreen {...props} mounted />);
 
   await screen.findByText(/62%/);
 
@@ -111,6 +144,32 @@ test('живе тестування: кожен клік по "Звіт" ДОД�
   fireEvent.click(screen.getByRole('button', { name: 'Звіт' }));
   expect(screen.getAllByText(/звіт за запитом/i)).toHaveLength(3);
 });
+
+// Живе тестування (Андрій): "Звіти зникають при перемиканні" -- цей тест
+// пінить сам баг-сценарій, той самий шаблон, що App.tsx реально робить
+// (direction перемикається геть -- AnalyticsScreen розмонтовується -- і
+// назад -- монтується знову): стан має пережити це, бо тепер контрольований
+// ззовні (тим самим "власником", що не розмонтовується), не useState
+// усередині самого AnalyticsScreen.
+test('живе тестування: записи Звітів переживають розмонтування/перемонтування AnalyticsScreen (перемикання екранів)', async () => {
+  const props = baseProps();
+  const { rerender } = render(<ControlledAnalyticsScreen {...props} mounted />);
+
+  await screen.findByText(/62%/);
+  fireEvent.click(screen.getByRole('button', { name: 'Звіт' }));
+  expect(screen.getAllByText(/звіт за запитом/i)).toHaveLength(1);
+
+  // "Перемикаємось на інший екран" -- AnalyticsScreen розмонтовується.
+  rerender(<ControlledAnalyticsScreen {...baseProps()} mounted={false} />);
+  expect(screen.queryByText(/звіт за запитом/i)).toBeNull();
+
+  // "Повертаємось на Аналітику" -- новий екземпляр AnalyticsScreen, але
+  // reportEntries приходить від того самого зовнішнього власника (не скинутий).
+  rerender(<ControlledAnalyticsScreen {...baseProps()} mounted />);
+  await screen.findByText(/62%/);
+  expect(screen.getAllByText(/звіт за запитом/i)).toHaveLength(1);
+});
+
 
 test('вимога 17: третя зона ("звіти") -- чесний порожній стан, без вигаданих записів', async () => {
   const props = baseProps();

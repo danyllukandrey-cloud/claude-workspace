@@ -33,7 +33,7 @@
 // "Звіт" поруч з "Архів" — теж окреме ("звіт за запитом", задача 18) —
 // зараз просто текст-заглушка при кліку, логіку опише Андрій пізніше.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Banner, Button, Spinner } from '../../shared/ui';
 
 export type AnalyticsTrend = 'growing' | 'shrinking' | null;
@@ -67,6 +67,17 @@ export interface AnalyticsScreenProps {
    * ArchiveScreen (SCR-07) лишається в модулі life-area-card без змін.
    */
   onOpenArchive: () => void;
+  /**
+   * Живе тестування (Андрій): "Звіти зникають при перемиканні" -- раніше
+   * reportEntries жив у локальному useState цього компонента, тож
+   * розмонтування при переході на інший напрямок (App.tsx умовно рендерить
+   * AnalyticsScreen лише коли direction==='analytics') скидало список.
+   * Контрольований пропс -- те саме, що App.tsx уже тримає для screen/
+   * direction -- переживає перемикання екранів.
+   */
+  reportEntries: string[];
+  /** Додає новий запис-заглушку в reportEntries (App.tsx тримає сам стан). */
+  onAddReportEntry: () => void;
 }
 
 function formatPercent(value: number | null): string | null {
@@ -94,16 +105,28 @@ function progressBarFillClass(share: number): string {
   return 'bg-bad';
 }
 
-export function AnalyticsScreen({ loadAnalytics, onOpenArchive }: AnalyticsScreenProps): JSX.Element {
+export function AnalyticsScreen({
+  loadAnalytics,
+  onOpenArchive,
+  reportEntries,
+  onAddReportEntry,
+}: AnalyticsScreenProps): JSX.Element {
   const [loading, setLoading] = useState(true);
   const [state, setState] = useState<AnalyticsScreenState | null>(null);
-  // Живе тестування (Андрій): "Звіт" -- заглушка, але тепер КОЖЕН клік
-  // додає НОВИЙ запис у стрічку Зони 3 (не замінює/не ховає попередній) --
-  // перший клік показує перше повідомлення, другий клік додає наступне
-  // поруч із першим, з'єднані лінією. Досі жодної реальної логіки/даних --
-  // лише той самий текст-заглушка, повторений стільки разів, скільки
-  // натиснуто (Андрій опише реальну логіку пізніше).
-  const [reportEntries, setReportEntries] = useState<string[]>([]);
+  const reportsScrollRef = useRef<HTMLDivElement>(null);
+  const previousReportCountRef = useRef(reportEntries.length);
+
+  // Живе тестування (Андрій): нові записи додаються ЗВЕРХУ (найновіший
+  // першим) -- побачивши новий запис, погляд має "скролитись угору", щоб
+  // його знайти, а не шукати внизу довгого списку. Скролимо контейнер до
+  // top=0 щоразу, коли довжина списку РЕАЛЬНО зросла (не при першому
+  // монтуванні з уже наявними записами -- лише на фактичний новий клік).
+  useEffect(() => {
+    if (reportEntries.length > previousReportCountRef.current && reportsScrollRef.current) {
+      reportsScrollRef.current.scrollTop = 0;
+    }
+    previousReportCountRef.current = reportEntries.length;
+  }, [reportEntries.length]);
 
   useEffect(() => {
     loadAnalytics().then((result) => {
@@ -227,10 +250,14 @@ export function AnalyticsScreen({ loadAnalytics, onOpenArchive }: AnalyticsScree
           реальний формат запису "звіту" (що це, звідки дані) Андрій ще не
           описав, тож поки що кожен запис -- та сама текст-заглушка,
           додана кліком по "Звіт" нижче (не фейкові дані, а справжній,
-          хай і поки штучний, ввід користувача). */}
+          хай і поки штучний, ввід користувача). Живе тестування: НАЙНОВІШИЙ
+          запис -- ПЕРШИЙ у списку (зверху), лінія хронології йде вниз до
+          старіших -- при появі нового запису погляд "скролиться вгору"
+          (reportsScrollRef ефект вище), щоб новий запис одразу було видно
+          без ручного скролу. */}
       <div className="flex min-h-0 flex-1 flex-col gap-2">
         <h2 className={ZONE_LABEL_CLASS}>Звіти</h2>
-        <div className="min-h-0 flex-1 overflow-y-auto pb-16">
+        <div ref={reportsScrollRef} className="min-h-0 flex-1 overflow-y-auto pb-16">
           {reportEntries.length === 0 ? (
             <p className="px-2 py-8 text-center text-sm text-ink-muted">Звітів поки немає</p>
           ) : (
@@ -242,9 +269,8 @@ export function AnalyticsScreen({ loadAnalytics, onOpenArchive }: AnalyticsScree
                     <div className="relative flex w-2.5 shrink-0 flex-col items-center">
                       <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-good" />
                       {/* Лінія хронології -- "світло-зелена", від крапки цього
-                          запису вниз до крапки наступного (Андрій: "точка з
-                          ліва... а в низ лінія до наступної точки"). Останній
-                          запис лінії вниз не має -- йому нема з чим з'єднуватись. */}
+                          запису вниз до крапки наступного, старішого. Останній
+                          (найстаріший видимий) запис лінії вниз не має. */}
                       {!isLast && <span className="absolute top-4 bottom-0 w-px bg-good/40" />}
                     </div>
                     <p className="pt-1 text-sm text-ink">{text}</p>
@@ -269,10 +295,7 @@ export function AnalyticsScreen({ loadAnalytics, onOpenArchive }: AnalyticsScree
           нижче видимої області. */}
       <div className="absolute bottom-4 right-4 z-20 flex items-center gap-2">
         <Button label="Архів" onClick={onOpenArchive} />
-        <Button
-          label="Звіт"
-          onClick={() => setReportEntries((prev) => [...prev, 'звіт за запитом'])}
-        />
+        <Button label="Звіт" onClick={onAddReportEntry} />
       </div>
     </div>
   );

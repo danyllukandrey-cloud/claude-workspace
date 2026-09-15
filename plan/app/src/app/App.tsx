@@ -229,6 +229,13 @@ export function App({
   // зону при вході. Дефолт контентної зони -- Картки (найбільш змістовний
   // напрямок за замовчуванням).
   const [direction, setDirection] = useState<Direction>('cards');
+  // Живе тестування (Андрій): "Звіти зникають при перемиканні" -- цей стан
+  // раніше жив усередині AnalyticsScreen (useState), тож розмонтування при
+  // переході на інший напрямок його стирало. Піднято сюди -- та сама
+  // причина, що screen/direction тримаються в App, а не в конкретному
+  // екрані: пережити перемикання екранів. Найновіший запис -- ПЕРШИЙ
+  // (AnalyticsScreen.tsx показує його зверху, скролить туди при появі).
+  const [analyticsReportEntries, setAnalyticsReportEntries] = useState<string[]>([]);
   // D-123 (живе тестування): меню налаштувань у верхньому барі -- три
   // напрямки (agent-rules/agent-account/agent-log), що ISS-117 називав
   // "другорядними", переїхали з рівного нижнього нав-меню сюди, під значок
@@ -447,6 +454,8 @@ export function App({
                 // Картки.
                 setScreen({ screen: 'archive', from: 'analytics' });
               }}
+              reportEntries={analyticsReportEntries}
+              onAddReportEntry={() => setAnalyticsReportEntries((prev) => ['звіт за запитом', ...prev])}
             />
           )}
 
