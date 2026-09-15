@@ -106,7 +106,12 @@ export async function updateCard(
 
   if (input.markFilled) {
     await insertLifecycleEvent(db, { id: crypto.randomUUID(), cardId: input.cardId, transition: 'filled' });
-    if (recordAction) {
+    // Лог дій (кінець-сесії ревю виявив): без цієї перевірки повторний
+    // markFilled:true на вже заповненій картці (UI дозволяє знову відкрити
+    // опис і ще раз натиснути "заповнено") писав би оманливий повторний
+    // рядок "Заповнено опис картки" -- реального переходу тут не було,
+    // current.description вже був непорожнім ДО цього виклику.
+    if (recordAction && !current.description) {
       await recordAction(db, { ownerUserId: input.ownerUserId, action: `Заповнено опис картки «${updated.name}»` });
     }
   }
