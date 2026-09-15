@@ -725,15 +725,24 @@ interface StructureDto {
 interface LayoutPositionDto {
   cardId: string;
   /**
-   * `null` -- активна позиція БЕЗ клітинки: картка лежить у треї нерозкладених
-   * (AC-11b після скидання, AC-17 після відновлення з архіву). Колонка
-   * стала nullable міграцією 06 (рев'ю 2026-09-11), тож сюди реально приходить
-   * JSON-null -- трактувати його як число означало б показати картку в
-   * клітинці 0.
+   * D-131-наступне рішення (Андрій, чат, 2026-09-15): вільне полотно замість
+   * фіксованої сітки клітинок -- `x`/`y` відсоток канви (0-100). Обидва
+   * `null` разом -- активна позиція БЕЗ координат: картка лежить у купці
+   * нерозкладених (AC-11b після зміни режиму без авто-розкладу для цього
+   * режиму, AC-17 після відновлення з архіву).
    */
-  cellIndex: number | null;
+  x: number | null;
+  y: number | null;
   status: 'active' | 'closed';
   positionUpdatedAt: string;
+}
+
+interface ConnectionDto {
+  id: string;
+  cardIdA: string;
+  cardIdB: string;
+  directed: boolean;
+  createdAt: string;
 }
 
 interface LayoutPositionPageDto {
@@ -756,40 +765,6 @@ async function fetchActiveLayoutPositions(): Promise<LayoutPositionDto[]> {
   return page.items;
 }
 
-/**
- * Останній відомий клієнту спосіб розкладки (з найсвіжішого GET /structure) --
- * потрібен, щоб ВІДРІЗНИТИ "PATCH справді перемкнув режим" від "PATCH зберіг
- * лише декларацію". Сервер (app/update-structure.ts) скидає позиції рівно за
- * цією ж умовою: `layoutModeChanged` -- умова нижче її дзеркалить, а не
- * вгадує. Плоска модель (вимоги 14/15) прибрала колишню окрему
- * logicVariant-гілку -- перемикання між колишніми підвидами тепер звичайна
- * зміна layoutMode, той самий шлях.
- *
- * `null` -- клієнт ще не бачив Структури (екран Декларації не відкривався), тож
- * і зберегти з нього нічого не міг: банер у такому разі не показуємо, бо
- * порівнювати ні з чим (хибний банер гірший за відсутній).
- */
-let lastKnownLayoutChoice: { layoutMode: LayoutMode } | null = null;
-
-/**
- * Клієнтський прапорець "щойно скинуто розкладку" (AC-11b).
- *
- * Review 2026-09-11 (MUST-FIX 3): тут стояв хардкод `justReset: false` із
- * коментарем "поки сервер не почне позначати" -- тобто банер "Розклади заново"
- * не показувався НІКОЛИ, попри те, що сервер реально знімає клітинку з кожної
- * позиції. Окремого поля в контракті (openapi.yaml) під цей факт немає й не
- * потрібно: скидання -- наслідок дії, яку зробив САМ цей клієнт, тож він її і
- * пам'ятає. Прапорець ОДНОРАЗОВИЙ: перше ж відкриття Схеми його з'їдає, інакше
- * банер висів би на кожному наступному заході.
- */
-let layoutJustReset = false;
-
-function consumeLayoutJustReset(): boolean {
-  const justReset = layoutJustReset;
-  layoutJustReset = false;
-  return justReset;
-}
-
 /** GET /api/v1/structure -- декларація (DeclarationScreen.loadStructure). Живе тестування (Андрій): режим розкладки (layoutMode) і "чи є що скинути" (hasArrangedCards) переїхали цілком на LayoutBoard -- цей запит більше НЕ тягне активні позиції, вони йому не потрібні. */
 async function loadStructure(): Promise<DeclarationScreenState> {
   const response = await fetch('/api/v1/structure', { headers: authHeaders() });
@@ -800,16 +775,7 @@ async function loadStructure(): Promise<DeclarationScreenState> {
   }
 
   const structure = (await response.json()) as StructureDto;
-  // Бухгалтерія lastKnownLayoutChoice лишається тут же -- будь-який екран, що
-  // читає Структуру, тримає її свіжою (той самий виклик, що loadLayout нижче).
-  rememberLayoutChoice(structure);
-
   return { declaration: structure.declaration };
-}
-
-/** Єдине місце, де запам'ятовується спосіб розкладки з відповіді сервера. */
-function rememberLayoutChoice(structure: StructureDto): void {
-  lastKnownLayoutChoice = { layoutMode: structure.layoutMode };
 }
 
 /**
@@ -833,109 +799,116 @@ async function onSaveDeclaration(input: { declaration?: string; layoutMode?: Lay
     throw new AppError(body?.code ?? 'structure.request_failed', body?.message ?? 'Не вдалося зберегти Структуру', response.status);
   }
 
-  // AC-11b: та сама умова, за якою сервер скидає позиції
-  // (app/update-structure.ts). `input.layoutMode !== undefined` -- ОБОВ'ЯЗКОВА
-  // частина умови тепер, коли виклик буває декларація-only (layoutMode
-  // взагалі не переданий): без цієї перевірки `undefined !== previous.layoutMode`
-  // був би завжди true, і кожне збереження самої декларації хибно виставляло б
-  // прапорець reset. Сам прапорець ставиться ЛИШЕ після успішної відповіді --
-  // збій PATCH нічого на сервері не скинув, тож банер був би брехнею.
-  const previous = lastKnownLayoutChoice;
-  if (input.layoutMode !== undefined && previous !== null && input.layoutMode !== previous.layoutMode) {
-    layoutJustReset = true;
+  await response.json().catch(() => null);
+}
+
+/** GET /api/v1/structure/connections -- усі зв'язки Структури (вимоги 4/5). */
+async function fetchConnections(): Promise<ConnectionDto[]> {
+  const response = await fetch('/api/v1/structure/connections', { headers: authHeaders() });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    throw new AppError(body?.code ?? 'structure.request_failed', body?.message ?? "Не вдалося завантажити зв'язки", response.status);
   }
 
-  const saved = (await response.json().catch(() => null)) as StructureDto | null;
-  if (saved) {
-    rememberLayoutChoice(saved);
-  } else if (input.layoutMode !== undefined) {
-    // Fallback лише коли справді знаємо НОВЕ значення -- декларація-only
-    // виклик з нерозпарсеною відповіддю не має затирати lastKnownLayoutChoice
-    // значенням `undefined` (зламало б наступне порівняння вище).
-    lastKnownLayoutChoice = { layoutMode: input.layoutMode };
-  }
+  return (await response.json()) as ConnectionDto[];
 }
 
 /**
- * GET /api/v1/structure/layout -- схема розкладки (LayoutBoard.loadLayout).
+ * GET /api/v1/structure/layout (+ /connections, + /cards) -- схема
+ * розкладки (LayoutBoard.loadLayout).
  *
  * `cardTitle` -- join із GET /api/v1/cards (openapi.yaml Structure API не
  * несе назв карток, sad.md §5 "картки показані лише назвами" -- назва
  * лишається за life-area-card). Картки без активної позиції (не в
- * `/structure/layout`) потрапляють у нерозкладений трей (`cellIndex: null`),
- * `baseOrder` -- порядок їх повернення GET /cards.
- *
- * `cellCount` НЕ несе жодний ендпоінт контракту (openapi.yaml) -- відома
- * прогалина (sad.md §11 "щільність поля розкладки" закрито лише на рівні §5.2
- * тексту, без окремого API-поля): тут це найбільший зайнятий індекс + запас
- * вільних клітинок (той самий текстовий принцип, що sad.md §5.2).
- *
- * `justReset` (AC-11b) -- клієнтський одноразовий прапорець, див.
- * layoutJustReset вище. Окремого поля в контракті він не потребує: скидання --
- * наслідок PATCH, який зробив цей самий клієнт.
+ * `/structure/layout`) чи з x/y NULL потрапляють у купку нерозкладених
+ * (D-131-наступне рішення: вільне полотно, `x`/`y` відсоток канви замість
+ * cellIndex).
  *
  * `layoutMode` (вимога 15, "Готово до розкладання") -- окремий GET
  * /api/v1/structure поряд із позиціями/картками: LayoutBoard сам не знає
  * поточний режим (він живе на Структурі, не на розкладці), а йому треба
- * знати САМЕ 'staging', щоб зробити трей нерозкладених явним стійким станом,
- * а не лише одноразовим наслідком reset (justReset). Той самий виклик заразом
- * оновлює lastKnownLayoutChoice (rememberLayoutChoice) -- джерело завжди одне
- * (GET /structure), не власна копія стану.
+ * знати САМЕ 'staging', щоб зробити купку нерозкладених явним стійким
+ * станом.
  */
 async function loadLayout(): Promise<LayoutBoardState> {
-  const [structureResponse, positions, cards] = await Promise.all([
+  const [structureResponse, positions, connections, cards] = await Promise.all([
     fetch('/api/v1/structure', { headers: authHeaders() }),
     fetchActiveLayoutPositions(),
+    fetchConnections(),
     loadCards(),
   ]);
 
-  // Ця Структура -- лише допоміжна підказка (staging-банер), не критичні дані
-  // сітки/позицій: збій цього одного запиту навмисно НЕ валить весь екран
-  // Схеми (той самий принцип, що AC-07's history-запит у loadAnalytics нижче)
-  // -- просто немає підказки цього разу, `layoutMode` лишається null.
+  // Ця Структура -- лише допоміжна підказка (staging-підказка), не критичні
+  // дані канви/позицій: збій цього одного запиту навмисно НЕ валить весь
+  // екран Схеми (той самий принцип, що AC-07's history-запит у loadAnalytics
+  // нижче) -- просто немає підказки цього разу, `layoutMode` лишається null.
   let layoutMode: LayoutMode = null;
   if (structureResponse.ok) {
     const structure = (await structureResponse.json()) as StructureDto;
-    rememberLayoutChoice(structure);
     layoutMode = structure.layoutMode;
   }
 
   const positionByCardId = new Map(positions.map((position) => [position.cardId, position]));
-  // Позиції без клітинки (трей) у розмір сітки не входять -- інакше NULL
-  // коерціювався б у 0 і міг би штучно підтягнути сітку до однієї клітинки.
-  const maxCellIndex = positions.reduce(
-    (max, position) => (position.cellIndex === null ? max : Math.max(max, position.cellIndex)),
-    -1,
-  );
-  const FREE_CELL_BUFFER = 6;
 
   return {
-    cellCount: maxCellIndex + 1 + FREE_CELL_BUFFER,
-    justReset: consumeLayoutJustReset(),
     layoutMode,
-    cards: cards.map((card, index) => {
+    cards: cards.map((card) => {
       const position = positionByCardId.get(card.id);
       return {
         cardId: card.id,
         cardTitle: card.name,
-        cellIndex: position?.cellIndex ?? null,
-        baseOrder: index,
+        x: position?.x ?? null,
+        y: position?.y ?? null,
       };
     }),
+    connections: connections.map((connection) => ({
+      id: connection.id,
+      cardIdA: connection.cardIdA,
+      cardIdB: connection.cardIdB,
+      directed: connection.directed,
+    })),
   };
 }
 
 /** PUT /api/v1/structure/layout/{cardId} -- переміщення картки (LayoutBoard.onMoveCard, AC-08). */
-async function onMoveCard(input: { cardId: string; cellIndex: number }): Promise<void> {
+async function onMoveCard(input: { cardId: string; x: number; y: number }): Promise<void> {
   const response = await fetch(`/api/v1/structure/layout/${input.cardId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify({ cellIndex: input.cellIndex, positionUpdatedAt: now().toISOString() }),
+    body: JSON.stringify({ x: input.x, y: input.y, positionUpdatedAt: now().toISOString() }),
   });
 
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
     throw new AppError(body?.code ?? 'structure.move_failed', body?.message ?? 'Не вдалося зберегти позицію', response.status);
+  }
+}
+
+/** POST /api/v1/structure/connections -- створити лінію/стрілку (LayoutBoard.onCreateConnection, вимоги 4/5). */
+async function onCreateConnection(input: { cardIdA: string; cardIdB: string; directed: boolean }): Promise<void> {
+  const response = await fetch('/api/v1/structure/connections', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    throw new AppError(body?.code ?? 'structure.connection_failed', body?.message ?? "Не вдалося створити зв'язок", response.status);
+  }
+}
+
+/** DELETE /api/v1/structure/connections/{connectionId} -- розірвати зв'язок (LayoutBoard.onDeleteConnection, вимога 4). */
+async function onDeleteConnection(input: { connectionId: string }): Promise<void> {
+  const response = await fetch(`/api/v1/structure/connections/${input.connectionId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    throw new AppError(body?.code ?? 'structure.connection_failed', body?.message ?? "Не вдалося видалити зв'язок", response.status);
   }
 }
 
@@ -1038,7 +1011,6 @@ async function loadAnalytics(): Promise<AnalyticsScreenState> {
   }
 
   const structure = (await structureResponse.json()) as StructureDto;
-  rememberLayoutChoice(structure);
   const positionByCardId = new Map(positions.map((position) => [position.cardId, position]));
 
   const cardDetails = await Promise.all(
@@ -1051,10 +1023,17 @@ async function loadAnalytics(): Promise<AnalyticsScreenState> {
   );
   const progressByCardId = new Map(cardDetails.map((detail) => [detail.id, detail.aggregateProgress]));
 
+  // structure/domain/aggregate.ts's `cellIndex`-named fields below are
+  // reused as-is (D-131-наступне рішення, Андрій у чаті, 2026-09-15) -- вони
+  // завжди були лише "число, менше = вищий пріоритет", ніколи не залежали
+  // від фіксованої сітки семантично. `x` (відсоток ширини канви, лівіше =
+  // раніше в порядку) грає РІВНО ту саму роль, що cellIndex грав: формула
+  // (aggregate.ts) лишається ОДНА (D-19), лише вхідне число тепер float
+  // 0-100 замість цілого номера клітинки.
   const { average, excludedCount } = computeStructureAggregate(
     cards.map((card) => ({
       cardId: card.id,
-      cellIndex: positionByCardId.get(card.id)?.cellIndex ?? -1,
+      cellIndex: positionByCardId.get(card.id)?.x ?? -1,
       progress: progressByCardId.get(card.id) ?? null,
     })),
   );
@@ -1083,7 +1062,9 @@ async function loadAnalytics(): Promise<AnalyticsScreenState> {
   // картка реально переїхала (рев'ю 2026-09-11, Частина 1/2: "поточний і минулий
   // gap рахуються в різних шкалах" -- тут навпаки, ОДНА лінійка на обидва числа
   // і на показаний розрив).
-  const scale = logicLayoutScale([...positions, ...(pastPositions ?? [])]);
+  const scale = logicLayoutScale(
+    [...positions, ...(pastPositions ?? [])].map((position) => ({ cellIndex: position.x })),
+  );
 
   const gapByCardId = new Map<string, number>();
   if (hasPositionPriorityScheme) {
@@ -1092,9 +1073,9 @@ async function loadAnalytics(): Promise<AnalyticsScreenState> {
         .filter((card) => progressByCardId.get(card.id) !== null && progressByCardId.get(card.id) !== undefined)
         .map((card) => ({
           cardId: card.id,
-          // Картка без активної позиції (чи в треї) -- cellIndex null: розриву
-          // не отримує взагалі (aggregate.ts), а не розрив "як для клітинки 0".
-          cellIndex: positionByCardId.get(card.id)?.cellIndex ?? null,
+          // Картка без активної позиції (чи в купці нерозкладених) -- x null:
+          // розриву не отримує взагалі (aggregate.ts), а не розрив "як для x=0".
+          cellIndex: positionByCardId.get(card.id)?.x ?? null,
           progress: progressByCardId.get(card.id) as number,
         })),
       scale,
@@ -1123,9 +1104,9 @@ async function loadAnalytics(): Promise<AnalyticsScreenState> {
       // а не вигадана стрілка.
       if (
         !past ||
-        past.cellIndex === null ||
+        past.x === null ||
         !current ||
-        current.cellIndex === null ||
+        current.x === null ||
         progress === null ||
         progress === undefined
       ) {
@@ -1137,9 +1118,9 @@ async function loadAnalytics(): Promise<AnalyticsScreenState> {
         toAnalyticsTrend(
           computeCardGapTrend(
             {
-              pastCellIndex: past.cellIndex,
+              pastCellIndex: past.x,
               pastObservedAt: past.positionUpdatedAt,
-              currentCellIndex: current.cellIndex,
+              currentCellIndex: current.x,
               currentObservedAt: now().toISOString(),
               progress,
             },
@@ -1655,6 +1636,8 @@ createRoot(root).render(
       onSaveDeclaration={onSaveDeclaration}
       loadLayout={loadLayout}
       onMoveCard={onMoveCard}
+      onCreateConnection={onCreateConnection}
+      onDeleteConnection={onDeleteConnection}
       loadAnalytics={loadAnalytics}
       loadCloseCardOptions={loadCloseCardOptions}
       onCloseCard={onCloseCard}

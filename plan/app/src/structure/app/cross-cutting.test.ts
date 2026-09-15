@@ -108,7 +108,8 @@ function makeSharedFakeDb() {
     id: string;
     structure_id: string;
     card_id: string;
-    cell_index: number;
+    position_x: number | null;
+    position_y: number | null;
     status: 'active' | 'closed';
     position_updated_at: Date;
     created_at: Date;
@@ -117,7 +118,8 @@ function makeSharedFakeDb() {
       id: 'position-1',
       structure_id: STRUCTURE_ID,
       card_id: CARD_ID,
-      cell_index: 0,
+      position_x: 0,
+      position_y: 0,
       status: 'active',
       position_updated_at: new Date('2026-01-01T00:00:00Z'),
       created_at: new Date('2026-01-01T00:00:00Z'),
@@ -171,13 +173,14 @@ function makeSharedFakeDb() {
       };
     }
     if (sql.startsWith('UPDATE STRUCTURE_LAYOUT_POSITION')) {
-      const [cellIndex, positionUpdatedAt, cardId, ownerUserId] = params as [number, string, string, string];
+      const [x, y, positionUpdatedAt, cardId, ownerUserId] = params as [number | null, number | null, string, string, string];
       const ownedStructureIds = structures.filter((s) => s.owner_user_id === ownerUserId).map((s) => s.id);
       const position = positions.find(
         (p) => p.card_id === cardId && p.status === 'active' && ownedStructureIds.includes(p.structure_id)
       );
       if (!position) return { rows: [] };
-      position.cell_index = cellIndex;
+      position.position_x = x;
+      position.position_y = y;
       position.position_updated_at = new Date(positionUpdatedAt);
       return { rows: [position] };
     }
@@ -236,12 +239,15 @@ describe('T25 cross-cutting -- AC-05: correcting a life-area-card entry immediat
     const getCardProgress = makeGetCardProgress(db);
 
     // Той самий крок, що main.tsx's loadAnalytics() робить у продакшені: читає
-    // активну позицію картки (для cellIndex) + її прогрес наживо, будує вхід
-    // computeStructureAggregate -- жодного окремо збереженого числа.
+    // активну позицію картки (x, D-131-наступне рішення -- вільне полотно) +
+    // її прогрес наживо, будує вхід computeStructureAggregate -- жодного
+    // окремо збереженого числа. `cellIndex`-поле нижче лишається під старою
+    // назвою (aggregate.ts, D-19) -- воно завжди було просто "число, менше =
+    // вищий пріоритет", x грає ту саму роль.
     async function aggregateNow() {
       const progress = (await getCardProgress(CARD_ID)).progress;
       const position = positions.find((p) => p.card_id === CARD_ID);
-      return computeStructureAggregate([{ cardId: CARD_ID, cellIndex: position?.cell_index ?? -1, progress }]);
+      return computeStructureAggregate([{ cardId: CARD_ID, cellIndex: position?.position_x ?? -1, progress }]);
     }
 
     const before = await aggregateNow();
@@ -273,21 +279,23 @@ describe('T25 cross-cutting -- offline move syncs and resolves conflict per ADR-
     const deviceBWrite = moveCard(db, {
       ownerUserId: OWNER,
       cardId: CARD_ID,
-      cellIndex: 3,
+      x: 3,
+      y: 3,
       positionUpdatedAt: '2026-01-03T11:00:00Z', // пізніший факт, надійшов першим
     });
     const deviceAResult = await deviceBWrite;
-    expect(deviceAResult.cellIndex).toBe(3);
+    expect(deviceAResult.x).toBe(3);
 
     const staleResult = await moveCard(db, {
       ownerUserId: OWNER,
       cardId: CARD_ID,
-      cellIndex: 7,
+      x: 7,
+      y: 7,
       positionUpdatedAt: '2026-01-03T10:00:00Z', // раніший факт, надійшов другим (мережева затримка)
     });
 
-    // Переможець -- пізніший факт (B, cellIndex 3), не порядок надходження (A, cellIndex 7).
-    expect(staleResult.cellIndex).toBe(3);
-    expect(positions.find((p) => p.card_id === CARD_ID)?.cell_index).toBe(3);
+    // Переможець -- пізніший факт (B, x=3), не порядок надходження (A, x=7).
+    expect(staleResult.x).toBe(3);
+    expect(positions.find((p) => p.card_id === CARD_ID)?.position_x).toBe(3);
   });
 });

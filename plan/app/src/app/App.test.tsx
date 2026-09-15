@@ -94,8 +94,10 @@ function baseProps() {
     // прокидає їх без змін (той самий DI-стиль, що loadCards).
     loadStructure: vi.fn().mockResolvedValue({ declaration: null }),
     onSaveDeclaration: vi.fn().mockResolvedValue(undefined),
-    loadLayout: vi.fn().mockResolvedValue({ cellCount: 0, justReset: false, cards: [] }),
+    loadLayout: vi.fn().mockResolvedValue({ layoutMode: null, cards: [], connections: [] }),
     onMoveCard: vi.fn().mockResolvedValue(undefined),
+    onCreateConnection: vi.fn().mockResolvedValue(undefined),
+    onDeleteConnection: vi.fn().mockResolvedValue(undefined),
     loadAnalytics: vi.fn().mockResolvedValue({ layoutMode: null, average: null, excludedCount: 0, trendAvailable: true, cards: [] }),
     // Review-fix 2026-09-11 (verify): LayoutBoard.loadCloseCardOptions/onCloseCard
     // уже написані й протестовані (SCR-04), main.tsx їх уже експортує -- але App
@@ -623,9 +625,9 @@ test('AC-12 (review-fix 2026-09-11): на Схемі з loadCloseCardOptions/onC
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([]);
   props.loadLayout.mockResolvedValue({
-    cellCount: 4,
-    justReset: false,
-    cards: [{ cardId: 'card-1', cardTitle: 'Спорт', cellIndex: 0, baseOrder: 0 }],
+    layoutMode: null,
+    cards: [{ cardId: 'card-1', cardTitle: 'Спорт', x: 20, y: 30 }],
+    connections: [],
   });
 
   render(<App {...props} />);

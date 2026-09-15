@@ -70,6 +70,10 @@ const TO_PROMOTE = [
   // (D-83) стають топ-рівневими режимами, додається новий 'staging' -- layout_mode
   // + logic_variant (два поля) зливаються в ОДИН layout_mode із 5 значеннями.
   { slug: 'structure', staged: 'backend/07_flatten_layout_mode', name: 'flatten-layout-mode' },
+  // Андрій (чат, 2026-09-15): "Прибрати повністю оті клітинки" -- Схема стає
+  // вільним полотном (x/y відсотки) зі зв'язками замість фіксованої сітки.
+  { slug: 'structure', staged: 'backend/08_add_position_xy', name: 'add-position-xy' },
+  { slug: 'structure', staged: 'backend/09_create_structure_connection', name: 'create-structure-connection' },
 ];
 
 function readReadme() {

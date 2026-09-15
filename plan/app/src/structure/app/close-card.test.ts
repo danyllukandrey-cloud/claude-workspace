@@ -54,12 +54,13 @@ function structureRow() {
   };
 }
 
-function positionRow(cardId: string, cellIndex: number) {
+function positionRow(cardId: string, x: number) {
   return {
     id: `position-${cardId}`,
     structure_id: STRUCTURE_ID,
     card_id: cardId,
-    cell_index: cellIndex,
+    position_x: x,
+    position_y: x,
     status: 'active' as const,
     position_updated_at: new Date('2026-01-02T00:00:00Z'),
     created_at: new Date('2026-01-01T00:00:00Z'),

@@ -45,7 +45,8 @@ function positionRow(
     id: string;
     structure_id: string;
     card_id: string;
-    cell_index: number;
+    position_x: number | null;
+    position_y: number | null;
     status: 'active' | 'closed';
     position_updated_at: Date;
     created_at: Date;
@@ -55,7 +56,8 @@ function positionRow(
     id: overrides.id ?? 'position-1',
     structure_id: overrides.structure_id ?? STRUCTURE_ID,
     card_id: overrides.card_id ?? 'card-1',
-    cell_index: overrides.cell_index ?? 0,
+    position_x: overrides.position_x ?? 0,
+    position_y: overrides.position_y ?? 0,
     status: overrides.status ?? 'active',
     position_updated_at: overrides.position_updated_at ?? new Date('2026-01-01T00:00:00Z'),
     created_at: overrides.created_at ?? new Date('2026-01-01T00:00:00Z'),
@@ -80,16 +82,16 @@ describe('listLayoutPositions handler', () => {
   // components.schemas.LayoutPosition (camelCase, positionUpdatedAt як ISO-рядок).
   it('returns every active position as a LayoutPositionPage matching the contract shape', async () => {
     const db = fakeListLayoutDb([
-      positionRow({ card_id: 'card-1', cell_index: 0 }),
-      positionRow({ id: 'position-2', card_id: 'card-2', cell_index: 1 }),
+      positionRow({ card_id: 'card-1', position_x: 20, position_y: 30 }),
+      positionRow({ id: 'position-2', card_id: 'card-2', position_x: 60, position_y: 70 }),
     ]);
 
     const page = await listLayoutPositions(db, OWNER, {});
 
     expect(page).toEqual({
       items: [
-        { cardId: 'card-1', cellIndex: 0, status: 'active', positionUpdatedAt: expect.any(String) },
-        { cardId: 'card-2', cellIndex: 1, status: 'active', positionUpdatedAt: expect.any(String) },
+        { cardId: 'card-1', x: 20, y: 30, status: 'active', positionUpdatedAt: expect.any(String) },
+        { cardId: 'card-2', x: 60, y: 70, status: 'active', positionUpdatedAt: expect.any(String) },
       ],
       has_next: false,
       has_prev: false,
@@ -101,9 +103,9 @@ describe('listLayoutPositions handler', () => {
   // сигналізують, що є ще, той самий контракт, що CardPage (card-handlers.ts).
   it('paginates with limit and reports has_next + next_cursor when more remain', async () => {
     const db = fakeListLayoutDb([
-      positionRow({ card_id: 'card-1', cell_index: 0 }),
-      positionRow({ id: 'position-2', card_id: 'card-2', cell_index: 1 }),
-      positionRow({ id: 'position-3', card_id: 'card-3', cell_index: 2 }),
+      positionRow({ card_id: 'card-1', position_x: 0, position_y: 0 }),
+      positionRow({ id: 'position-2', card_id: 'card-2', position_x: 10, position_y: 10 }),
+      positionRow({ id: 'position-3', card_id: 'card-3', position_x: 20, position_y: 20 }),
     ]);
 
     const page = await listLayoutPositions(db, OWNER, { limit: 1 });
@@ -118,9 +120,9 @@ describe('listLayoutPositions handler', () => {
   // `after` продовжує з наступного елемента за курсором -- не з початку.
   it('resumes after the given cursor instead of restarting from the top', async () => {
     const db = fakeListLayoutDb([
-      positionRow({ card_id: 'card-1', cell_index: 0 }),
-      positionRow({ id: 'position-2', card_id: 'card-2', cell_index: 1 }),
-      positionRow({ id: 'position-3', card_id: 'card-3', cell_index: 2 }),
+      positionRow({ card_id: 'card-1', position_x: 0, position_y: 0 }),
+      positionRow({ id: 'position-2', card_id: 'card-2', position_x: 10, position_y: 10 }),
+      positionRow({ id: 'position-3', card_id: 'card-3', position_x: 20, position_y: 20 }),
     ]);
 
     const firstPage = await listLayoutPositions(db, OWNER, { limit: 1 });
@@ -177,8 +179,8 @@ describe('getLayoutHistoryAsOf handler', () => {
   });
 
   // Happy path (AC-07) -- реконструює розкладку на минулий момент з Літопису,
-  // той самий "cell_index -> N" формат `detail`, що ../app/get-analytics.ts
-  // (T14) уже використовує для тренду розриву.
+  // той самий "pos_x -> N, pos_y -> M" формат `detail`, що ../app/move-card.ts's
+  // formatMovedDetail пише.
   it('reconstructs positions from the history log as of a valid past timestamp', async () => {
     const past = '2026-01-15T00:00:00Z';
     const db = fakeHistoryDb({
@@ -189,7 +191,7 @@ describe('getLayoutHistoryAsOf handler', () => {
           structure_id: STRUCTURE_ID,
           card_id: 'card-1',
           event_type: 'moved',
-          detail: 'cell_index -> 5',
+          detail: 'pos_x -> 55, pos_y -> 40, prev_x -> none, prev_y -> none',
           occurred_at: new Date('2026-01-10T00:00:00Z'),
         },
       ],
@@ -198,7 +200,7 @@ describe('getLayoutHistoryAsOf handler', () => {
     const page = await getLayoutHistoryAsOf(db, OWNER, past);
 
     expect(page.items).toEqual(
-      expect.arrayContaining([expect.objectContaining({ cardId: 'card-1', cellIndex: 5 })])
+      expect.arrayContaining([expect.objectContaining({ cardId: 'card-1', x: 55, y: 40 })])
     );
   });
 });
@@ -219,9 +221,10 @@ describe('getLayoutHistoryAsOf handler', () => {
 // - 404 structure.card_not_found -- та сама помилка й для неіснуючої, й для
 //   чужої картки (AC-03 non-disclosure) -- use-case кидає сам, порт пропускає
 //   як є, нічого не приховує й не додає.
-// - 409 structure.cell_occupied -- клітинка вже зайнята іншою активною
-//   карткою (AC-02/D-62) -- те саме, use-case кидає сам.
-// DoD: "Handler returns 200/404/409 exactly per contract" -- жодного іншого
+// D-131-наступне рішення: AC-02 (колізія клітинки, 409 structure.cell_occupied)
+// прибрана повністю -- вільне позиціювання не має колізії, лише клемп 0..100
+// (move-card.test.ts вже це покриває на рівні use-case).
+// DoD: "Handler returns 200/404 exactly per contract" -- жодного іншого
 // статусу порт не додає зверху.
 
 function fakeMoveDb(opts: {
@@ -229,7 +232,8 @@ function fakeMoveDb(opts: {
     id: string;
     structure_id: string;
     card_id: string;
-    cell_index: number;
+    position_x: number | null;
+    position_y: number | null;
     status: 'active' | 'closed';
     position_updated_at: Date;
     created_at: Date;
@@ -269,33 +273,37 @@ describe('moveCardPosition handler', () => {
   // контракту (camelCase, positionUpdatedAt як ISO-рядок), не сирий record
   // use-case-шару.
   it('returns 200 LayoutPosition DTO matching the contract shape', async () => {
-    const current = positionRow({ card_id: 'card-a', cell_index: 3, position_updated_at: new Date('2026-01-02T00:00:00Z') });
-    const moved = positionRow({ card_id: 'card-a', cell_index: 7, position_updated_at: new Date('2026-01-05T00:00:00Z') });
+    const current = positionRow({ card_id: 'card-a', position_x: 20, position_y: 30, position_updated_at: new Date('2026-01-02T00:00:00Z') });
+    const moved = positionRow({ card_id: 'card-a', position_x: 65, position_y: 80, position_updated_at: new Date('2026-01-05T00:00:00Z') });
     const db = fakeMoveDb({ activePositions: [current], moved });
 
     const dto = await moveCardPosition(db, OWNER, 'card-a', {
-      cellIndex: 7,
+      x: 65,
+      y: 80,
       positionUpdatedAt: '2026-01-05T00:00:00Z',
     });
 
     expect(dto).toEqual({
       cardId: 'card-a',
-      cellIndex: 7,
+      x: 65,
+      y: 80,
       status: 'active',
       positionUpdatedAt: expect.any(String),
     });
   });
 
-  // AC-02/D-62 -- клітинка вже зайнята ІНШОЮ активною карткою -- 409
-  // structure.cell_occupied, той самий код і статус, що use-case кидає.
-  it('rejects with 409 structure.cell_occupied when the target cell is already taken', async () => {
-    const mover = positionRow({ card_id: 'card-a', cell_index: 3, position_updated_at: new Date('2026-01-02T00:00:00Z') });
-    const occupant = positionRow({ card_id: 'card-b', cell_index: 7, position_updated_at: new Date('2026-01-02T00:00:00Z') });
-    const db = fakeMoveDb({ activePositions: [mover, occupant] });
+  // Дві картки на дуже близьких (навіть однакових) координатах -- НЕ помилка
+  // (D-131-наступне рішення прибрало AC-02 повністю, вимога 3 в чаті:
+  // "пересуватись вільно").
+  it('allows overlapping x/y with another active card -- no collision left to reject', async () => {
+    const mover = positionRow({ card_id: 'card-a', position_x: 20, position_y: 30, position_updated_at: new Date('2026-01-02T00:00:00Z') });
+    const occupant = positionRow({ card_id: 'card-b', position_x: 65, position_y: 80, position_updated_at: new Date('2026-01-02T00:00:00Z') });
+    const moved = positionRow({ card_id: 'card-a', position_x: 65, position_y: 80, position_updated_at: new Date('2026-01-05T00:00:00Z') });
+    const db = fakeMoveDb({ activePositions: [mover, occupant], moved });
 
     await expect(
-      moveCardPosition(db, OWNER, 'card-a', { cellIndex: 7, positionUpdatedAt: '2026-01-05T00:00:00Z' })
-    ).rejects.toMatchObject({ code: 'structure.cell_occupied', httpStatus: 409 });
+      moveCardPosition(db, OWNER, 'card-a', { x: 65, y: 80, positionUpdatedAt: '2026-01-05T00:00:00Z' })
+    ).resolves.toMatchObject({ x: 65, y: 80 });
   });
 
   // AC-03 (non-disclosure) -- картка без активної позиції власника (не
@@ -305,7 +313,8 @@ describe('moveCardPosition handler', () => {
     const db = fakeMoveDb({ activePositions: [] });
 
     const error = await moveCardPosition(db, OWNER, 'someone-elses-card', {
-      cellIndex: 1,
+      x: 10,
+      y: 10,
       positionUpdatedAt: '2026-01-05T00:00:00Z',
     }).catch((e: unknown) => e);
 
@@ -377,14 +386,15 @@ describe('closeCardPosition handler', () => {
   // status: 'closed', той самий контракт, що moveCardPosition/
   // listLayoutPositions вище (camelCase, positionUpdatedAt як ISO-рядок).
   it('closes the position and returns 200 LayoutPosition DTO with status "closed"', async () => {
-    const current = positionRow({ card_id: 'card-a', cell_index: 3 });
+    const current = positionRow({ card_id: 'card-a', position_x: 30, position_y: 40 });
     const db = fakeCloseDb({ activePositions: [current] });
 
     const dto = await closeCardPosition(db, OWNER, 'card-a');
 
     expect(dto).toEqual({
       cardId: 'card-a',
-      cellIndex: 3,
+      x: 30,
+      y: 40,
       status: 'closed',
       positionUpdatedAt: expect.any(String),
     });
@@ -394,7 +404,7 @@ describe('closeCardPosition handler', () => {
   // тіла transferMetricBlock жодного разу не викликається, закриття все
   // одно відбувається.
   it('defaults metricTransfers to empty and never calls transferMetricBlock when the body is omitted', async () => {
-    const current = positionRow({ card_id: 'card-a', cell_index: 3 });
+    const current = positionRow({ card_id: 'card-a', position_x: 30, position_y: 40 });
     const db = fakeCloseDb({ activePositions: [current] });
 
     const dto = await closeCardPosition(db, OWNER, 'card-a');
@@ -420,7 +430,7 @@ describe('closeCardPosition handler', () => {
   // ЦЬОГО файлу перемаповує на структурний код/статус із контракту, не
   // пропускає чужу помилку як є.
   it('maps an invalid metric-transfer target to 422 structure.metric_transfer_target_invalid, not the raw card.not_found', async () => {
-    const current = positionRow({ card_id: 'card-a', cell_index: 3 });
+    const current = positionRow({ card_id: 'card-a', position_x: 30, position_y: 40 });
     const db = fakeCloseDb({ activePositions: [current] });
     (transferMetricBlock as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
       new AppError('card.not_found', 'Картку чи блок-метрику не знайдено', 404)

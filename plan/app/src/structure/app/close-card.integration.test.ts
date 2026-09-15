@@ -54,7 +54,7 @@ describe('closeCard (integration) -- AC-12/AC-15 проти реальної Neo
       'T13 card',
     ]);
     await db.query(
-      'INSERT INTO structure_layout_position (id, structure_id, card_id, cell_index) VALUES ($1, $2, $3, 0)',
+      'INSERT INTO structure_layout_position (id, structure_id, card_id, position_x, position_y) VALUES ($1, $2, $3, 0, 0)',
       [crypto.randomUUID(), structureId, cardId]
     );
   });

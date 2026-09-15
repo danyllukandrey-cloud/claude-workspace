@@ -6,12 +6,15 @@
 // Два поля патчаться незалежно (AC-10): declaration завжди можна зберегти
 // саму по собі, без побічних ефектів на розкладку.
 //
-// Побічна дія (AC-11b): layoutMode -> НОВЕ значення (будь-яке з 5 -- вимоги
-// 14/15, плоска модель) скидає кожну активну позицію в базовий (фіксований)
-// порядок (domain/layout.ts switchLayoutMode). Той самий запит, що не змінює
-// layoutMode -- жодного reset-запиту. Реальна атомарність (BEGIN/COMMIT
-// навколо обох кроків) -- composition root (T15, ADR-0006 withTransaction);
-// тут лише послідовність кроків use-case-у.
+// Побічна дія (AC-11b, D-131-наступне рішення): layoutMode -> НОВЕ значення
+// (будь-яке з 5) запускає авто-розклад нового режиму (app/apply-layout-mode.ts
+// computeAutoLayout) -- реальні координати x/y (+ за потреби зв'язки), НЕ
+// скидання в трей, як було раніше (switchLayoutMode прибраний повністю,
+// Андрій у чаті: "Кожен з варіантів конфігурації потрібно просто розташувати
+// за логікою"). Той самий запит, що не змінює layoutMode -- жодного
+// перерахунку. Реальна атомарність (BEGIN/COMMIT навколо обох кроків) --
+// composition root (T15, ADR-0006 withTransaction); тут лише послідовність
+// кроків use-case-у.
 //
 // Плоска модель прибрала колишній logicVariant і разом з ним обидва
 // інваріанти AC-16/AC-16b (logicVariant лише в 'logic', підвид перемикають
@@ -26,14 +29,9 @@
 // DI (правило залежностей, ADR-0004): db приходить ззовні, use-case сам
 // з'єднання не створює.
 
-import { switchLayoutMode } from '../domain/layout';
 import type { LayoutMode } from '../domain/layout';
-import {
-  findStructureByOwner,
-  updateStructure as updateStructureRow,
-  listActiveLayoutPositionsByOwner,
-  updateLayoutPositionCell,
-} from '../infra/postgres-repo';
+import { applyLayoutMode } from './apply-layout-mode';
+import { findStructureByOwner, updateStructure as updateStructureRow } from '../infra/postgres-repo';
 import type { StructureRecord, Db } from '../infra/postgres-repo';
 import { AppError } from '../../shared/errors';
 
@@ -69,33 +67,14 @@ export async function updateStructure(db: Db, input: UpdateStructureInput, recor
     throw new AppError('structure.not_found', 'Структуру не знайдено', 404);
   }
 
-  // AC-11b: reset лише коли layoutMode РЕАЛЬНО змінився на нове значення (не
-  // при повторі того, що вже збережене).
+  // AC-11b: авто-розклад лише коли layoutMode РЕАЛЬНО змінився на нове
+  // значення (не при повторі того, що вже збережене) -- той самий guard, що
+  // раніше вмикав reset. Через owner-scoped репозиторій і ТОЙ САМИЙ переданий
+  // `db` -- use-case не відкриває власних з'єднань, composition root
+  // (withTransaction, ADR-0006) обгортає і UPDATE структури, і весь
+  // авто-розклад в ОДНУ транзакцію (DoD T11).
   if (layoutModeChanged) {
-    const activePositions = await listActiveLayoutPositionsByOwner(db, input.ownerUserId);
-    const positions = activePositions.map((position) => ({ cardId: position.cardId, cellIndex: position.cellIndex }));
-
-    const plan = switchLayoutMode(positions, input.layoutMode ?? null);
-
-    // Одна мітка часу на весь reset -- це ОДНА дія користувача, не N окремих
-    // перетягувань (LWW, ADR-0002).
-    const resetAt = new Date();
-
-    for (const position of plan.positions) {
-      // `position.cellIndex` домен завжди віддає null -- "картка без клітинки"
-      // (AC-11b), і саме NULL має лягти в БД. Рев'ю 2026-09-11: тут писався
-      // `position.baseOrder`, тобто реальна клітинка 0..N-1 -- стан "без
-      // клітинки" був неспостережуваний, а послідовні UPDATE ще й могли
-      // тимчасово зіткнутись із частковим UNIQUE на зайняту клітинку.
-      // `baseOrder` -- порядок у треї нерозкладених, не номер клітинки; власної
-      // колонки під нього в схемі немає (лишається на боці UI).
-      //
-      // Через owner-scoped репозиторій, не сирим SQL, і через ТОЙ САМИЙ
-      // переданий `db` -- use-case не відкриває власних з'єднань, тому
-      // composition root (withTransaction, ADR-0006) обгортає і UPDATE
-      // структури, і всі N UPDATE позицій в ОДНУ транзакцію (DoD T11).
-      await updateLayoutPositionCell(db, input.ownerUserId, position.cardId, position.cellIndex, resetAt);
-    }
+    await applyLayoutMode(db, { ownerUserId: input.ownerUserId, structureId: updated.id, layoutMode: input.layoutMode ?? null });
   }
 
   if (recordAction) {

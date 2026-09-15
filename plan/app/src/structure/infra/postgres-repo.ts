@@ -64,13 +64,12 @@ export interface LayoutPositionRecord {
   id: string;
   structureId: string;
   cardId: string;
-  // ВІДКРИТЕ (рев'ю 2026-09-11, WP2): після міграції 06 колонка nullable, тож на
-  // читанні тут реально може прийти null ("картка без клітинки", AC-11b/AC-16b/
-  // AC-17). Тип поки лишається `number`, бо його розширення тягне за собою
-  // get-analytics.ts, move-card.ts, layout-handlers.ts (DTO) і contracts/
-  // openapi.yaml -- файли поза скоупом цього фіксу. Запис NULL (нижче,
-  // updateLayoutPositionCell) уже типізований честно.
-  cellIndex: number;
+  // Вільне полотно (D-131-наступне рішення, Андрій у чаті, 2026-09-15):
+  // cellIndex прибраний повністю -- позиція картки тепер {x, y}, відсоток
+  // канви (0-100). NULL/NULL = "картка без позиції" (купка нерозкладених),
+  // той самий принцип, що cellIndex мав до цього переписування.
+  x: number | null;
+  y: number | null;
   status: LayoutPositionStatusRow;
   positionUpdatedAt: Date;
   createdAt: Date;
@@ -166,7 +165,8 @@ interface RawLayoutPositionRow extends QueryResultRow {
   id: string;
   structure_id: string;
   card_id: string;
-  cell_index: number;
+  position_x: number | null;
+  position_y: number | null;
   status: LayoutPositionStatusRow;
   position_updated_at: Date;
   created_at: Date;
@@ -177,14 +177,15 @@ function toLayoutPositionRecord(row: RawLayoutPositionRow): LayoutPositionRecord
     id: row.id,
     structureId: row.structure_id,
     cardId: row.card_id,
-    cellIndex: row.cell_index,
+    x: row.position_x,
+    y: row.position_y,
     status: row.status,
     positionUpdatedAt: row.position_updated_at,
     createdAt: row.created_at,
   };
 }
 
-const LAYOUT_POSITION_COLUMNS = 'id, structure_id, card_id, cell_index, status, position_updated_at, created_at';
+const LAYOUT_POSITION_COLUMNS = 'id, structure_id, card_id, position_x, position_y, status, position_updated_at, created_at';
 
 /**
  * ISS-101/D-117: щойно авто-розкладена позиція (нова картка, ще жодного разу
@@ -204,15 +205,15 @@ const NEVER_MOVED_SENTINEL = new Date(0);
 
 export async function insertLayoutPosition(
   db: Db,
-  // cellIndex: null -- вимога 15 ('staging'): нова картка йде прямо в трей
-  // нерозкладених, без автоматичної клітинки (defaultPositionForNewCard,
-  // domain/layout.ts).
-  input: { id: string; structureId: string; cardId: string; cellIndex: number | null }
+  // x/y: null -- нова картка завжди йде прямо в купку нерозкладених, вільне
+  // позиціювання прибрало поняття "наступна вільна клітинка"
+  // (defaultPositionForNewCard, domain/layout.ts).
+  input: { id: string; structureId: string; cardId: string; x: number | null; y: number | null }
 ): Promise<LayoutPositionRecord> {
   const { rows } = await db.query<RawLayoutPositionRow>(
-    `INSERT INTO structure_layout_position (id, structure_id, card_id, cell_index, position_updated_at)
-     VALUES ($1, $2, $3, $4, $5) RETURNING ${LAYOUT_POSITION_COLUMNS}`,
-    [input.id, input.structureId, input.cardId, input.cellIndex, NEVER_MOVED_SENTINEL]
+    `INSERT INTO structure_layout_position (id, structure_id, card_id, position_x, position_y, position_updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING ${LAYOUT_POSITION_COLUMNS}`,
+    [input.id, input.structureId, input.cardId, input.x, input.y, NEVER_MOVED_SENTINEL]
   );
   return toLayoutPositionRecord(rows[0]);
 }
@@ -224,7 +225,7 @@ export async function insertLayoutPosition(
  */
 export async function listActiveLayoutPositionsByOwner(db: Db, ownerUserId: string): Promise<LayoutPositionRecord[]> {
   const { rows } = await db.query<RawLayoutPositionRow>(
-    `SELECT p.id, p.structure_id, p.card_id, p.cell_index, p.status, p.position_updated_at, p.created_at
+    `SELECT p.id, p.structure_id, p.card_id, p.position_x, p.position_y, p.status, p.position_updated_at, p.created_at
      FROM structure_layout_position p
      JOIN structure s ON s.id = p.structure_id
      WHERE s.owner_user_id = $1 AND p.status = 'active'`,
@@ -234,30 +235,126 @@ export async function listActiveLayoutPositionsByOwner(db: Db, ownerUserId: stri
 }
 
 /**
- * Перетягування картки в нову клітинку (AC-08, збереження одразу після
- * відпускання). Non-disclosure (AC-03): чужий owner_user_id -- null, нічого
- * не рухається й не розкривається.
+ * Перетягування картки на нову позицію канви (AC-08, збереження одразу
+ * після відпускання). Non-disclosure (AC-03): чужий owner_user_id -- null,
+ * нічого не рухається й не розкривається.
  *
- * `cellIndex: null` -- "картка без клітинки" (трей нерозкладених, AC-11b/AC-16b/
- * AC-17): після міграції 06 колонка nullable, і параметр лягає СПРАВЖНІМ SQL NULL
- * (pg біндить JS null як NULL -- ні 0, ні рядок 'null'), тому окремого запиту
- * "SET cell_index = NULL" не треба. Рев'ю 2026-09-11: саме цього шляху бракувало,
- * через що reset у T11 писав реальний номер клітинки замість "клітинки немає".
+ * `x`/`y`: null -- "картка без позиції" (купка нерозкладених) -- параметр
+ * лягає СПРАВЖНІМ SQL NULL (pg біндить JS null як NULL), тому окремого
+ * запиту не треба. x/y завжди приходять разом (обидва числа чи обидва null)
+ * -- викликач (app/move-card.ts, app/apply-layout-mode.ts) гарантує пару.
  */
-export async function updateLayoutPositionCell(
+export async function updateLayoutPositionXY(
   db: Db,
   ownerUserId: string,
   cardId: string,
-  cellIndex: number | null,
+  x: number | null,
+  y: number | null,
   positionUpdatedAt: string | Date
 ): Promise<LayoutPositionRecord | null> {
   const { rows } = await db.query<RawLayoutPositionRow>(
     `UPDATE structure_layout_position p
-     SET cell_index = $1, position_updated_at = $2
-     WHERE p.card_id = $3 AND p.status = 'active'
-       AND p.structure_id IN (SELECT id FROM structure WHERE owner_user_id = $4)
+     SET position_x = $1, position_y = $2, position_updated_at = $3
+     WHERE p.card_id = $4 AND p.status = 'active'
+       AND p.structure_id IN (SELECT id FROM structure WHERE owner_user_id = $5)
      RETURNING ${LAYOUT_POSITION_COLUMNS}`,
-    [cellIndex, positionUpdatedAt, cardId, ownerUserId]
+    [x, y, positionUpdatedAt, cardId, ownerUserId]
   );
   return rows[0] ? toLayoutPositionRecord(rows[0]) : null;
+}
+
+// --- structure_connection ---------------------------------------------------
+//
+// Вимоги 4/5 (Андрій, чат): інструмент "Зв'язати" створює/розриває зв'язки
+// між картками -- звичайну лінію (directed: false) чи стрілку (directed:
+// true, card_id_a -> card_id_b). Той самий DI/стиль (RETURNING, camelCase-
+// мапінг на межі), що structure_layout_position вище.
+
+export interface ConnectionRecord {
+  id: string;
+  structureId: string;
+  cardIdA: string;
+  cardIdB: string;
+  directed: boolean;
+  createdAt: Date;
+}
+
+interface RawConnectionRow extends QueryResultRow {
+  id: string;
+  structure_id: string;
+  card_id_a: string;
+  card_id_b: string;
+  directed: boolean;
+  created_at: Date;
+}
+
+function toConnectionRecord(row: RawConnectionRow): ConnectionRecord {
+  return {
+    id: row.id,
+    structureId: row.structure_id,
+    cardIdA: row.card_id_a,
+    cardIdB: row.card_id_b,
+    directed: row.directed,
+    createdAt: row.created_at,
+  };
+}
+
+const CONNECTION_COLUMNS = 'id, structure_id, card_id_a, card_id_b, directed, created_at';
+
+export async function insertConnection(
+  db: Db,
+  input: { id: string; structureId: string; cardIdA: string; cardIdB: string; directed: boolean }
+): Promise<ConnectionRecord> {
+  const { rows } = await db.query<RawConnectionRow>(
+    `INSERT INTO structure_connection (id, structure_id, card_id_a, card_id_b, directed)
+     VALUES ($1, $2, $3, $4, $5) RETURNING ${CONNECTION_COLUMNS}`,
+    [input.id, input.structureId, input.cardIdA, input.cardIdB, input.directed]
+  );
+  return toConnectionRecord(rows[0]);
+}
+
+/** Owner-scoped (AC-03 non-disclosure pattern -- той самий join, що listActiveLayoutPositionsByOwner). */
+export async function listConnectionsByOwner(db: Db, ownerUserId: string): Promise<ConnectionRecord[]> {
+  const { rows } = await db.query<RawConnectionRow>(
+    `SELECT c.id, c.structure_id, c.card_id_a, c.card_id_b, c.directed, c.created_at
+     FROM structure_connection c
+     JOIN structure s ON s.id = c.structure_id
+     WHERE s.owner_user_id = $1`,
+    [ownerUserId]
+  );
+  return rows.map(toConnectionRecord);
+}
+
+/** Owner-scoped delete -- non-disclosure (AC-03): чужий/неіснуючий зв'язок повертає false, нічого не розкриває. */
+export async function deleteConnection(db: Db, ownerUserId: string, connectionId: string): Promise<boolean> {
+  const { rows } = await db.query(
+    `DELETE FROM structure_connection c
+     USING structure s
+     WHERE c.id = $1 AND c.structure_id = s.id AND s.owner_user_id = $2
+     RETURNING c.id`,
+    [connectionId, ownerUserId]
+  );
+  return rows.length > 0;
+}
+
+/**
+ * Замінює ВСІ зв'язки Структури на новий план авто-розкладу
+ * (app/apply-layout-mode.ts) -- DELETE+INSERT через ТОЙ САМИЙ переданий `db`,
+ * атомарність (одна транзакція разом з N UPDATE позицій) лишається за
+ * composition root (withTransaction, ADR-0006), той самий підхід, що
+ * update-structure.ts вже застосовує для reset-у позицій.
+ */
+export async function replaceConnectionsForStructure(
+  db: Db,
+  structureId: string,
+  connections: { id: string; cardIdA: string; cardIdB: string; directed: boolean }[]
+): Promise<void> {
+  await db.query('DELETE FROM structure_connection WHERE structure_id = $1', [structureId]);
+  for (const connection of connections) {
+    await db.query(
+      `INSERT INTO structure_connection (id, structure_id, card_id_a, card_id_b, directed)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [connection.id, structureId, connection.cardIdA, connection.cardIdB, connection.directed]
+    );
+  }
 }

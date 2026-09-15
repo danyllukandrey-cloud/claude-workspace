@@ -1,9 +1,14 @@
-// App: moveCard use-case (T12) -- оркеструє domain/layout.ts (T4:
-// assertCellAvailable/resolvePositionConflict) + infra/postgres-repo.ts
-// (listActiveLayoutPositionsByOwner/updateLayoutPositionCell) +
-// infra/history-repo.ts (insertHistoryEvent) для перетягування картки в
-// розкладці Структури (contracts/openapi.yaml, moveCard, PUT
+// App: moveCard use-case (T12) -- оркеструє domain/layout.ts (resolvePositionConflict)
+// + infra/postgres-repo.ts (listActiveLayoutPositionsByOwner/updateLayoutPositionXY)
+// + infra/history-repo.ts (insertHistoryEvent) для перетягування картки на
+// вільному полотні Структури (contracts/openapi.yaml, moveCard, PUT
 // /structure/layout/{cardId}).
+//
+// D-131-наступне рішення (Андрій, чат, 2026-09-15): "Схема не працює і вона
+// жахлива. Пропоную прибрати повністю оті клітинки." + "Блоки мають
+// пересуватись вільно... мишкою чи пальцем" -- cellIndex/фіксована сітка/
+// AC-02 (колізія клітинки, D-62) прибрані ПОВНІСТЮ. Позиція -- {x, y}
+// відсотки канви (0-100), перекриття карток дозволене, нічого не блокує.
 //
 // Порядок перевірок (кожна ДО будь-якого запису, окрім самого запису):
 // 1. AC-03 (non-disclosure): картка без активної позиції власника --
@@ -12,26 +17,18 @@
 // 2. Edge case (ADR-0002, test-plan.md): last-write-wins за
 //    positionUpdatedAt -- вхідна мітка не пізніша за вже збережену --
 //    тихо повертаємо поточну позицію, без помилки й без запису.
-// 3. AC-02 (D-62): клітинка вже зайнята ІНШОЮ активною карткою --
-//    structure.cell_occupied, 409 (domain's LayoutValidationError
-//    перегорнута в AppError -- домен не знає про HTTP).
-// 4. AC-08: запис нового cellIndex/positionUpdatedAt.
+// 3. Клемп x/y у межі 0..100 (clampPercent, domain/layout.ts) -- вільне
+//    позиціювання не має колізії, лише діапазон.
+// 4. Запис нового x/y/positionUpdatedAt.
 // 5. AC-15: та ж подія записується в Літопис Структури ('moved'), той
 //    самий механізм, що closeCard (AC-12) вже використовує для 'closed'.
-//    Разом із `detail` (звідки -> куди, formatMovedDetail нижче): без нього
-//    подія є, але мовчить -- ні /structure/layout/history, ні тренд розриву
-//    (AC-07) не мають що з неї прочитати.
 //
 // DI (правило залежностей, ADR-0004): db приходить ззовні, use-case сам
 // з'єднання не створює.
 
-import {
-  assertCellAvailable,
-  resolvePositionConflict,
-  LayoutValidationError,
-} from '../domain/layout';
+import { resolvePositionConflict, clampPercent } from '../domain/layout';
 import type { TimestampedPosition } from '../domain/layout';
-import { listActiveLayoutPositionsByOwner, updateLayoutPositionCell } from '../infra/postgres-repo';
+import { listActiveLayoutPositionsByOwner, updateLayoutPositionXY } from '../infra/postgres-repo';
 import type { LayoutPositionRecord, Db } from '../infra/postgres-repo';
 import { insertHistoryEvent } from '../infra/history-repo';
 import { AppError } from '../../shared/errors';
@@ -39,7 +36,8 @@ import { AppError } from '../../shared/errors';
 export interface MoveCardInput {
   ownerUserId: string;
   cardId: string;
-  cellIndex: number;
+  x: number;
+  y: number;
   positionUpdatedAt: string;
 }
 
@@ -47,10 +45,9 @@ export interface MoveCardInput {
 export type RecordAction = (db: Db, input: { ownerUserId: string; action: string }) => Promise<void>;
 
 /**
- * Перетягування картки в нову клітинку розкладки Структури (AC-08),
- * захищене від колізії (AC-02/D-62) і від застарілого запису з іншого
- * пристрою (ADR-0002 last-write-wins); успішний рух записує подію
- * 'moved' у Літопис (AC-15).
+ * Перетягування картки на нову позицію вільного полотна Структури (AC-08),
+ * захищене від застарілого запису з іншого пристрою (ADR-0002
+ * last-write-wins); успішний рух записує подію 'moved' у Літопис (AC-15).
  */
 export async function moveCard(db: Db, input: MoveCardInput, recordAction?: RecordAction): Promise<LayoutPositionRecord> {
   const activePositions = await listActiveLayoutPositionsByOwner(db, input.ownerUserId);
@@ -65,12 +62,16 @@ export async function moveCard(db: Db, input: MoveCardInput, recordAction?: Reco
   // всередині resolvePositionConflict.
   const currentTimestamped: TimestampedPosition = {
     cardId: current.cardId,
-    cellIndex: current.cellIndex,
+    x: current.x,
+    y: current.y,
     positionUpdatedAt: current.positionUpdatedAt.toISOString(),
   };
+  const clampedX = clampPercent(input.x);
+  const clampedY = clampPercent(input.y);
   const incomingTimestamped: TimestampedPosition = {
     cardId: input.cardId,
-    cellIndex: input.cellIndex,
+    x: clampedX,
+    y: clampedY,
     positionUpdatedAt: new Date(input.positionUpdatedAt).toISOString(),
   };
 
@@ -81,20 +82,12 @@ export async function moveCard(db: Db, input: MoveCardInput, recordAction?: Reco
     return current;
   }
 
-  try {
-    assertCellAvailable(activePositions, input.cellIndex, input.cardId);
-  } catch (error) {
-    if (error instanceof LayoutValidationError) {
-      throw new AppError('structure.cell_occupied', error.message, 409);
-    }
-    throw error;
-  }
-
-  const moved = await updateLayoutPositionCell(
+  const moved = await updateLayoutPositionXY(
     db,
     input.ownerUserId,
     input.cardId,
-    input.cellIndex,
+    clampedX,
+    clampedY,
     input.positionUpdatedAt
   );
   if (!moved) {
@@ -106,11 +99,11 @@ export async function moveCard(db: Db, input: MoveCardInput, recordAction?: Reco
     structureId: moved.structureId,
     cardId: moved.cardId,
     eventType: 'moved',
-    detail: formatMovedDetail(current.cellIndex, moved.cellIndex),
+    detail: formatMovedDetail(current.x, current.y, moved.x, moved.y),
   });
 
   if (recordAction) {
-    await recordAction(db, { ownerUserId: input.ownerUserId, action: `Переміщено картку в клітинку ${moved.cellIndex}` });
+    await recordAction(db, { ownerUserId: input.ownerUserId, action: 'Переміщено картку на Схемі' });
   }
 
   return moved;
@@ -120,29 +113,38 @@ export async function moveCard(db: Db, input: MoveCardInput, recordAction?: Reco
  * Рядок `detail` події 'moved' (data-model.md лишає точну форму TBD, тож
  * форму диктують ЧИТАЧІ цього поля, не навпаки).
  *
- * Review 2026-09-11, MUST-FIX 2: до цього фіксу detail не передавався
- * взагалі (insertHistoryEvent підставляв null), хоча обидва читачі
- * витягують із нього клітинку одним і тим самим шаблоном
- * /cell_index\s*->\s*(-?\d+)/:
- * - ../ports/layout-handlers.ts (GET /structure/layout/history) -- "якою
- *   була розкладка на момент asOf", тобто потребує КУДИ картка стала;
- * - ../app/get-analytics.ts (AC-07, тренд розриву) -- потребує ЗВІДКИ вона
- *   пішла, бо інакше "минула" точка дорівнює поточній позиції.
- * Тому пишемо обидві клітинки: основний токен -- нова (куди), додатковий
- * `from_cell_index` -- стара (звідки).
+ * D-131-наступне рішення: cellIndex-версія цього рядка ("cell_index -> N,
+ * from_cell_index -> M") мала пастку порядку токенів (`from_cell_index`
+ * містить підрядок `cell_index`, тож токени мусили йти в конкретному
+ * порядку). Нові токени (`pos_x`/`pos_y`/`prev_x`/`prev_y`) НЕ є підрядками
+ * одне одного -- та сама пастка тут фізично неможлива, порядок токенів
+ * більше не має значення для читачів.
  *
- * ПОРЯДОК ТОКЕНІВ ЗНАЧУЩИЙ: у шаблоні читачів немає межі слова, а
- * `from_cell_index` містить підрядок `cell_index` -- тож нова клітинка
- * мусить стояти ПЕРШОЮ, інакше перше входження шаблону дасть "звідки" і
- * історія покаже картку в клітинці, яку вона вже залишила.
+ * Обидва читачі (../ports/layout-handlers.ts GET /structure/layout/history,
+ * ../../app/main.tsx's loadAnalytics AC-07) потребують лише X (ранг
+ * пріоритету за позицією) -- Y пишемо теж, для майбутнього повного
+ * відтворення минулої розкладки (поза v1, spec.md §3 Non-goals).
  *
- * "Звідки" може не існувати: картка з треї нерозкладених (cell_index NULL
- * після міграції 06 -- AC-11b/AC-16b/AC-17) розкладається вперше. Тоді пишемо
- * `from_cell_index -> none`, а не число: жоден читач не має права прочитати
- * відсутню попередню клітинку як нуль (нуль -- це найвищий пріоритет, тобто
- * пряма брехня про минуле).
+ * "Звідки" може не існувати: картка з купки нерозкладених (x/y NULL)
+ * розкладається вперше. Тоді пишемо `prev_x -> none, prev_y -> none`, а не
+ * число: нуль -- це крайня ліва позиція, і видати його ненавмисно означало
+ * б приписати картці розташування, якого вона ніколи не мала.
  */
-function formatMovedDetail(fromCellIndex: number | null, toCellIndex: number): string {
-  const from = fromCellIndex === null || fromCellIndex === undefined ? 'none' : String(fromCellIndex);
-  return `cell_index -> ${toCellIndex}, from_cell_index -> ${from}`;
+function formatMovedDetail(
+  fromX: number | null,
+  fromY: number | null,
+  // `updateLayoutPositionXY` завжди пише реальні числа тут (clampPercent
+  // ужито ДО запису, moveCard вище) -- тип лишається `number | null`, а не
+  // звужується до `number`, лише тому, що LayoutPositionRecord.x/y є
+  // nullable ЗАГАЛОМ (та сама колонка несе й "картка без позиції"); TS не
+  // може вивести звуження через SQL round-trip. `none`-гілка нижче лишається
+  // мертвою за нормальних обставин, але чесно описує тип, а не приховує його castʼом.
+  toX: number | null,
+  toY: number | null
+): string {
+  const prevX = fromX === null || fromX === undefined ? 'none' : String(fromX);
+  const prevY = fromY === null || fromY === undefined ? 'none' : String(fromY);
+  const nextX = toX === null || toX === undefined ? 'none' : String(toX);
+  const nextY = toY === null || toY === undefined ? 'none' : String(toY);
+  return `pos_x -> ${nextX}, pos_y -> ${nextY}, prev_x -> ${prevX}, prev_y -> ${prevY}`;
 }

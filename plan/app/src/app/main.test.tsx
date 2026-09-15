@@ -4,8 +4,11 @@
 // знахідки рев'ю 2026-09-11 (Частина 3), через які екрани Структури показували
 // заглушки замість даних:
 //
-// 1. `justReset: false` хардкодом -- банер "Розклади заново" (AC-11b) не
-//    показувався НІКОЛИ, попри те, що сервер реально скидає позиції.
+// 1. (історично) `justReset: false` хардкодом -- банер "Розклади заново"
+//    не показувався НІКОЛИ. D-131-наступне рішення (Андрій, чат,
+//    2026-09-15) прибрало саме поняття "скидання в трей" повністю -- зміна
+//    layoutMode тепер запускає РЕАЛЬНИЙ авто-розклад (сервер сам рахує
+//    x/y), тож LayoutBoardState більше не несе `justReset` взагалі.
 // 2. `gap: null, trend: null, unmaintained: false, trendAvailable: false`
 //    хардкодом -- AC-06/AC-06b/AC-07 на екрані мертві, а банер "тренд
 //    недоступний" висів для всіх користувачів завжди.
@@ -13,6 +16,12 @@
 // Вимоги 14/15 (Андрій, чат, плоска модель): layoutMode -- ОДНЕ поле з 5
 // значень ('balance'/'focus'/'cause_effect'/'free'/'staging'); logicVariant
 // прибраний з фейкового сервера й тіл PATCH нижче разом з ним.
+//
+// D-131-наступне рішення: cellIndex прибраний -- позиція картки {x, y}
+// (відсоток канви 0-100). aggregate.ts's ранг-розрив формула (AC-06/AC-07)
+// не змінена (D-19) -- x грає РІВНО ту саму роль, що cellIndex грав
+// (менше число = вищий пріоритет), тож нижче тести й далі використовують
+// прості цілі 0/1/2 для x, лише щоб математика лишалась легкою для ока.
 //
 // Як тестуємо: App підмінений (vi.mock) компонентом, що лише ЗАПАМ'ЯТОВУЄ
 // передані пропи -- далі тест викликає самі ці функції з підробленим fetch.
@@ -36,13 +45,22 @@ vi.mock('./App', () => ({
 
 interface FakePosition {
   cardId: string;
-  cellIndex: number | null;
+  x: number | null;
+  y?: number | null;
   positionUpdatedAt?: string;
+}
+
+interface FakeConnection {
+  id: string;
+  cardIdA: string;
+  cardIdB: string;
+  directed: boolean;
 }
 
 interface FakeServer {
   structure: { layoutMode: string | null };
   positions: FakePosition[];
+  connections: FakeConnection[];
   cards: { id: string; name: string }[];
   progressByCard: Record<string, number | null>;
   /** 'fail' -- GET /structure/layout/history відповів помилкою (trendAvailable=false). */
@@ -60,6 +78,7 @@ function makeServer(overrides: Partial<FakeServer> = {}): FakeServer {
   return {
     structure: { layoutMode: 'focus' },
     positions: [],
+    connections: [],
     cards: [],
     progressByCard: {},
     history: [],
@@ -83,7 +102,8 @@ function jsonResponse(body: unknown, status = 200): Response {
 function positionDto(position: FakePosition) {
   return {
     cardId: position.cardId,
-    cellIndex: position.cellIndex,
+    x: position.x,
+    y: position.y ?? position.x,
     status: 'active',
     positionUpdatedAt: position.positionUpdatedAt ?? '2026-09-01T00:00:00.000Z',
   };
@@ -124,7 +144,39 @@ function fakeFetch(server: FakeServer): typeof fetch {
           409,
         );
       }
-      return jsonResponse(positionDto({ cardId: closeCard[1], cellIndex: null }));
+      return jsonResponse(positionDto({ cardId: closeCard[1], x: null }));
+    }
+
+    if (url === '/api/v1/structure/connections' && method === 'GET') {
+      return jsonResponse(
+        server.connections.map((c) => ({ ...c, createdAt: '2026-09-01T00:00:00.000Z' })),
+      );
+    }
+
+    if (url === '/api/v1/structure/connections' && method === 'POST') {
+      const body = JSON.parse(String(init?.body)) as { cardIdA: string; cardIdB: string; directed: boolean };
+      const created = { id: `connection-${server.connections.length + 1}`, ...body };
+      server.connections.push(created);
+      return jsonResponse({ ...created, createdAt: '2026-09-01T00:00:00.000Z' }, 201);
+    }
+
+    const deleteConnection = url.match(/^\/api\/v1\/structure\/connections\/([^/?]+)$/);
+    if (deleteConnection && method === 'DELETE') {
+      server.connections = server.connections.filter((c) => c.id !== deleteConnection[1]);
+      return jsonResponse(null, 204);
+    }
+
+    const moveCard = url.match(/^\/api\/v1\/structure\/layout\/([^/?]+)$/);
+    if (moveCard && method === 'PUT') {
+      const body = JSON.parse(String(init?.body)) as { x: number; y: number; positionUpdatedAt: string };
+      const existing = server.positions.find((p) => p.cardId === moveCard[1]);
+      const updated: FakePosition = { cardId: moveCard[1], x: body.x, y: body.y, positionUpdatedAt: body.positionUpdatedAt };
+      if (existing) {
+        Object.assign(existing, updated);
+      } else {
+        server.positions.push(updated);
+      }
+      return jsonResponse(positionDto(updated));
     }
 
     if (url.startsWith('/api/v1/structure/layout')) {
@@ -227,57 +279,66 @@ async function loadMainExports(server: FakeServer): Promise<typeof import('./mai
   return import('./main');
 }
 
-// --- AC-11b: банер "Розклади заново" --------------------------------
+// --- D-131-наступне рішення: loadLayout/onMoveCard/connections на вільному полотні ---
 
-test('AC-11b: після PATCH, що змінив layoutMode, наступне відкриття Схеми несе justReset=true -- і лише один раз', async () => {
+test('loadLayout читає /structure + /structure/layout + /structure/connections + /cards і збирає {layoutMode, cards, connections}', async () => {
   const server = makeServer({
-    structure: { layoutMode: 'free' },
-    cards: [{ id: 'card-a', name: 'Картка A' }],
-    positions: [{ cardId: 'card-a', cellIndex: null }],
+    structure: { layoutMode: 'focus' },
+    cards: [{ id: 'card-a', name: 'Картка A' }, { id: 'card-b', name: 'Картка B' }],
+    positions: [{ cardId: 'card-a', x: 20, y: 30 }],
+    connections: [{ id: 'conn-1', cardIdA: 'card-a', cardIdB: 'card-b', directed: true }],
   });
   const props = await loadMain(server);
 
-  // Клієнт спершу бачить поточний стан Структури (екран Декларації).
-  await props.loadStructure();
-  await props.onSaveDeclaration({ declaration: 'декларація', layoutMode: 'focus' });
+  const layout = await props.loadLayout();
 
-  const afterSwitch = await props.loadLayout();
-  expect(afterSwitch.justReset).toBe(true);
-
-  // Прапорець одноразовий: банер не має висіти вічно на кожному наступному
-  // відкритті Схеми.
-  const secondOpen = await props.loadLayout();
-  expect(secondOpen.justReset).toBe(false);
+  expect(layout.layoutMode).toBe('focus');
+  expect(layout.cards).toEqual([
+    { cardId: 'card-a', cardTitle: 'Картка A', x: 20, y: 30 },
+    { cardId: 'card-b', cardTitle: 'Картка B', x: null, y: null },
+  ]);
+  expect(layout.connections).toEqual([{ id: 'conn-1', cardIdA: 'card-a', cardIdB: 'card-b', directed: true }]);
 });
 
-// Плоска модель (вимоги 14/15): перемикання МІЖ колишніми підвидами "за
-// логікою" ('balance' <-> 'focus') -- тепер звичайна зміна layoutMode, той
-// самий AC-11b-шлях, без окремого AC-16b-випадку.
-test('перемикання між колишніми підвидами "за логікою" напряму теж дає justReset=true', async () => {
+test('onMoveCard надсилає PUT /structure/layout/{cardId} з x/y і positionUpdatedAt', async () => {
+  const server = makeServer({ cards: [{ id: 'card-a', name: 'Картка A' }] });
+  const props = await loadMain(server);
+
+  await props.onMoveCard({ cardId: 'card-a', x: 65, y: 80 });
+
+  expect(server.positions).toEqual([expect.objectContaining({ cardId: 'card-a', x: 65, y: 80 })]);
+});
+
+test('onCreateConnection надсилає POST /structure/connections із cardIdA/cardIdB/directed', async () => {
+  const server = makeServer({ cards: [{ id: 'card-a', name: 'A' }, { id: 'card-b', name: 'B' }] });
+  const props = await loadMain(server);
+
+  await props.onCreateConnection({ cardIdA: 'card-a', cardIdB: 'card-b', directed: true });
+
+  expect(server.connections).toEqual([{ id: 'connection-1', cardIdA: 'card-a', cardIdB: 'card-b', directed: true }]);
+});
+
+test('onDeleteConnection надсилає DELETE /structure/connections/{connectionId}', async () => {
   const server = makeServer({
-    structure: { layoutMode: 'balance' },
-    cards: [{ id: 'card-a', name: 'Картка A' }],
-    positions: [{ cardId: 'card-a', cellIndex: null }],
+    connections: [{ id: 'conn-1', cardIdA: 'card-a', cardIdB: 'card-b', directed: false }],
   });
   const props = await loadMain(server);
 
-  await props.loadStructure();
-  await props.onSaveDeclaration({ declaration: 'декларація', layoutMode: 'focus' });
+  await props.onDeleteConnection({ connectionId: 'conn-1' });
 
-  expect((await props.loadLayout()).justReset).toBe(true);
+  expect(server.connections).toEqual([]);
 });
 
 // Живе тестування (Андрій): "Налаштування розкладки схеми переносимо в
 // сторінку схеми" -- `hasArrangedCards` більше не поле DeclarationScreenState
-// (loadStructure тепер несе лише `declaration`, того самого GET /structure
-// без побічного запиту активних позицій) -- LayoutBoard рахує його напряму
-// з `cards`, що вже приходять через loadLayout (перевірено в
+// (loadStructure тепер несе лише `declaration`) -- LayoutBoard рахує його
+// напряму з `cards`, що вже приходять через loadLayout (перевірено в
 // LayoutBoard.test.tsx, не тут).
 test('loadStructure несе лише declaration -- жодного зайвого запиту /structure/layout для нього', async () => {
   const server = makeServer({
     structure: { layoutMode: 'focus' },
     cards: [{ id: 'card-a', name: 'Картка A' }],
-    positions: [{ cardId: 'card-a', cellIndex: null }],
+    positions: [{ cardId: 'card-a', x: null }],
   });
   const props = await loadMain(server);
 
@@ -285,52 +346,33 @@ test('loadStructure несе лише declaration -- жодного зайвог
   expect(state).toEqual({ declaration: 'декларація' });
 });
 
-test('живе тестування: onSaveDeclaration лише з declaration (без ключа layoutMode) НЕ показує банер скидання і не зачіпає layoutMode на сервері', async () => {
+test('onSaveDeclaration лише з declaration (без ключа layoutMode) не несе layoutMode у тілі PATCH', async () => {
   const server = makeServer({
     structure: { layoutMode: 'focus' },
     cards: [{ id: 'card-a', name: 'Картка A' }],
-    positions: [{ cardId: 'card-a', cellIndex: 0 }],
+    positions: [{ cardId: 'card-a', x: 0 }],
   });
   const props = await loadMain(server);
 
-  await props.loadLayout(); // той самий крок, що LayoutBoard.useEffect -- наповнює lastKnownLayoutChoice.
   await props.onSaveDeclaration({ declaration: 'лише текст' });
 
   // Тіло PATCH не несе layoutMode ВЗАГАЛІ (не лише не змінює його) --
   // JSON.stringify сам відкидає ключ зі значенням undefined.
   expect(server.patchBodies).toEqual([{ declaration: 'лише текст' }]);
-  expect((await props.loadLayout()).justReset).toBe(false);
 });
 
-test('живе тестування: onSaveDeclaration лише з layoutMode (LayoutBoard.onSaveLayoutMode) не несе declaration і поводиться як AC-11b', async () => {
+test('onSaveDeclaration лише з layoutMode (LayoutBoard.onSaveLayoutMode) не несе declaration', async () => {
   const server = makeServer({
     structure: { layoutMode: 'free' },
     cards: [{ id: 'card-a', name: 'Картка A' }],
-    positions: [{ cardId: 'card-a', cellIndex: null }],
+    positions: [{ cardId: 'card-a', x: null }],
   });
   const props = await loadMain(server);
 
-  await props.loadLayout();
   await props.onSaveDeclaration({ layoutMode: 'focus' });
 
   expect(server.patchBodies).toEqual([{ layoutMode: 'focus' }]);
-  expect((await props.loadLayout()).justReset).toBe(true);
-});
-
-test('AC-10: збереження лише декларації (той самий layoutMode) НЕ показує банер скидання', async () => {
-  const server = makeServer({
-    structure: { layoutMode: 'focus' },
-    cards: [{ id: 'card-a', name: 'Картка A' }],
-    positions: [{ cardId: 'card-a', cellIndex: 0 }],
-  });
-  const props = await loadMain(server);
-
-  await props.loadStructure();
-  await props.onSaveDeclaration({ declaration: 'новий текст', layoutMode: 'focus' });
-
-  // Сервер у цьому випадку нічого не скидає (update-structure.ts: reset лише
-  // коли layoutMode реально змінився) -- банер збрехав би.
-  expect((await props.loadLayout()).justReset).toBe(false);
+  expect(server.structure.layoutMode).toBe('focus');
 });
 
 // --- AC-06 / AC-06b / AC-07: аналітика рахується, а не заглушена -------------
@@ -345,8 +387,8 @@ test('AC-06: у розкладці "за логікою" кожна розкла
     ],
     // Сітка: максимальна клітинка 2 -> rank(0)=1, rank(2)=0.
     positions: [
-      { cardId: 'card-a', cellIndex: 0 },
-      { cardId: 'card-b', cellIndex: 2 },
+      { cardId: 'card-a', x: 0 },
+      { cardId: 'card-b', x: 2 },
     ],
     progressByCard: { 'card-a': 0.4, 'card-b': 0.5, 'card-c': 0.9 },
   });
@@ -370,11 +412,11 @@ test('AC-07: минула розкладка з /structure/layout/history дає
   const server = makeServer({
     structure: { layoutMode: 'focus' },
     cards: [{ id: 'card-a', name: 'Картка A' }],
-    positions: [{ cardId: 'card-a', cellIndex: 0 }],
+    positions: [{ cardId: 'card-a', x: 0 }],
     progressByCard: { 'card-a': 0.4 },
     // Була в останній клітинці сітки (ранг 0): розрив 0-0.4 = -0.4, модуль 0.4.
     // Зараз клітинка 0 (ранг 1): розрив 0.6 -- модуль зріс, отже 'росте'.
-    history: [{ cardId: 'card-a', cellIndex: 2, positionUpdatedAt: '2026-08-01T00:00:00.000Z' }],
+    history: [{ cardId: 'card-a', x: 2, positionUpdatedAt: '2026-08-01T00:00:00.000Z' }],
   });
   const props = await loadMain(server);
 
@@ -392,7 +434,7 @@ test('AC-07: історія не відповіла -- trendAvailable=false, а�
   const server = makeServer({
     structure: { layoutMode: 'focus' },
     cards: [{ id: 'card-a', name: 'Картка A' }],
-    positions: [{ cardId: 'card-a', cellIndex: 0 }],
+    positions: [{ cardId: 'card-a', x: 0 }],
     progressByCard: { 'card-a': 0.4 },
     history: 'fail',
   });
@@ -415,9 +457,9 @@ test('AC-06b: у розкладці без схеми пріоритету ро�
       { id: 'card-c', name: 'Картка C' },
     ],
     positions: [
-      { cardId: 'card-a', cellIndex: 0 },
-      { cardId: 'card-b', cellIndex: 1 },
-      { cardId: 'card-c', cellIndex: 2 },
+      { cardId: 'card-a', x: 0 },
+      { cardId: 'card-b', x: 1 },
+      { cardId: 'card-c', x: 2 },
     ],
     progressByCard: { 'card-a': 0.5, 'card-b': 0.5, 'card-c': null },
     metricBlocksByCard: { 'card-a': [{ id: 'mb-1' }], 'card-b': [{ id: 'mb-2' }], 'card-c': [] },
