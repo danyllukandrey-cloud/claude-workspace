@@ -118,12 +118,24 @@ export function DeclarationScreen({ loadStructure, onSave }: DeclarationScreenPr
 
   const hasDeclaration = declaration.trim().length > 0;
 
+  // Живе тестування (Андрій): "цей формат по центру відноситься тільки до
+  // системного тексту. Текст що буде введений має бути відформатований по
+  // ліву сторону." -- вузька центрована колонка (max-w-md mx-auto) пасує
+  // короткому системному повідомленню-заглушці, але виглядає "криво" для
+  // РЕАЛЬНОГО тексту декларації -- той має читатись зліва направо на
+  // ширшій колонці, як звичайний текст, а не тулитись по центру екрана.
+  const isPlaceholder = mode === 'view' && !hasDeclaration;
+
   return (
     <div className="relative flex h-full min-h-0 flex-col">
-      <div className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 overflow-y-auto px-4 py-6 pb-20">
+      <div
+        className={`flex flex-1 flex-col gap-6 overflow-y-auto px-4 py-6 pb-20 ${
+          isPlaceholder ? 'mx-auto w-full max-w-md items-center text-center' : 'mx-auto w-full max-w-2xl'
+        }`}
+      >
         {mode === 'view' ? (
           hasDeclaration ? (
-            <p className="whitespace-pre-wrap text-sm italic text-ink-muted">{declaration}</p>
+            <p className="whitespace-pre-wrap text-left text-sm italic text-ink-muted">{declaration}</p>
           ) : (
             <p className="text-sm italic text-ink-faint">Тексту декларації поки немає</p>
           )
