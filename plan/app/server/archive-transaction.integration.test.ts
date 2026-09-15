@@ -105,7 +105,7 @@ describe('T40 -- реальний HTTP DELETE /api/v1/cards/{cardId} закри�
     const positionId = crypto.randomUUID();
     await db.query('INSERT INTO structure (id, owner_user_id) VALUES ($1, $2)', [structureId, ownerId]);
     await db.query(
-      'INSERT INTO structure_layout_position (id, structure_id, card_id, cell_index) VALUES ($1, $2, $3, 0)',
+      'INSERT INTO structure_layout_position (id, structure_id, card_id, position_x, position_y) VALUES ($1, $2, $3, 0, 0)',
       [positionId, structureId, card.id]
     );
 

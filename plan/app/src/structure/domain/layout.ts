@@ -1,153 +1,82 @@
-// Доменна логіка "Структури" -- розкладка карток (AC-09, AC-11, AC-11b).
-// Чиста функція, без I/O (plan/app/CLAUDE.md, "domain -> НІЧОГО"): лише ЩО
-// має статись (план), не ЯК він потрапляє в базу -- транзакційний запис
-// лишається за T11 (App: updateStructure use-case).
+// Доменна логіка "Структури" -- вільне полотно розкладки (D-131-наступне
+// рішення, Андрій у чаті, 2026-09-15). Чиста функція, без I/O (plan/app/
+// CLAUDE.md, "domain -> НІЧОГО"): лише ЩО має статись (план), не ЯК він
+// потрапляє в базу -- транзакційний запис лишається за app/apply-layout-mode.ts
+// і app/move-card.ts.
 //
-// Вимоги 14/15 (Андрій, чат) -- ПЛОСКА модель, 5 значень в ОДНОМУ полі замість
-// дворівневої комбінації layoutMode('logic') + logicVariant(X):
-// - 'single' ("одна картка") скасований повністю -- навіщо режим "одна
-//   картка", якщо картку й так можна створити рівно одну;
-// - три підвиди "за логікою" (D-83) перестають бути вкладеними в 'logic' і
-//   стають топ-рівневими режимами: 'balance' / 'focus' / 'cause_effect';
-// - 'free' лишається тим самим режимом ("Вільна розкладка", перейменування
-//   підпису, не поведінки);
-// - 'staging' -- НОВИЙ режим ("Готово до розкладання"): картки з'являються
-//   внизу екрана без клітинки, користувач сам розкладає (defaultPositionForNewCard
-//   нижче навмисно НЕ дає нову клітинку автоматично, поки цей режим активний).
+// Вимоги (Андрій, чат, кілька повідомлень підряд):
+// 1. "Схема не працює і вона жахлива. Пропоную прибрати повністю оті
+//    клітинки." -- cellIndex/фіксована сітка/AC-02 (колізія клітинки)
+//    прибрані повністю. Позиція картки -- {x, y}, відсотки (0-100) канви;
+//    перекриття карток дозволене, нічого не блокує вільне позиціювання.
+// 2. Купка нерозкладених ("трей") лишається -- {x: null, y: null}.
+// 3. Кожен з 5 режимів (balance/focus/cause_effect/free/staging) дає СВІЙ
+//    початковий авто-розклад (координати x/y + за потреби зв'язки) замість
+//    старого "скинути все в трей і чекати ручного перетягування"
+//    (switchLayoutMode/resetToBaseOrder -- обидва прибрані повністю).
+//
+// ПІДТВЕРДЖЕНА логіка кожного режиму (макет із реальних карток Андрія,
+// підтверджено "все вірно" в чаті) -- без реального AI-аналізу "що
+// статичне/головне" беремо розумний детермінований дефолт: порядок за
+// createdAt (перша створена картка -- "ядро"/"корінь"/"центр").
+
 export type LayoutMode = 'balance' | 'focus' | 'cause_effect' | 'free' | 'staging' | null;
 
-export class LayoutValidationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'LayoutValidationError';
-  }
+/** Відсоток канви, 0..100. Клемпиться -- невалідне значення ніколи не долітає до БД як є. */
+const MIN_PERCENT = 0;
+const MAX_PERCENT = 100;
+
+export function clampPercent(value: number): number {
+  if (Number.isNaN(value)) return MIN_PERCENT;
+  return Math.min(MAX_PERCENT, Math.max(MIN_PERCENT, value));
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 export interface LayoutPosition {
   cardId: string;
-  // NULL = "картка без клітинки": лежить у треї нерозкладених унизу екрана
-  // (AC-11b після reset, AC-17 для відновленої з архіву картки).
-  // Рев'ю 2026-09-11: міграція 06 зробила `cell_index` nullable, тож домен
-  // мусить ЧИТАТИ цей стан, а не лише віддавати його в плані скидання --
-  // інакше друге підряд перемикання режиму рахує NULL як нуль.
-  cellIndex: number | null;
+  // NULL = "картка без позиції": лежить у купці нерозкладених унизу екрана
+  // (вимога 2, той самий принцип "NULL = ще не обрано", що вже діяв для
+  // cellIndex до цього переписування). x/null і y/null завжди разом --
+  // немає стану "лише одна координата відома".
+  x: number | null;
+  y: number | null;
 }
 
 export interface DefaultPosition {
-  // null -- 'staging' навмисно не дає клітинку одразу (див. defaultPositionForNewCard нижче).
-  cellIndex: number | null;
+  x: number | null;
+  y: number | null;
 }
 
-export interface ResetLayoutPosition {
-  cardId: string;
-  baseOrder: number;
-  cellIndex: null;
-}
-
-export interface LayoutResetPlan {
-  positions: ResetLayoutPosition[];
-}
-
-export interface TimestampedPosition {
-  cardId: string;
-  cellIndex: number;
-  positionUpdatedAt: string;
+// Вільне позиціювання прибрало "наступну вільну клітинку" як поняття --
+// нова картка завжди з'являється в купці нерозкладених, користувач сам
+// перетягує її на канву (чи перезапускає авто-розклад режиму через
+// "Конфігурація", який розставляє ВСІХ карток власника, і цю нову зокрема).
+export function defaultPositionForNewCard(): DefaultPosition {
+  return { x: null, y: null };
 }
 
 export type LayoutPositionStatus = 'active' | 'closed';
 
 export interface LayoutPositionRow {
   cardId: string;
-  cellIndex: number;
+  x: number | null;
+  y: number | null;
   status: LayoutPositionStatus;
-}
-
-// AC-09: новій картці дається клітинка за замовчуванням навіть коли режим
-// розкладки ще не обрано (null) -- це ніколи не блокує створення картки.
-//
-// Виняток -- 'staging' ("Готово до розкладання", вимога 15): сенс цього
-// режиму саме в тому, що картки з'являються внизу екрана БЕЗ клітинки, а
-// користувач розкладає їх сам. Автоматичне присвоєння клітинки тут суперечило
-// б самій ідеї режиму, тож нова картка йде просто в трей (той самий стан, що
-// й після reset AC-11b), а не отримує номер.
-export function defaultPositionForNewCard(
-  existing: LayoutPosition[],
-  layoutMode: LayoutMode,
-): DefaultPosition {
-  if (layoutMode === 'staging') {
-    return { cellIndex: null };
-  }
-
-  // Картки без клітинки (трей) не зсувають наступну вільну клітинку: вони не
-  // займають жодної, тому в підрахунку максимуму їх просто немає.
-  const nextCellIndex = existing.reduce(
-    (max, position) => (position.cellIndex === null ? max : Math.max(max, position.cellIndex + 1)),
-    0,
-  );
-
-  return { cellIndex: nextCellIndex };
-}
-
-/**
- * Базовий порядок: спершу розкладені картки за зростанням клітинки, потім ті,
- * що клітинки не мали (трей) -- у порядку, в якому прийшли. Пряме
- * `a.cellIndex - b.cellIndex` коерціює NULL у 0 і вклинює трей на ПОЧАТОК
- * (NaN/0-порівняння), через що друге підряд перемикання режиму перемішувало
- * порядок (рев'ю 2026-09-11).
- */
-function compareByCellIndexNullsLast(a: LayoutPosition, b: LayoutPosition): number {
-  if (a.cellIndex === null && b.cellIndex === null) return 0;
-  if (a.cellIndex === null) return 1;
-  if (b.cellIndex === null) return -1;
-  return a.cellIndex - b.cellIndex;
-}
-
-function resetToBaseOrder(positions: LayoutPosition[]): LayoutResetPlan {
-  const baseOrdered = [...positions].sort(compareByCellIndexNullsLast);
-
-  return {
-    positions: baseOrdered.map((position, index) => ({
-      cardId: position.cardId,
-      baseOrder: index,
-      cellIndex: null,
-    })),
-  };
-}
-
-// AC-11 / AC-11b: зміна режиму розкладки скидає кожну вже розміщену картку
-// у фіксований базовий порядок, знімаючи стару клітинку -- користувач
-// розкладає картки по новому режиму сам. Плоска модель (вимоги 14/15) прибрала
-// колишню окрему AC-16b (зміна підвиду ВСЕРЕДИНІ 'logic') -- перемикання між
-// будь-якими двома з 5 режимів, зокрема між 'balance' і 'focus' (колишні
-// підвиди одного 'logic'), тепер завжди йде саме цим шляхом, без окремої
-// "підвид-у-підвиді" перевірки.
-export function switchLayoutMode(
-  positions: LayoutPosition[],
-  _newMode: LayoutMode,
-): LayoutResetPlan {
-  return resetToBaseOrder(positions);
-}
-
-// AC-02 (D-62 -- одна клітинка = одна картка): у розкладках із фіксованою
-// сіткою кожна активна клітинка тримає рівно одну картку. Перетягування на
-// вже зайняту чужою карткою клітинку блокується, а не тихо переписує сусіда;
-// картка, що вже тримає цю клітинку сама, не вважається колізією (переміщення
-// "на себе" -- no-op, не помилка).
-export function assertCellAvailable(
-  activePositions: LayoutPosition[],
-  cellIndex: number,
-  cardId: string,
-): void {
-  const occupant = activePositions.find((position) => position.cellIndex === cellIndex);
-
-  if (occupant && occupant.cardId !== cardId) {
-    throw new LayoutValidationError(`cell ${cellIndex} is already occupied by a different card`);
-  }
 }
 
 // AC-08 / ADR-0002: дві мітки часу, що конфліктують після офлайн-
 // синхронізації, вирішуються last-write-wins за positionUpdatedAt --
 // пізніший запис перемагає, ранішній тихо відкидається, без злиття.
+export interface TimestampedPosition {
+  cardId: string;
+  x: number | null;
+  y: number | null;
+  positionUpdatedAt: string;
+}
+
 export function resolvePositionConflict(
   a: TimestampedPosition,
   b: TimestampedPosition,
@@ -160,4 +89,205 @@ export function resolvePositionConflict(
 // історії/переносу метрик.
 export function closeLayoutPosition(position: LayoutPositionRow): LayoutPositionRow {
   return { ...position, status: 'closed' };
+}
+
+// --- Авто-розклад режиму (вимога 6 в чаті) ----------------------------------
+//
+// "Кожен з варіантів конфігурації потрібно просто розташувати за логікою і
+// все без якихось законів з клітинками." Вхід -- усі картки власника
+// (розкладені й з купки, app/apply-layout-mode.ts читає їх усі), лише
+// {cardId, createdAt} потрібно для детермінованого порядку. Вихід -- нові
+// позиції для КОЖНОЇ переданої картки + (лише для деяких режимів) зв'язки
+// між ними. `staging` -- єдиний виняток: повертає порожній план (нічого не
+// міняти), сенс режиму саме в тому, що користувач розкладає сам.
+
+export interface LayoutCardInput {
+  cardId: string;
+  /** ISO 8601 -- лише для сортування (перша створена = "ядро"/"корінь"/"центр"). */
+  createdAt: string;
+}
+
+export interface AutoLayoutPosition {
+  cardId: string;
+  x: number;
+  y: number;
+}
+
+export interface AutoLayoutConnection {
+  cardIdA: string;
+  cardIdB: string;
+  /** true -- стрілка cardIdA -> cardIdB; false -- звичайна лінія (порядок не несе сенсу). */
+  directed: boolean;
+}
+
+export interface AutoLayoutPlan {
+  positions: AutoLayoutPosition[];
+  connections: AutoLayoutConnection[];
+}
+
+/** Стабільне сортування за createdAt (тай-брейк -- cardId, щоб порядок був відтворюваним). */
+function sortByCreatedAt(cards: LayoutCardInput[]): LayoutCardInput[] {
+  return [...cards].sort((a, b) => {
+    if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? -1 : 1;
+    return a.cardId < b.cardId ? -1 : a.cardId > b.cardId ? 1 : 0;
+  });
+}
+
+/** Рівномірний розподіл `count` елементів по вертикалі канви (10%..90%), один елемент -- по центру. */
+function evenlySpacedY(index: number, count: number): number {
+  if (count <= 1) return 50;
+  return round2(10 + (index * 80) / (count - 1));
+}
+
+const DEG2RAD = Math.PI / 180;
+
+function emptyPlan(): AutoLayoutPlan {
+  return { positions: [], connections: [] };
+}
+
+// balance ("Баланс навколо ядра"): зліва вертикально -- статичні/рутинні
+// картки; по центру -- ядро (перша за created_at); праворуч -- решта,
+// розгалужена від ядра лініями. Без реального AI-аналізу "що статичне" --
+// решта (після ядра) ділиться навпіл за created_at: перша половина -- ліва
+// колонка (без зв'язків, "статичні"), друга половина -- праве розгалуження
+// (кожна з'єднана лінією до ядра).
+function computeBalanceLayout(cards: LayoutCardInput[]): AutoLayoutPlan {
+  const sorted = sortByCreatedAt(cards);
+  if (sorted.length === 0) return emptyPlan();
+
+  const [core, ...rest] = sorted;
+  const positions: AutoLayoutPosition[] = [{ cardId: core.cardId, x: 50, y: 50 }];
+  const connections: AutoLayoutConnection[] = [];
+
+  const half = Math.ceil(rest.length / 2);
+  const left = rest.slice(0, half);
+  const right = rest.slice(half);
+
+  left.forEach((card, index) => {
+    positions.push({ cardId: card.cardId, x: 15, y: evenlySpacedY(index, left.length) });
+  });
+
+  right.forEach((card, index) => {
+    const x = round2(70 + (index % 2) * 15);
+    positions.push({ cardId: card.cardId, x, y: evenlySpacedY(index, right.length) });
+    connections.push({ cardIdA: core.cardId, cardIdB: card.cardId, directed: false });
+  });
+
+  return { positions, connections };
+}
+
+// focus ("Фокус і спостереження"): одна картка в центрі (перша за
+// created_at), решта -- рівновіддалені по колу навколо неї, кожна з'єднана
+// лінією до центру. Коло -- однаковий радіус по X і Y (на відміну від free,
+// яка явно еліпс), центр -- середина канви.
+function computeFocusLayout(cards: LayoutCardInput[]): AutoLayoutPlan {
+  const sorted = sortByCreatedAt(cards);
+  if (sorted.length === 0) return emptyPlan();
+
+  const [center, ...rest] = sorted;
+  const positions: AutoLayoutPosition[] = [{ cardId: center.cardId, x: 50, y: 50 }];
+  const connections: AutoLayoutConnection[] = [];
+
+  const radius = 35;
+  rest.forEach((card, index) => {
+    const angle = (-90 + (index * 360) / rest.length) * DEG2RAD;
+    const x = clampPercent(round2(50 + radius * Math.cos(angle)));
+    const y = clampPercent(round2(50 + radius * Math.sin(angle)));
+    positions.push({ cardId: card.cardId, x, y });
+    connections.push({ cardIdA: center.cardId, cardIdB: card.cardId, directed: false });
+  });
+
+  return { positions, connections };
+}
+
+// cause_effect ("Причина і наслідок"): дерево ЗЛІВА НАПРАВО -- корінь
+// (перша за created_at) зліва, кожен вузол розгалужується на 2 (бінарне
+// дерево за порядком created_at, індекс i має дітей 2i+1/2i+2 -- той самий
+// підхід, що бінарна купа). Зв'язки МІЖ УСІМА рівнями -- СТРІЛКИ
+// (directed: true), єдиний режим, де авто-розклад сам створює напрямлені
+// зв'язки (Андрій, чат: "якщо ми робимо стрілки, то нам потрібно буде
+// додати їх як інструментарій можливого з'єднання").
+function computeCauseEffectLayout(cards: LayoutCardInput[]): AutoLayoutPlan {
+  const sorted = sortByCreatedAt(cards);
+  const n = sorted.length;
+  if (n === 0) return emptyPlan();
+
+  const levelOf = (index: number): number => Math.floor(Math.log2(index + 1));
+  const maxLevel = levelOf(n - 1);
+
+  const levelCounts: number[] = new Array(maxLevel + 1).fill(0);
+  for (let i = 0; i < n; i += 1) levelCounts[levelOf(i)] += 1;
+
+  const seenAtLevel: number[] = new Array(maxLevel + 1).fill(0);
+  const positions: AutoLayoutPosition[] = [];
+  const connections: AutoLayoutConnection[] = [];
+
+  for (let i = 0; i < n; i += 1) {
+    const level = levelOf(i);
+    const x = maxLevel === 0 ? 10 : round2(10 + (level * 80) / maxLevel);
+    const y = evenlySpacedY(seenAtLevel[level], levelCounts[level]);
+    seenAtLevel[level] += 1;
+
+    positions.push({ cardId: sorted[i].cardId, x, y });
+
+    if (i > 0) {
+      const parentIndex = Math.floor((i - 1) / 2);
+      connections.push({ cardIdA: sorted[parentIndex].cardId, cardIdB: sorted[i].cardId, directed: true });
+    }
+  }
+
+  return { positions, connections };
+}
+
+// free ("Вільна розкладка"): картки розкидані рівномірно ЕЛІПСОМ (не
+// сіткою, не хаотично) -- рівний кут (360/N градусів) на картку, радіус по X
+// ширший за радіус по Y (еліпс, не коло -- на відміну від focus). БЕЗ
+// жодних зв'язків.
+function computeFreeLayout(cards: LayoutCardInput[]): AutoLayoutPlan {
+  const sorted = sortByCreatedAt(cards);
+  const n = sorted.length;
+  if (n === 0) return emptyPlan();
+  if (n === 1) return { positions: [{ cardId: sorted[0].cardId, x: 50, y: 50 }], connections: [] };
+
+  const radiusX = 38;
+  const radiusY = 28;
+  const positions = sorted.map((card, index) => {
+    const angle = ((index * 360) / n) * DEG2RAD;
+    const x = clampPercent(round2(50 + radiusX * Math.cos(angle)));
+    const y = clampPercent(round2(50 + radiusY * Math.sin(angle)));
+    return { cardId: card.cardId, x, y };
+  });
+
+  return { positions, connections: [] };
+}
+
+// staging ("Готово до розкладання"): авто-розклад НІЧОГО не робить -- усі
+// картки лишаються де є (нерозкладені -- в купці знизу), користувач сам
+// перетягує на канву. Той самий сенс, що й раніше.
+function computeStagingLayout(_cards: LayoutCardInput[]): AutoLayoutPlan {
+  return emptyPlan();
+}
+
+/**
+ * Диспетчер за режимом (app/apply-layout-mode.ts викликає цю єдину точку
+ * входу, не окремі функції режимів напряму). `null` (режим ще не обрано)
+ * трактується як `staging` -- жодної формули для "немає режиму" не існує,
+ * найбезпечніший дефолт -- нічого не чіпати.
+ */
+export function computeAutoLayout(mode: LayoutMode, cards: LayoutCardInput[]): AutoLayoutPlan {
+  switch (mode) {
+    case 'balance':
+      return computeBalanceLayout(cards);
+    case 'focus':
+      return computeFocusLayout(cards);
+    case 'cause_effect':
+      return computeCauseEffectLayout(cards);
+    case 'free':
+      return computeFreeLayout(cards);
+    case 'staging':
+    case null:
+      return computeStagingLayout(cards);
+    default:
+      return computeStagingLayout(cards);
+  }
 }

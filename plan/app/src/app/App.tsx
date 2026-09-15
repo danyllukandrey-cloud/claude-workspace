@@ -99,10 +99,14 @@ export interface AppProps {
    * самий проп, структурно сумісний з обома вужчими сигнатурами.
    */
   onSaveDeclaration: (input: { declaration?: string; layoutMode?: LayoutMode }) => Promise<void>;
-  /** T24 (sad.md §5, GET /api/v1/structure/layout -- LayoutBoard.loadLayout). */
+  /** T24 (sad.md §5, GET /api/v1/structure/layout + /connections -- LayoutBoard.loadLayout). */
   loadLayout: () => Promise<LayoutBoardState>;
-  /** T24 (sad.md §5, PUT /api/v1/structure/layout/{cardId} -- LayoutBoard.onMoveCard). */
-  onMoveCard: (input: { cardId: string; cellIndex: number }) => Promise<void>;
+  /** T24 (sad.md §5, PUT /api/v1/structure/layout/{cardId} -- LayoutBoard.onMoveCard). D-131-наступне рішення: вільне полотно, x/y відсоток канви (0-100) замість cellIndex. */
+  onMoveCard: (input: { cardId: string; x: number; y: number }) => Promise<void>;
+  /** Вимоги 4/5 (чат): POST /api/v1/structure/connections -- інструмент "Зв'язати" (LayoutBoard.onCreateConnection). */
+  onCreateConnection: (input: { cardIdA: string; cardIdB: string; directed: boolean }) => Promise<void>;
+  /** Вимога 4 (чат): DELETE /api/v1/structure/connections/{connectionId} -- розірвати зв'язок (LayoutBoard.onDeleteConnection). */
+  onDeleteConnection: (input: { connectionId: string }) => Promise<void>;
   /** T24 (sad.md §5, зведена аналітика -- AnalyticsScreen.loadAnalytics). */
   loadAnalytics: () => Promise<AnalyticsScreenState>;
   /**
@@ -210,6 +214,8 @@ export function App({
   onSaveDeclaration,
   loadLayout,
   onMoveCard,
+  onCreateConnection,
+  onDeleteConnection,
   loadAnalytics,
   loadCloseCardOptions,
   onCloseCard,
@@ -449,6 +455,8 @@ export function App({
             <LayoutBoard
               loadLayout={loadLayout}
               onMoveCard={onMoveCard}
+              onCreateConnection={onCreateConnection}
+              onDeleteConnection={onDeleteConnection}
               // Живе тестування (Андрій): "Конфігурація" зберігає layoutMode --
               // той самий реальний PATCH /api/v1/structure, що DeclarationScreen
               // нижче використовує для declaration (одне DI-джерело onSaveDeclaration,

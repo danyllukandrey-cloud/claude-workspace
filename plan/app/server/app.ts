@@ -34,7 +34,6 @@ import {
   closeActiveLayoutPositionForCard,
   findStructureByOwner,
   insertLayoutPosition,
-  listActiveLayoutPositionsByOwner,
 } from '../src/structure/infra/postgres-repo';
 import { recordCardRenameEvent } from '../src/structure/infra/history-repo';
 import { defaultPositionForNewCard } from '../src/structure/domain/layout';
@@ -44,6 +43,7 @@ import { defaultPositionForNewCard } from '../src/structure/domain/layout';
 // застосунку. Той самий клас дефекту, що A2/B5 вище.
 import * as structureHandlers from '../src/structure/ports/structure-handlers';
 import * as layoutHandlers from '../src/structure/ports/layout-handlers';
+import * as connectionHandlers from '../src/structure/ports/connection-handlers';
 // T29 -- порти фічі `agent` (contracts/openapi.yaml). Той самий урок, що
 // MUST-FIX 1 вище: написані й покриті тестами порти лишаються 404, якщо їх
 // тут ніхто не монтує -- server/app.test.ts нижче пінить КОЖЕН із 9 шляхів.
@@ -179,10 +179,9 @@ function asyncHandler(
 }
 
 /**
- * AC-09 -- нова картка одразу отримує клітинку за замовчуванням (review
- * 2026-09-11, MUST-FIX 6: `defaultPositionForNewCard` і `insertLayoutPosition`
- * існували й були покриті тестами, але жоден рядок production-коду їх не
- * викликав, тож нова картка не отримувала клітинки НІКОЛИ).
+ * AC-09 -- нова картка одразу отримує позицію (у купці нерозкладених,
+ * D-131-наступне рішення: вільне полотно прибрало "наступну вільну
+ * клітинку" -- defaultPositionForNewCard тепер завжди {x: null, y: null}).
  *
  * Живе тут, у composition root -- ЄДИНОМУ місці, де life-area-card і structure
  * зустрічаються (ADR-0004: life-area-card нічого не імпортує з structure/
@@ -191,12 +190,12 @@ function asyncHandler(
  * `db` приходить параметром і це ТОЙ САМИЙ db, у якому щойно вставилась сама
  * картка -- тобто та сама транзакція (deps.withTransaction у маршруті нижче):
  * збій тут відкочує й INSERT картки, інакше AC-09 виконано наполовину (картка
- * є, клітинки немає). Помилка навмисно НЕ глушиться.
+ * є, позиції немає). Помилка навмисно НЕ глушиться.
  *
  * Структури ще немає (перший вхід -- вона провісниться лениво на першому
  * GET /structure, ports/structure-handlers.ts) -- тихо нічого не робимо: це не
- * помилка, картка просто чекатиме в треї нерозкладених, щойно Структура
- * з'явиться (AC-17 описує рівно такий стан "картка без клітинки").
+ * помилка, картка просто чекатиме в купці нерозкладених, щойно Структура
+ * з'явиться (AC-17 описує рівно такий стан "картка без позиції").
  */
 async function assignDefaultLayoutPosition(db: Db, ownerUserId: string, cardId: string): Promise<void> {
   const structure = await findStructureByOwner(db, ownerUserId);
@@ -204,14 +203,14 @@ async function assignDefaultLayoutPosition(db: Db, ownerUserId: string, cardId: 
     return;
   }
 
-  const existing = await listActiveLayoutPositionsByOwner(db, ownerUserId);
-  const { cellIndex } = defaultPositionForNewCard(existing, structure.layoutMode);
+  const { x, y } = defaultPositionForNewCard();
 
   await insertLayoutPosition(db, {
     id: crypto.randomUUID(),
     structureId: structure.id,
     cardId,
-    cellIndex,
+    x,
+    y,
   });
 }
 
@@ -578,6 +577,36 @@ export function createApp(deps: AppDeps): express.Express {
     })
   );
 
+  // --- Structure connections (вимоги 4/5, чат 2026-09-15) -------------------
+  //
+  // Інструмент "Зв'язати" на Схемі -- звичайна лінія чи стрілка між двома
+  // картками власника. Той самий транспортний шаблон, що секції Cards/
+  // Structure вище.
+
+  app.get(
+    '/api/v1/structure/connections',
+    asyncHandler(async (req, res) => {
+      const items = await connectionHandlers.listConnections(deps.db, ownerUserId(req));
+      res.status(200).json(items);
+    })
+  );
+
+  app.post(
+    '/api/v1/structure/connections',
+    asyncHandler(async (req, res) => {
+      const created = await connectionHandlers.createConnection(deps.db, ownerUserId(req), req.body, deps.recordAction);
+      res.status(201).json(created);
+    })
+  );
+
+  app.delete(
+    '/api/v1/structure/connections/:connectionId',
+    asyncHandler(async (req, res) => {
+      await connectionHandlers.deleteConnection(deps.db, ownerUserId(req), param(req, 'connectionId'), deps.recordAction);
+      res.status(204).end();
+    })
+  );
+
   // --- Agent -----------------------------------------------------------
   //
   // T29 -- маршрути фічі `agent` (contracts/openapi.yaml, усі 9 шляхів:
@@ -794,16 +823,14 @@ export function createApp(deps: AppDeps): express.Express {
       return;
     }
     // Review 2026-09-11 (Частина 2), знято вимогами 14/15 (плоска модель
-    // layoutMode, logicVariant прибраний): раніше тут мапився
-    // LayoutValidationError (src/structure/domain/layout.ts) на 422
-    // structure.logic_variant_requires_logic_mode -- ЄДИНИЙ інваріант, що
-    // його породжував (AC-16 "підвид лише в режимі logic"), зник разом з
-    // logicVariant. Колізія клітинки (assertCellAvailable) лишається --
-    // app/move-card.ts вже перегортає її в AppError 409 ДО того, як вона
-    // сюди дійде, тож domain/layout.ts більше нічого не кидає, що реально
-    // доходить до цього middleware. Якщо це знову стане не так -- гілка
+    // layoutMode, logicVariant прибраний), і знову D-131-наступним рішенням
+    // (2026-09-15, вільне полотно): domain/layout.ts більше не кидає жодної
+    // власної помилки взагалі (LayoutValidationError і assertCellAvailable,
+    // разом із колізією клітинки AC-02, прибрані повністю -- вільне
+    // позиціювання не має інваріанту, який варто було б перевіряти тут).
+    // Якщо колись знову з'явиться доменна помилка розкладки -- гілка
     // повертається як AppError-обгортка в самому use-case (той самий підхід,
-    // що move-card.ts), а не тут генерично.
+    // що app/move-card.ts застосовує для інших кодів), а не тут генерично.
     // Review 2026-09-07, post-ship follow-up review ("Express 5 req.body ->
     // 500"): T50 handled req.body===undefined, але зіпсований JSON
     // (entity.parse.failed) чи завеликий (entity.too.large) -- окрема

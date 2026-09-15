@@ -14,8 +14,10 @@
 // AC-07: getLayoutHistoryAsOf реконструює розкладку "на момент часу" з
 // structure_history_event -- validate-first (structure.invalid_as_of, 422)
 // ДО будь-якого запиту в базу, той самий підхід, що structure-handlers.ts's
-// updateStructure, і той самий "cell_index -> N" `detail`-формат, що
-// ../app/get-analytics.ts вже парсить.
+// updateStructure. Вільне полотно (D-131-наступне рішення): `detail`-формат
+// тепер "pos_x -> N, pos_y -> M, prev_x -> ..., prev_y -> ..." (../app/move-card.ts
+// formatMovedDetail), той самий, що ../../app/main.tsx's loadAnalytics читає
+// для тренду розриву (AC-07).
 
 import { listActiveLayoutPositionsByOwner, findStructureByOwner } from '../infra/postgres-repo';
 import type { Db, LayoutPositionRecord, LayoutPositionStatusRow } from '../infra/postgres-repo';
@@ -28,7 +30,8 @@ import { AppError } from '../../shared/errors';
 
 export interface LayoutPositionDto {
   cardId: string;
-  cellIndex: number;
+  x: number | null;
+  y: number | null;
   status: LayoutPositionStatusRow;
   positionUpdatedAt: string;
 }
@@ -43,7 +46,8 @@ export interface LayoutPositionPageDto {
 function toLayoutPositionDto(record: LayoutPositionRecord): LayoutPositionDto {
   return {
     cardId: record.cardId,
-    cellIndex: record.cellIndex,
+    x: record.x,
+    y: record.y,
     status: record.status,
     positionUpdatedAt: record.positionUpdatedAt.toISOString(),
   };
@@ -117,11 +121,18 @@ export async function listLayoutPositions(
 
 // --- getLayoutHistoryAsOf -- GET /api/v1/structure/layout/history ----------
 
-/** Parses the only `detail` shape currently in use: "cell_index -> N" (../app/get-analytics.ts). */
-function parsePastCellIndex(detail: string | null): number | null {
-  if (!detail) return null;
-  const match = detail.match(/cell_index\s*->\s*(-?\d+)/);
-  return match ? Number(match[1]) : null;
+/**
+ * Parses the `detail` shape ../app/move-card.ts's formatMovedDetail writes:
+ * "pos_x -> N, pos_y -> M, prev_x -> ..., prev_y -> ...". `pos_x`/`pos_y` are
+ * NOT substrings of each other (unlike the old `cell_index`/`from_cell_index`
+ * pair) -- no token-order trap here, either regex finds its own token
+ * directly, first match is always the right one.
+ */
+function parsePastPosition(detail: string | null): { x: number | null; y: number | null } {
+  if (!detail) return { x: null, y: null };
+  const x = detail.match(/pos_x\s*->\s*(-?\d+(?:\.\d+)?)/);
+  const y = detail.match(/pos_y\s*->\s*(-?\d+(?:\.\d+)?)/);
+  return { x: x ? Number(x[1]) : null, y: y ? Number(y[1]) : null };
 }
 
 /**
@@ -169,11 +180,12 @@ export async function getLayoutHistoryAsOf(
 
   const items: LayoutPositionDto[] = [];
   for (const [cardId, event] of latestMovedByCard) {
-    const cellIndex = parsePastCellIndex(event.detail);
-    if (cellIndex === null) continue;
+    const { x, y } = parsePastPosition(event.detail);
+    if (x === null) continue;
     items.push({
       cardId,
-      cellIndex,
+      x,
+      y,
       status: 'active',
       positionUpdatedAt: event.occurredAt.toISOString(),
     });
@@ -185,7 +197,8 @@ export async function getLayoutHistoryAsOf(
 // --- moveCardPosition -- PUT /api/v1/structure/layout/{cardId} (T17) -------
 
 export interface MoveCardPositionBody {
-  cellIndex: number;
+  x: number;
+  y: number;
   positionUpdatedAt: string;
 }
 
@@ -208,7 +221,8 @@ export async function moveCardPosition(
     {
       ownerUserId,
       cardId,
-      cellIndex: body.cellIndex,
+      x: body.x,
+      y: body.y,
       positionUpdatedAt: body.positionUpdatedAt,
     },
     recordAction
@@ -256,7 +270,8 @@ export async function closeCardPosition(
 
   return {
     cardId: current.cardId,
-    cellIndex: current.cellIndex,
+    x: current.x,
+    y: current.y,
     status: 'closed',
     positionUpdatedAt: new Date().toISOString(),
   };

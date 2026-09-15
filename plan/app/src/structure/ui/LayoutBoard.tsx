@@ -1,41 +1,37 @@
-// SCR-02 — Схема (spec.md AC-02, AC-08, AC-11, AC-11b).
+// SCR-02 — Схема (spec.md AC-08, AC-11, AC-11b; D-131-наступне рішення).
+//
+// Андрій (чат, 2026-09-15), кілька повідомлень підряд:
+// 1. "Схема не працює і вона жахлива. Пропоную прибрати повністю оті
+//    клітинки." — фіксована сітка клітинок прибрана ПОВНІСТЮ, канва вільна.
+// 2. "просто зображення схеми щоб займало верхні 70 відсотків екрану, а
+//    блоки просто нехай будуть поскладані з низу" — ОДНА канва (верхні 70%
+//    висоти кореня екрана), нерозкладені картки скупчені в решті простору
+//    знизу (купка/tray), не окрема "зона базового розташування".
+// 3. "Блоки мають пересуватись вільно і по нижній розкладці і по верхній
+//    мишкою чи пальцем в телефоні." — реальний touch-drag через Pointer
+//    Events API (onPointerDown/Move/Up), НЕ HTML5 draggable/onDragStart
+//    (те, що тут стояло раніше -- фізично не працює на дотикових екранах).
+// 4. "Між блоками потрібно створити звязки... можемо розєднати і
+//    перезєднати." — інструмент "Зв'язати": тап по першій картці, тап по
+//    другій -- лінія/стрілка з'являється. Тап по наявній лінії -- видаляє її
+//    (миттєво, без ConfirmDialog -- легша дія, ніж архівація картки, яка
+//    справді має незворотні наслідки для метрик; зв'язок можна перестворити
+//    одним тапом, тож зайвий діалог лише сповільнював би основний сценарій
+//    "зʼєднав не так -- перезʼєднав").
+// 5. "якщо ми робимо стрілки то нам потрібно буде додати їх як
+//    інструментарій можливого з'єднання" — перемикач "Лінія"/"Стрілка" ПЕРЕД
+//    тим, як тапати картки.
 //
 // DI (plan/app/CLAUDE.md, той самий стиль, що DeclarationScreen/
-// AnalyticsScreen): loadLayout/onMoveCard — ін'єктовані пропи-функції,
-// жодного fetch() тут. onMoveCard мапиться 1:1 на PUT /structure/layout/{cardId}
-// (contracts/openapi.yaml moveCard) — сам HTTP-запит лишається за ports/.
+// AnalyticsScreen): loadLayout/onMoveCard/onCreateConnection/
+// onDeleteConnection — ін'єктовані пропи-функції, жодного fetch() тут.
 //
-// AC-11b: екран сам не вирішує ЧОМУ стався reset (зміна layoutMode на будь-
-// яке з 5 плоских значень, вимоги 14/15) — loadLayout уже згорнув причину в
-// один прапорець justReset (той самий підхід, що AnalyticsScreen's
-// trendAvailable). Рендер від причини не залежить: банер "розклади заново" +
-// нерозкладені картки в base order внизу, сітка вище лишається порожньою.
-//
-// Вимога 15 ("Готово до розкладання"): той самий трей нерозкладених стає
-// СТІЙКИМ явним станом (не одноразовим), коли `layoutMode === 'staging'` --
-// showStagingHint нижче.
-//
-// AC-02 (D-62, 409 structure.cell_occupied): помилка показується inline,
-// прив'язана до самої клітинки, не банером/toast на всю ширину екрана
-// (design-system.md "errors inline, never alert/confirm"). Мережева
-// помилка (fetch сам не спрацював) — навпаки, банер, бо стосується всього
-// збереження, не конкретної клітинки.
-//
-// Живе тестування (Андрій): "Налаштування розкладки схеми переносимо в
-// сторінку схеми" — LAYOUT_MODE_OPTIONS-пікер (і ConfirmDialog-попередження
-// про скидання, AC-11/AC-11b) переїхали сюди цілком з DeclarationScreen.tsx.
-// Локальний перемикач `screenMode` ('board' | 'config') — плаваюча кнопка
-// знизу по центру "Конфігурація" (той самий floating-патерн, що
-// DeclarationScreen/AnalyticsScreen). `hasArrangedCards` тепер рахується
-// напряму з `state.cards` (чи хоч одна `cellIndex !== null`) — сервер
-// окремого прапорця під це не віддає, і не мусить: ознака вже вся тут, у
-// вже завантажених позиціях. Після успішного збереження режиму екран
-// ПЕРЕЧИТУЄ loadLayout() (джерело правди -- сервер, той самий підхід, що
-// onClosed у CloseCardDialog-гілці нижче), щоб трей нерозкладених і банер
-// justReset одразу відобразили реальний новий стан.
+// CONFIG-екран (пікер режиму розкладки, ConfirmDialog про авто-розклад) --
+// ЛИШАЄТЬСЯ як є з попереднього проходу (D-131), логіка вибору режиму тут не
+// змінюється. Змінюється лише BOARD-екран (сама канва).
 
-import { useEffect, useState } from 'react';
-import type { DragEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import { Banner, Button, ConfirmDialog, EmptyState, Spinner } from '../../shared/ui';
 import { CloseCardDialog } from './CloseCardDialog';
 import type {
@@ -44,6 +40,7 @@ import type {
   CloseCardMetricTransferInput,
 } from './CloseCardDialog';
 import type { LayoutMode } from '../domain/layout';
+import { clampPercent } from '../domain/layout';
 
 interface LayoutModeOption {
   value: Exclude<LayoutMode, null>;
@@ -65,8 +62,17 @@ const LAYOUT_MODE_OPTIONS: LayoutModeOption[] = [
 export interface LayoutBoardCard {
   cardId: string;
   cardTitle: string;
-  cellIndex: number | null;
-  baseOrder: number;
+  /** Відсоток канви (0-100). Обидва `null` разом -- картка в купці нерозкладених знизу екрана. */
+  x: number | null;
+  y: number | null;
+}
+
+export interface LayoutBoardConnection {
+  id: string;
+  cardIdA: string;
+  cardIdB: string;
+  /** true -- стрілка cardIdA -> cardIdB; false -- звичайна лінія. */
+  directed: boolean;
 }
 
 /** Те, що SCR-04 має знати про картку, яку закривають (AC-12). */
@@ -77,30 +83,31 @@ export interface LayoutBoardCloseCardOptions {
 }
 
 export interface LayoutBoardState {
-  cellCount: number;
-  /** Щойно скинуто розташування (AC-11b) -- банер + base order внизу. */
-  justReset: boolean;
   /**
-   * Вимога 15 ("Готово до розкладання"): режим Структури на момент завантаження
-   * -- потрібен лише щоб зробити ЯВНИМ той самий трей нерозкладених карток
-   * (нижче), що вже існує для будь-якого reset (AC-11b). `null` -- режим ще не
-   * обрано (AC-09); дефолтне значення нижче ('free') на нього не впливає --
-   * банер staging просто не показується.
+   * Режим Структури на момент завантаження -- потрібен лише щоб зробити
+   * ЯВНИМ купку нерозкладених карток, коли `layoutMode === 'staging'`
+   * (вимога 15's сенс: цей режим НІЧОГО не авто-розкладає). `null` -- режим
+   * ще не обрано (AC-09).
    */
   layoutMode: LayoutMode;
   cards: LayoutBoardCard[];
+  connections: LayoutBoardConnection[];
 }
 
 export interface LayoutBoardProps {
-  /** Завантажує поточну розкладку. */
+  /** Завантажує поточну розкладку (позиції + зв'язки + картки). */
   loadLayout: () => Promise<LayoutBoardState>;
-  /** Переносить картку на нову клітинку. Кидає AppError-подібну помилку (code/httpStatus), якщо сервер відповів, або звичайну Error при мережевому збої. */
-  onMoveCard: (input: { cardId: string; cellIndex: number }) => Promise<void>;
+  /** Переносить картку на нову позицію канви (0-100 %). Кидає AppError-подібну помилку, якщо сервер відповів, або звичайну Error при мережевому збої. */
+  onMoveCard: (input: { cardId: string; x: number; y: number }) => Promise<void>;
+  /** Вимоги 4/5 -- інструмент "Зв'язати" створює лінію (`directed: false`) чи стрілку (`directed: true`, cardIdA -> cardIdB). */
+  onCreateConnection: (input: { cardIdA: string; cardIdB: string; directed: boolean }) => Promise<void>;
+  /** Вимога 4 -- тап по наявному зв'язку розриває його. */
+  onDeleteConnection: (input: { connectionId: string }) => Promise<void>;
   /**
-   * Живе тестування (Андрій): "Конфігурація" -- зберігає ОБРАНИЙ режим
-   * розкладки (AC-11/AC-11b). Кидає AppError-подібну помилку (code/httpStatus),
-   * якщо сервер відповів, або звичайну Error при мережевому збої (офлайн) --
-   * той самий контракт, що onMoveCard/onSave.
+   * "Конфігурація" -- зберігає ОБРАНИЙ режим розкладки (AC-11/AC-11b), що на
+   * сервері тепер рахує реальний авто-розклад (D-131-наступне рішення), не
+   * скидання в трей. Кидає AppError-подібну помилку, якщо сервер відповів,
+   * або звичайну Error при мережевому збої (офлайн).
    */
   onSaveLayoutMode: (input: { layoutMode: LayoutMode }) => Promise<void>;
   /**
@@ -127,44 +134,103 @@ function isAppErrorShape(err: unknown): err is AppErrorShape {
   return typeof err === 'object' && err !== null && 'code' in err && 'httpStatus' in err;
 }
 
+/** Обидва варіанти, які пропонує інструмент "Зв'язати" (вимога 5). */
+type LinkTool = 'line' | 'arrow';
+
 export function LayoutBoard({
   loadLayout,
   onMoveCard,
+  onCreateConnection,
+  onDeleteConnection,
   onSaveLayoutMode,
   loadCloseCardOptions,
   onCloseCard,
 }: LayoutBoardProps): JSX.Element {
   const [loading, setLoading] = useState(true);
-  const [state, setState] = useState<LayoutBoardState>({ cellCount: 0, justReset: false, layoutMode: null, cards: [] });
-  const [cellErrors, setCellErrors] = useState<Record<number, string>>({});
+  const [state, setState] = useState<LayoutBoardState>({ layoutMode: null, cards: [], connections: [] });
   const [banner, setBanner] = useState<{ variant: 'error' | 'info'; text: string } | null>(null);
+
   // AC-12: яку картку закриваємо (null -- діалог закритий) і чим його наповнити.
-  // Дві окремі змінні, бо між кліком і відповіддю GET .../metric-blocks є мить,
-  // коли картка вже обрана, а списку метрик ще немає -- там рендериться Spinner,
-  // а не порожній діалог, який виглядав би як "метрик немає".
   const [closingCard, setClosingCard] = useState<{ cardId: string; cardTitle: string } | null>(null);
   const [closeOptions, setCloseOptions] = useState<LayoutBoardCloseCardOptions | null>(null);
 
-  // Живе тестування (Андрій): "Конфігурація" -- локальний перемикач екрана,
-  // не окремий напрямок App.tsx (той самий рівень, що DeclarationScreen's
-  // view/edit). `pendingLayoutMode` -- чернетка пікера, скидається на
-  // поточне збережене значення щоразу, коли відкривається CONFIG (openConfig
-  // нижче), а не лишається застарілим між відкриттями.
+  // Живе тестування (Андрій): "Конфігурація" -- локальний перемикач екрана.
   const [screenMode, setScreenMode] = useState<'board' | 'config'>('board');
   const [pendingLayoutMode, setPendingLayoutMode] = useState<LayoutMode>(null);
   const [configBanner, setConfigBanner] = useState<{ variant: 'error' | 'info'; text: string } | null>(null);
   const [confirmPending, setConfirmPending] = useState(false);
+
+  // --- Драг мишею/дотиком (вимога 3) -- Pointer Events API -------------------
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
+  // Джерело правди для позиції картки, що ЗАРАЗ тягнеться -- ref (синхронний
+  // читач на pointerup), `dragTick` лише змушує React перемалювати JSX із
+  // цим свіжим значенням (сам ref зміни не спричиняє ре-рендер).
+  const liveDragRef = useRef<{ cardId: string; x: number; y: number } | null>(null);
+  const [, setDragTick] = useState(0);
+
+  // --- Інструмент "Зв'язати" (вимоги 4/5) -------------------------------------
+  const [linkTool, setLinkTool] = useState<LinkTool | null>(null);
+  const [linkFirstCardId, setLinkFirstCardId] = useState<string | null>(null);
 
   useEffect(() => {
     loadLayout().then((loaded) => {
       setState(loaded);
       setLoading(false);
     });
-    // Навмисно без loadLayout у deps -- викликається рівно раз при монтуванні
-    // (той самий підхід, що DeclarationScreen: DI-функція стабільна для
-    // життя екрана).
+    // Навмисно без loadLayout у deps -- викликається рівно раз при монтуванні.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** Пікселі вказівника -> відсоток канви (0-100), клемплені -- той самий clampPercent, що сервер (domain/layout.ts). */
+  function toCanvasPercent(clientX: number, clientY: number): { x: number; y: number } {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0 || rect.height === 0) {
+      return { x: clampPercent(Number.NaN), y: clampPercent(Number.NaN) };
+    }
+    return {
+      x: clampPercent(((clientX - rect.left) / rect.width) * 100),
+      y: clampPercent(((clientY - rect.top) / rect.height) * 100),
+    };
+  }
+
+  useEffect(() => {
+    if (!draggingCardId) return undefined;
+
+    const handleMove = (event: PointerEvent): void => {
+      const { x, y } = toCanvasPercent(event.clientX, event.clientY);
+      liveDragRef.current = { cardId: draggingCardId, x, y };
+      setDragTick((tick) => tick + 1);
+    };
+
+    const handleUp = (): void => {
+      const final = liveDragRef.current;
+      liveDragRef.current = null;
+      setDraggingCardId(null);
+      if (!final) return;
+
+      onMoveCard({ cardId: final.cardId, x: final.x, y: final.y }).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : 'Не вдалося зберегти позицію';
+        setBanner({ variant: 'error', text: `Не вдалося зберегти позицію -- мережева помилка. ${message}` });
+      });
+      // Оптимістично лишаємо картку там, де її відпустили -- наступний
+      // loadLayout() (наприклад, після зміни конфігурації) підтвердить
+      // реальний серверний стан, той самий принцип, що onCloseCard/
+      // onSaveLayoutMode нижче.
+      setState((prev) => ({
+        ...prev,
+        cards: prev.cards.map((card) => (card.cardId === final.cardId ? { ...card, x: final.x, y: final.y } : card)),
+      }));
+    };
+
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draggingCardId]);
 
   if (loading) {
     return <Spinner />;
@@ -174,9 +240,8 @@ export function LayoutBoard({
     return <EmptyState message="Поки що немає жодної картки" actionHint="Додай картку, щоб розкласти її тут" />;
   }
 
-  // AC-11/AC-11b: рахуємо напряму з уже завантажених позицій -- жодного
-  // окремого прапорця з бекенду, "картка з клітинкою" вже й є ознака.
-  const hasArrangedCards = state.cards.some((card) => card.cellIndex !== null);
+  // AC-11/AC-11b: рахуємо напряму з уже завантажених позицій.
+  const hasArrangedCards = state.cards.some((card) => card.x !== null);
 
   const openConfig = (): void => {
     setConfigBanner(null);
@@ -189,11 +254,8 @@ export function LayoutBoard({
       .then(() => {
         setConfigBanner(null);
         setScreenMode('board');
-        // Джерело правди -- сервер (позиції реально скинуті чи ні):
-        // перечитуємо розкладку, а не вгадуємо новий стан локально -- той
-        // самий підхід, що onClosed у CloseCardDialog-гілці нижче. Помилку
-        // ЦЬОГО перечитування рахуємо окремо від помилки збереження -- режим
-        // МІГ зберегтися, навіть якщо саме це оновлення не наздогнало.
+        // Джерело правди -- сервер (реальний авто-розклад нового режиму):
+        // перечитуємо розкладку, а не вгадуємо новий стан локально.
         loadLayout()
           .then(setState)
           .catch((err: unknown) => {
@@ -203,7 +265,6 @@ export function LayoutBoard({
       })
       .catch((err: unknown) => {
         if (isAppErrorShape(err)) {
-          // Не збереглось -- лишаємось у CONFIG, є що виправити й повторити.
           setConfigBanner({ variant: 'error', text: err.message });
         } else {
           const message = err instanceof Error ? err.message : 'Не вдалося зберегти';
@@ -235,8 +296,6 @@ export function LayoutBoard({
 
   const handleCancelChange = (): void => {
     setConfirmPending(false);
-    // Той самий принцип, що колишній DeclarationScreen.tsx: скасування
-    // лишає попередній (уже збережений) режим обраним, не чернетку.
     setPendingLayoutMode(state.layoutMode);
   };
 
@@ -245,8 +304,7 @@ export function LayoutBoard({
       <div className="relative flex h-full min-h-0 flex-col">
         <div className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 overflow-y-auto px-4 py-6 pb-20">
           {/* D-111: варіанти одного вибору (режим розкладки) лишаються поруч,
-              як рядок пігулок, що переноситься на вузькому екрані -- той
-              самий пікер, дослівно перенесений із DeclarationScreen.tsx. */}
+              як рядок пігулок, що переноситься на вузькому екрані. */}
           <fieldset className="m-0 flex flex-wrap gap-2 border-0 p-0">
             {LAYOUT_MODE_OPTIONS.map((option) => {
               const isSelected = pendingLayoutMode === option.value;
@@ -281,7 +339,7 @@ export function LayoutBoard({
 
         {confirmPending && (
           <ConfirmDialog
-            message="Зміна розкладки скине розташування вже розкладених карток. Продовжити?"
+            message="Зміна розкладки перерахує авто-розклад для всіх карток за новим режимом. Продовжити?"
             confirmLabel="Змінити"
             cancelLabel="Скасувати"
             onConfirm={handleConfirmChange}
@@ -292,13 +350,8 @@ export function LayoutBoard({
     );
   }
 
-  const handleDragStart = (event: DragEvent, cardId: string): void => {
-    event.dataTransfer.setData('cardId', cardId);
-  };
+  // --- BOARD -------------------------------------------------------------
 
-  // AC-12, вхід у SCR-04. `canCloseCard` -- обидві можливості інжектовані
-  // разом: діалог без onCloseCard показував би кнопку "Закрити", яка нічого
-  // не робить.
   const canCloseCard = loadCloseCardOptions !== undefined && onCloseCard !== undefined;
 
   const openCloseDialog = (card: LayoutBoardCard): void => {
@@ -313,9 +366,6 @@ export function LayoutBoard({
     loadCloseCardOptions(card.cardId)
       .then(setCloseOptions)
       .catch((err: unknown) => {
-        // Діалог НЕ відкривається напівпорожнім: без списку метрик користувач
-        // не бачив би, що саме втратить, а "закрити без переносу" виглядало б
-        // як єдиний варіант.
         setClosingCard(null);
         const message = err instanceof Error ? err.message : 'Не вдалося прочитати метрики картки';
         setBanner({ variant: 'error', text: `Не вдалося відкрити закриття напрямку. ${message}` });
@@ -327,177 +377,274 @@ export function LayoutBoard({
     setCloseOptions(null);
   };
 
+  const exitLinkMode = (): void => {
+    setLinkTool(null);
+    setLinkFirstCardId(null);
+  };
+
+  /** Тап по картці, поки активний інструмент "Зв'язати" (вимога 4/5). */
+  const handleLinkTap = (cardId: string): void => {
+    if (linkTool === null) return;
+
+    if (linkFirstCardId === null) {
+      setLinkFirstCardId(cardId);
+      return;
+    }
+
+    if (linkFirstCardId === cardId) {
+      // Тап по вже обраній картці вдруге -- скасовує вибір, не створює
+      // зв'язок картки самої із собою.
+      setLinkFirstCardId(null);
+      return;
+    }
+
+    const cardIdA = linkFirstCardId;
+    const cardIdB = cardId;
+    setLinkFirstCardId(null);
+    onCreateConnection({ cardIdA, cardIdB, directed: linkTool === 'arrow' })
+      .then(() => loadLayout())
+      .then(setState)
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : "Не вдалося створити зв'язок";
+        setBanner({ variant: 'error', text: message });
+      });
+  };
+
+  /** Тап по наявній лінії/стрілці -- миттєве видалення (не архівація, легша дія, D-131-наступне рішення). */
+  const handleDeleteConnection = (connectionId: string): void => {
+    setState((prev) => ({ ...prev, connections: prev.connections.filter((c) => c.id !== connectionId) }));
+    onDeleteConnection({ connectionId }).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : "Не вдалося видалити зв'язок";
+      setBanner({ variant: 'error', text: message });
+      // Відмова -- перечитуємо реальний стан, локальне видалення вище було оптимістичним.
+      loadLayout().then(setState).catch(() => {});
+    });
+  };
+
+  const handlePointerDown = (cardId: string) => (event: ReactPointerEvent<HTMLDivElement>): void => {
+    if (linkTool !== null) {
+      handleLinkTap(cardId);
+      return;
+    }
+    event.preventDefault();
+    const target = event.currentTarget;
+    try {
+      target.setPointerCapture(event.pointerId);
+    } catch {
+      // jsdom/старі браузери -- pointer capture best-effort, window-рівневі
+      // слухачі (useEffect вище) працюють і без нього.
+    }
+    // Стартова "жива" позиція -- поточна збережена (чи центр канви 50/50,
+    // якщо картка досі в купці нерозкладених) -- так чип не смикається до
+    // першого pointermove.
+    const existing = state.cards.find((c) => c.cardId === cardId);
+    setDraggingCardId(cardId);
+    liveDragRef.current = { cardId, x: existing?.x ?? 50, y: existing?.y ?? 50 };
+  };
+
+  /** Позиція картки для рендеру -- жива (під час драгу) чи збережена. */
+  function renderedPosition(card: LayoutBoardCard): { x: number; y: number } | null {
+    if (draggingCardId === card.cardId && liveDragRef.current?.cardId === card.cardId) {
+      return { x: liveDragRef.current.x, y: liveDragRef.current.y };
+    }
+    if (card.x === null || card.y === null) return null;
+    return { x: card.x, y: card.y };
+  }
+
   /**
    * Назва картки + (за наявності можливості) дія "Закрити напрямок". Спільний
-   * рендер для сітки й для треї нерозкладених -- AC-17/AC-11b ставлять картку в
-   * трей, і закрити напрямок звідти має бути так само можливо.
-   *
-   * aria-label несе НАЗВУ картки: кнопок на екрані стільки ж, скільки карток,
-   * і без назви вони були б нерозрізненні (і для скрінрідера, і для тесту).
+   * рендер для канви й для купки нерозкладених.
    */
-  const cardChip = (card: LayoutBoardCard): JSX.Element => (
-    <span
+  const cardChip = (card: LayoutBoardCard, extraClassName = ''): JSX.Element => (
+    <div
       key={card.cardId}
-      className="flex max-w-full flex-col items-center gap-1 rounded-control bg-surface-solid px-2.5 py-2 text-center shadow-soft"
+      data-testid={`card-${card.cardId}`}
+      data-card-id={card.cardId}
+      onPointerDown={handlePointerDown(card.cardId)}
+      style={{ touchAction: 'none' }}
+      className={`flex max-w-full cursor-grab flex-col items-center gap-1 rounded-control bg-surface-solid px-2.5 py-2 text-center shadow-soft active:cursor-grabbing ${extraClassName}`}
     >
-      <span
-        draggable
-        data-card-id={card.cardId}
-        onDragStart={(event) => handleDragStart(event, card.cardId)}
-        className="max-w-full truncate text-xs font-semibold text-ink"
-      >
-        {card.cardTitle}
-      </span>
+      <span className="max-w-full truncate text-xs font-semibold text-ink">{card.cardTitle}</span>
       {canCloseCard && (
         <button
           type="button"
           aria-label={`Закрити напрямок «${card.cardTitle}»`}
+          onPointerDown={(event) => event.stopPropagation()}
           onClick={() => openCloseDialog(card)}
           className="text-[11px] font-medium text-ink-faint transition-colors hover:text-ink"
         >
           Закрити напрямок
         </button>
       )}
-    </span>
+    </div>
   );
 
-  const handleDrop = (event: DragEvent, cellIndex: number): void => {
-    const cardId = event.dataTransfer.getData('cardId');
-    if (!cardId) {
-      return;
-    }
+  const unassigned = state.cards.filter((card) => card.x === null && card.cardId !== draggingCardId);
+  const canvasCards = state.cards.filter((card) => card.x !== null || card.cardId === draggingCardId);
 
-    setCellErrors((prev) => {
-      const next = { ...prev };
-      delete next[cellIndex];
-      return next;
-    });
+  // Вимога 15 ("Готово до розкладання"): купка нерозкладених лишається явним
+  // стійким нагадуванням для цього режиму, поки лишається хоч одна картка без позиції.
+  const showStagingHint = state.layoutMode === 'staging' && unassigned.length > 0;
 
-    onMoveCard({ cardId, cellIndex })
-      .then(() => {
-        setState((prev) => ({
-          ...prev,
-          cards: prev.cards.map((card) => (card.cardId === cardId ? { ...card, cellIndex } : card)),
-        }));
-      })
-      .catch((err: unknown) => {
-        if (isAppErrorShape(err)) {
-          if (err.code === 'structure.cell_occupied') {
-            setCellErrors((prev) => ({ ...prev, [cellIndex]: 'Ця клітинка вже зайнята' }));
-          } else {
-            setCellErrors((prev) => ({ ...prev, [cellIndex]: err.message }));
-          }
-        } else {
-          const message = err instanceof Error ? err.message : 'Не вдалося зберегти';
-          setBanner({ variant: 'error', text: `Не вдалося зберегти позицію -- мережева помилка. ${message}` });
-        }
-      });
-  };
+  const cardById = new Map(state.cards.map((card) => [card.cardId, card]));
 
-  const unassigned = state.cards
-    .filter((card) => card.cellIndex === null)
-    .sort((a, b) => a.baseOrder - b.baseOrder);
-
-  const cells = Array.from({ length: state.cellCount }, (_, cellIndex) => {
-    const card = state.cards.find((c) => c.cellIndex === cellIndex) ?? null;
-
-    return (
-      <div
-        key={cellIndex}
-        data-testid={`cell-${cellIndex}`}
-        onDragOver={(event) => event.preventDefault()}
-        onDrop={(event) => handleDrop(event, cellIndex)}
-        className={`flex min-h-[4.5rem] flex-col items-center justify-center gap-1 rounded-control p-1.5 text-center ${
-          card === null ? 'border border-border' : ''
-        }`}
-      >
-        {card !== null && cardChip(card)}
-        {cellErrors[cellIndex] !== undefined && (
-          <span className="text-[11px] font-medium text-bad">{cellErrors[cellIndex]}</span>
-        )}
-      </div>
-    );
-  });
-
-  // Вимога 15 ("Готово до розкладання"): трей нерозкладених нижче -- той самий
-  // механізм, що AC-11b уже показує одноразово після reset (justReset), тут
-  // робимо його ЯВНИМ ВИДИМИМ СТАНОМ саме для цього режиму -- не одноразовий
-  // банер, а нагадування, поки лишається хоч одна нерозкладена картка. Коли
-  // щойно стався reset (justReset), той банер уже пояснює ситуацію -- staging
-  // не дублює його в той самий момент.
-  const showStagingHint = state.layoutMode === 'staging' && unassigned.length > 0 && !state.justReset;
+  const linkHint =
+    linkTool === null
+      ? null
+      : linkFirstCardId === null
+        ? 'Оберіть першу картку, потім другу -- зʼявиться зв\'язок'
+        : 'Оберіть другу картку';
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pb-20">
-        {state.justReset && <Banner variant="info" text="Розклади заново -- попереднє розташування скинуто" />}
+      {banner !== null && (
+        <div className="px-1 pb-2">
+          <Banner variant={banner.variant} text={banner.text} />
+        </div>
+      )}
 
-        {showStagingHint && <Banner variant="info" text="Готово до розкладання -- перетягни картки знизу на вільні клітинки" />}
+      {linkHint !== null && (
+        <div className="px-1 pb-2">
+          <Banner variant="info" text={linkHint} />
+        </div>
+      )}
 
-        {banner !== null && <Banner variant={banner.variant} text={banner.text} />}
+      {showStagingHint && (
+        <div className="px-1 pb-2">
+          <Banner variant="info" text="Готово до розкладання -- перетягни картки знизу на канву" />
+        </div>
+      )}
 
-        <div className="grid grid-cols-3 gap-2">{cells}</div>
+      {/* Вимога 2 (Андрій, чат): ОДНА канва -- верхні 70% висоти екрана, не
+          окрема "зона базового розташування". */}
+      <div ref={canvasRef} data-testid="canvas" className="relative h-[70%] min-h-0 shrink-0 overflow-hidden rounded-control border border-border">
+        {/* SVG-шар зв'язків -- viewBox 0..100 у ЄДИНИХ одиницях з
+            left/top-відсотками карток нижче, тож лінія завжди влучає в центр
+            чипа, незалежно від реального пропорцій канви (вимога 4). */}
+        <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <defs>
+            <marker id="layout-board-arrowhead" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+              <path d="M0,0 L6,3 L0,6 Z" fill="currentColor" />
+            </marker>
+          </defs>
+          {state.connections.map((connection) => {
+            const a = cardById.get(connection.cardIdA);
+            const b = cardById.get(connection.cardIdB);
+            if (!a || !b) return null;
+            const posA = renderedPosition(a);
+            const posB = renderedPosition(b);
+            if (!posA || !posB) return null;
+            return (
+              <line
+                key={connection.id}
+                data-testid={`connection-${connection.id}`}
+                data-directed={connection.directed}
+                x1={posA.x}
+                y1={posA.y}
+                x2={posB.x}
+                y2={posB.y}
+                className={`text-ink/50 hover:text-ink ${linkTool === null ? 'pointer-events-auto cursor-pointer' : ''}`}
+                stroke="currentColor"
+                strokeWidth={1.5}
+                vectorEffect="non-scaling-stroke"
+                markerEnd={connection.directed ? 'url(#layout-board-arrowhead)' : undefined}
+                onClick={linkTool === null ? () => handleDeleteConnection(connection.id) : undefined}
+              />
+            );
+          })}
+        </svg>
 
-        {unassigned.length > 0 && (
-          <div data-testid="unassigned-tray" className="flex flex-wrap gap-2 border-t border-border pt-3">
-            {unassigned.map(cardChip)}
-          </div>
-        )}
-
-        {/* AC-12 / SCR-04. `key` -- cardId: CloseCardDialog ініціалізує свій
-            стан рядків ОДИН раз (useState(() => ...)), тож без ремаунта
-            відкриття діалогу для іншої картки показувало б перемикачі
-            попередньої. Назва картки -- тут, у заголовку: сам діалог її не
-            рендерить (review 2026-09-11, Частина 3), а без неї незрозуміло, що
-            саме закриваєш. role="dialog" -- теж звідси; фокус-пастка поки
-            відсутня (знахідка рев'ю про фокус лишається відкритою). */}
-        {closingCard !== null && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm">
+        {canvasCards.map((card) => {
+          const pos = renderedPosition(card);
+          if (!pos) return null;
+          return (
             <div
-              role="dialog"
-              aria-label={`Закрити напрямок «${closingCard.cardTitle}»`}
-              className="flex w-full max-w-sm flex-col gap-4 rounded-card border border-border bg-surface-solid p-6 shadow-soft"
+              key={card.cardId}
+              style={{ position: 'absolute', left: `${pos.x}%`, top: `${pos.y}%`, transform: 'translate(-50%, -50%)' }}
             >
-              <h2 className="font-display text-lg font-semibold leading-relaxed text-ink">Закрити «{closingCard.cardTitle}»?</h2>
-              {closeOptions === null ? (
-                <Spinner />
-              ) : (
-                <CloseCardDialog
-                  key={closingCard.cardId}
-                  cardTitle={closingCard.cardTitle}
-                  metricBlocks={closeOptions.metricBlocks}
-                  targetCards={closeOptions.targetCards}
-                  onClose={({ metricTransfers }) =>
-                    (onCloseCard as NonNullable<LayoutBoardProps['onCloseCard']>)({
-                      cardId: closingCard.cardId,
-                      metricTransfers,
-                    })
-                  }
-                  onClosed={() => {
-                    dismissCloseDialog();
-                    // Джерело правди -- сервер (позиція стала 'closed', метрики
-                    // переїхали): перечитуємо розкладку, а не вгадуємо новий стан
-                    // локально. screens.md SCR-04 success -- "повернення на SCR-02".
-                    loadLayout()
-                      .then(setState)
-                      .catch((err: unknown) => {
-                        const message = err instanceof Error ? err.message : 'Не вдалося оновити розкладку';
-                        setBanner({ variant: 'error', text: `Напрямок закрито, але розкладку не перечитано. ${message}` });
-                      });
-                  }}
-                  onCancel={dismissCloseDialog}
-                />
-              )}
+              {cardChip(card)}
             </div>
-          </div>
-        )}
+          );
+        })}
       </div>
 
+      {/* Вимога 2: купка нерозкладених -- решта висоти, звичайний потік (flex-wrap), не absolute. */}
+      <div data-testid="unassigned-tray" className="flex min-h-0 flex-1 flex-wrap content-start gap-2 overflow-y-auto border-t border-border pt-3">
+        {unassigned.map((card) => cardChip(card))}
+      </div>
+
+      {/* AC-12 / SCR-04. */}
+      {closingCard !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm">
+          <div
+            role="dialog"
+            aria-label={`Закрити напрямок «${closingCard.cardTitle}»`}
+            className="flex w-full max-w-sm flex-col gap-4 rounded-card border border-border bg-surface-solid p-6 shadow-soft"
+          >
+            <h2 className="font-display text-lg font-semibold leading-relaxed text-ink">Закрити «{closingCard.cardTitle}»?</h2>
+            {closeOptions === null ? (
+              <Spinner />
+            ) : (
+              <CloseCardDialog
+                key={closingCard.cardId}
+                cardTitle={closingCard.cardTitle}
+                metricBlocks={closeOptions.metricBlocks}
+                targetCards={closeOptions.targetCards}
+                onClose={({ metricTransfers }) =>
+                  (onCloseCard as NonNullable<LayoutBoardProps['onCloseCard']>)({
+                    cardId: closingCard.cardId,
+                    metricTransfers,
+                  })
+                }
+                onClosed={() => {
+                  dismissCloseDialog();
+                  loadLayout()
+                    .then(setState)
+                    .catch((err: unknown) => {
+                      const message = err instanceof Error ? err.message : 'Не вдалося оновити розкладку';
+                      setBanner({ variant: 'error', text: `Напрямок закрито, але розкладку не перечитано. ${message}` });
+                    });
+                }}
+                onCancel={dismissCloseDialog}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Живе тестування (Андрій): "Конфігурація" -- знизу по центру, поверх
-          контенту (той самий floating-патерн, що DeclarationScreen/
-          AnalyticsScreen), не зліва/справа. */}
-      <div className="absolute bottom-4 left-1/2 z-20 -translate-x-1/2">
-        <Button label="Конфігурація" onClick={openConfig} />
+          контенту. "Зв'язати" (вимоги 4/5) -- поруч, той самий floating-патерн. */}
+      <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2">
+        {linkTool === null ? (
+          <>
+            <Button label="Зв'язати" onClick={() => setLinkTool('line')} />
+            <Button label="Конфігурація" onClick={openConfig} />
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              aria-pressed={linkTool === 'line'}
+              onClick={() => setLinkTool('line')}
+              className={`rounded-control border px-3.5 py-2.5 text-sm font-bold transition-colors ${
+                linkTool === 'line' ? 'border-ink bg-ink/10 text-ink' : 'border-border bg-surface-solid text-ink-muted'
+              }`}
+            >
+              Лінія
+            </button>
+            <button
+              type="button"
+              aria-pressed={linkTool === 'arrow'}
+              onClick={() => setLinkTool('arrow')}
+              className={`rounded-control border px-3.5 py-2.5 text-sm font-bold transition-colors ${
+                linkTool === 'arrow' ? 'border-ink bg-ink/10 text-ink' : 'border-border bg-surface-solid text-ink-muted'
+              }`}
+            >
+              Стрілка
+            </button>
+            <Button label="Готово" onClick={exitLinkMode} />
+          </>
+        )}
       </div>
     </div>
   );

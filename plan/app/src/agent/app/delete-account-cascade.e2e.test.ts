@@ -223,7 +223,8 @@ function seedFullUserGraph(db: FakeCascadingDb, userId: string, seed: string): v
     id: `layout-${seed}`,
     structure_id: structureId,
     card_id: cardId,
-    cell_index: 0,
+    position_x: 0,
+    position_y: 0,
   });
   db.seed('structure_history_event', {
     id: `history-${seed}`,

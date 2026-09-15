@@ -13,6 +13,7 @@ export type {
   LayoutBoardProps,
   LayoutBoardState,
   LayoutBoardCard,
+  LayoutBoardConnection,
   LayoutBoardCloseCardOptions,
 } from './ui/LayoutBoard';
 
