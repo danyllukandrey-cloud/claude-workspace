@@ -34,7 +34,7 @@ export function Button({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className="rounded-control border border-border bg-surface px-4 py-3 font-sans text-sm font-bold text-ink shadow-btn backdrop-blur-xl transition-colors enabled:hover:bg-border disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+      className="rounded-control border border-border bg-surface px-4 py-3 font-sans text-sm font-bold leading-relaxed text-ink shadow-btn backdrop-blur-xl transition-colors enabled:hover:bg-border disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
     >
       {label}
     </button>

@@ -89,7 +89,7 @@ export function LogScreen({ loadActionLog }: LogScreenProps): JSX.Element {
   if (state.status === 'error') {
     return (
       <div className="flex flex-col gap-4 p-4">
-        <h1 className="font-display text-xl font-bold text-ink">Лог дій</h1>
+        <h1 className="font-display text-xl font-bold leading-relaxed text-ink">Лог дій</h1>
         <Banner variant="error" text={state.message} />
       </div>
     );
@@ -98,7 +98,7 @@ export function LogScreen({ loadActionLog }: LogScreenProps): JSX.Element {
   if (state.entries.length === 0) {
     return (
       <div className="flex flex-col gap-4 p-4">
-        <h1 className="font-display text-xl font-bold text-ink">Лог дій</h1>
+        <h1 className="font-display text-xl font-bold leading-relaxed text-ink">Лог дій</h1>
         <EmptyState message="Ще немає жодної дії" actionHint="Тут з'являться записи про кожну значущу дію в застосунку -- час і що сталося" />
       </div>
     );
@@ -106,7 +106,7 @@ export function LogScreen({ loadActionLog }: LogScreenProps): JSX.Element {
 
   return (
     <div className="flex flex-col gap-4 p-4">
-      <h1 className="font-display text-xl font-bold text-ink">Лог дій</h1>
+      <h1 className="font-display text-xl font-bold leading-relaxed text-ink">Лог дій</h1>
       <ul className="flex list-none flex-col gap-2">
         {state.entries.map((entry) => (
           <li

@@ -94,7 +94,7 @@ function trendLabel(trend: AnalyticsTrend): string | null {
 // Спільний стиль заголовка зони -- той самий прийом, що
 // EntryHistoryList.tsx's "Історія записів" / AccountScreen.tsx's
 // "Синхронізація"/"Небезпечна зона".
-const ZONE_LABEL_CLASS = 'font-display text-sm font-bold uppercase tracking-wide text-ink-muted';
+const ZONE_LABEL_CLASS = 'font-display text-sm font-bold uppercase tracking-wide leading-relaxed text-ink-muted';
 
 // Той самий поріг/колірний код, що MetricBlockCard.tsx's progressToneClasses
 // (D-126) -- узгоджено, не вигадуємо другу мову кольору для того самого
@@ -172,12 +172,12 @@ export function AnalyticsScreen({
         <div className="flex min-h-0 flex-col gap-2 overflow-y-auto rounded-card border border-border bg-surface p-4 shadow-soft backdrop-blur-xl sm:p-5">
           <h2 className={ZONE_LABEL_CLASS}>Загальний стан</h2>
           {averageText !== null && (
-            <p className="text-sm font-medium text-ink-muted">
+            <p className="text-sm font-medium leading-relaxed text-ink-muted">
               Середній прогрес:{' '}
               <span className="font-display text-2xl font-bold text-ink">{averageText}</span>
             </p>
           )}
-          <p className="text-xs text-ink-faint">{excludedCount} картки виключено з середнього (немає метрики)</p>
+          <p className="mt-1 text-xs leading-relaxed text-ink-faint">{excludedCount} картки виключено з середнього (немає метрики)</p>
           {!trendAvailable && (
             <Banner variant="info" text="Тренд наразі недоступний -- не вдалося завантажити історію" italic={false} />
           )}

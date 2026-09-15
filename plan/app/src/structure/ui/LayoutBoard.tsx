@@ -291,7 +291,7 @@ export function LayoutBoard({
             aria-label={`Закрити напрямок «${closingCard.cardTitle}»`}
             className="flex w-full max-w-sm flex-col gap-4 rounded-card border border-border bg-surface-solid p-6 shadow-soft"
           >
-            <h2 className="font-display text-lg font-semibold text-ink">Закрити «{closingCard.cardTitle}»?</h2>
+            <h2 className="font-display text-lg font-semibold leading-relaxed text-ink">Закрити «{closingCard.cardTitle}»?</h2>
             {closeOptions === null ? (
               <Spinner />
             ) : (

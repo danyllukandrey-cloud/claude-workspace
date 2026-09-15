@@ -93,7 +93,7 @@ export function LoginScreen({ requestSession, onLoginSuccess, renderGoogleButton
       <div className="flex w-full max-w-xs flex-col items-center gap-8 text-center">
         <div className="flex flex-col items-center gap-3">
           <Logo className="h-48 w-48 text-ink" />
-          <h1 className="font-display text-2xl font-bold tracking-tight text-ink">ПЛАН</h1>
+          <h1 className="font-display text-2xl font-bold leading-relaxed tracking-tight text-ink">ПЛАН</h1>
         </div>
 
         <div ref={containerRef} className="flex justify-center" />

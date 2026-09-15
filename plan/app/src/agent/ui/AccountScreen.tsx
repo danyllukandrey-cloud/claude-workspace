@@ -147,7 +147,7 @@ export function AccountScreen({
   if (loadError !== null) {
     return (
       <div className="flex flex-col gap-4 p-4">
-        <h1 className="font-display text-xl font-bold text-ink">Обліковий запис і дані</h1>
+        <h1 className="font-display text-xl font-bold leading-relaxed text-ink">Обліковий запис і дані</h1>
         <Banner variant="error" text={loadError} />
       </div>
     );
@@ -156,7 +156,7 @@ export function AccountScreen({
   if (mode === 'deleted') {
     return (
       <div className="flex flex-col gap-2 p-4">
-        <h1 className="font-display text-xl font-bold text-ink">Обліковий запис і дані</h1>
+        <h1 className="font-display text-xl font-bold leading-relaxed text-ink">Обліковий запис і дані</h1>
         <p className="text-sm italic text-ink-muted">Акаунт видалено. Усі дані видалено назавжди.</p>
       </div>
     );
@@ -253,7 +253,7 @@ export function AccountScreen({
     const canDelete = confirmationInput === DELETE_CONFIRMATION_WORD;
     return (
       <div className="flex flex-col gap-5 p-4">
-        <h1 className="font-display text-xl font-bold text-ink">Видалити акаунт і всі дані</h1>
+        <h1 className="font-display text-xl font-bold leading-relaxed text-ink">Видалити акаунт і всі дані</h1>
         <p className="text-sm italic text-ink-muted">
           Це незворотно. Усі картки, записи, декларація й пам'ять агента будуть видалені назавжди.
         </p>
@@ -298,7 +298,7 @@ export function AccountScreen({
   if (mode === 'add-resource') {
     return (
       <div className="flex flex-col gap-5 p-4">
-        <h1 className="font-display text-xl font-bold text-ink">Обліковий запис і дані</h1>
+        <h1 className="font-display text-xl font-bold leading-relaxed text-ink">Обліковий запис і дані</h1>
 
         <TextField
           label="Посилання на зовнішній ресурс"
@@ -324,10 +324,10 @@ export function AccountScreen({
 
   return (
     <div className="flex flex-col gap-6 p-4">
-      <h1 className="font-display text-xl font-bold text-ink">Обліковий запис і дані</h1>
+      <h1 className="font-display text-xl font-bold leading-relaxed text-ink">Обліковий запис і дані</h1>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-bold uppercase tracking-wide text-ink-muted">Синхронізація</h2>
+        <h2 className="text-sm font-bold uppercase tracking-wide leading-relaxed text-ink-muted">Синхронізація</h2>
 
         {resources.length === 0 ? (
           <EmptyState
@@ -374,7 +374,7 @@ export function AccountScreen({
           ConfirmDialog.tsx. Button-примітив лишається єдиним фірмовим
           варіантом (коментар у Button.tsx) -- тут навмисно raw <button>. */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-bold uppercase tracking-wide text-ink-muted">Небезпечна зона</h2>
+        <h2 className="text-sm font-bold uppercase tracking-wide leading-relaxed text-ink-muted">Небезпечна зона</h2>
         <button
           type="button"
           onClick={handleStartDeleteAccount}

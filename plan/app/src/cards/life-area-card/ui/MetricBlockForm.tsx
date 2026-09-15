@@ -109,7 +109,7 @@ export function MetricBlockForm({ initialValues, onSubmit }: MetricBlockFormProp
       onSubmit={handleSubmit}
       className="flex flex-col gap-4 rounded-card border border-border bg-surface-solid p-4"
     >
-      <h2 className="font-display text-lg font-bold text-ink">Новий блок-метрика</h2>
+      <h2 className="font-display text-lg font-bold leading-relaxed text-ink">Новий блок-метрика</h2>
       {submitError && <Banner variant="error" text={submitError} />}
       {/* D-111 (docs/DECISIONS.md): порядок полів -- що рахуємо -> постійний
           процес одразу після -> одиниця -> ціль+дата в одному рядку. Живе

@@ -34,7 +34,7 @@ const STATUS_DOT: Record<EntryViewModel['status'], string> = {
 export function EntryHistoryList({ entries, onFlagEntry, isFlagEntryDisabled }: EntryHistoryListProps): JSX.Element {
   return (
     <div className="flex flex-col gap-2">
-      <h3 className="font-display text-sm font-bold uppercase tracking-wide text-ink-muted">Історія записів</h3>
+      <h3 className="font-display text-sm font-bold uppercase tracking-wide leading-relaxed text-ink-muted">Історія записів</h3>
       <ul className="flex flex-col gap-2">
         {entries.map((entry) => (
           <li

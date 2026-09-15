@@ -239,7 +239,7 @@ export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived, on
             {/* AC-19: "торкається назви АБО обирає «Перейменувати» в меню" --
                 обидва входи ведуть у той самий startRename. */}
             <div className="relative flex items-start justify-between gap-3">
-              <h2 onClick={startRename} className="cursor-pointer font-display text-xl font-bold text-ink">
+              <h2 onClick={startRename} className="cursor-pointer font-display text-xl font-bold leading-relaxed text-ink">
                 {data.name}
               </h2>
               <button
@@ -304,7 +304,7 @@ export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived, on
             {descriptionError && <Banner variant="error" text={descriptionError} />}
           </div>
         ) : hasDescription ? (
-          <p onClick={startEditDescription} className="cursor-pointer text-sm text-ink-muted">
+          <p onClick={startEditDescription} className="cursor-pointer text-sm italic text-ink-muted">
             {data.description}
           </p>
         ) : (

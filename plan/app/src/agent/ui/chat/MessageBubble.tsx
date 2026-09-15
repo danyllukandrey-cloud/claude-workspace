@@ -41,8 +41,8 @@ export function MessageBubble({ message }: MessageBubbleProps): JSX.Element {
       <div
         className={
           isUser
-            ? 'w-[calc(100%-0.5rem)] whitespace-pre-line break-words rounded-control bg-ink/10 px-3.5 py-2.5 text-right text-sm text-ink'
-            : 'w-[calc(100%-0.5rem)] whitespace-pre-line break-words rounded-control bg-surface-solid px-3.5 py-2.5 text-left text-sm text-ink shadow-soft'
+            ? 'w-[calc(100%-0.5rem)] whitespace-pre-line break-words rounded-control bg-ink/10 px-3.5 py-2.5 text-right text-sm italic text-ink'
+            : 'w-[calc(100%-0.5rem)] whitespace-pre-line break-words rounded-control bg-surface-solid px-3.5 py-2.5 text-left text-sm italic text-ink shadow-soft'
         }
       >
         {message.content}
