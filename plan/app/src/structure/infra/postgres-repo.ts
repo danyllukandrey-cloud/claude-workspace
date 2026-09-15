@@ -338,6 +338,18 @@ export async function deleteConnection(db: Db, ownerUserId: string, connectionId
 }
 
 /**
+ * Видаляє всі зв'язки картки (і як card_id_a, і як card_id_b) -- викликається
+ * з close-card.ts при закритті напрямку (кінець-сесії ревю виявив: закриття
+ * картки закривало лише її позицію, а зв'язки з нею лишались "у нікуди").
+ * Власник уже перевірений викликачем (той самий cardId, що closeCard уже
+ * підтвердив через listActiveLayoutPositionsByOwner) -- внутрішній виклик
+ * use-case-у, не HTTP-межа, окремий owner-scoped join тут не потрібен.
+ */
+export async function deleteConnectionsForCard(db: Db, cardId: string): Promise<void> {
+  await db.query('DELETE FROM structure_connection WHERE card_id_a = $1 OR card_id_b = $1', [cardId]);
+}
+
+/**
  * Замінює ВСІ зв'язки Структури на новий план авто-розкладу
  * (app/apply-layout-mode.ts) -- DELETE+INSERT через ТОЙ САМИЙ переданий `db`,
  * атомарність (одна транзакція разом з N UPDATE позицій) лишається за

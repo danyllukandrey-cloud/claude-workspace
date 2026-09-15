@@ -372,6 +372,9 @@ function fakeCloseDb(opts: { activePositions: ReturnType<typeof positionRow>[] }
     if (text.includes('structure_layout_position') && sql.startsWith('UPDATE')) {
       return { rows: [] };
     }
+    if (text.includes('structure_connection') && sql.startsWith('DELETE')) {
+      return { rows: [] };
+    }
     throw new Error(`Непередбачений запит у тесті: ${text}`);
   });
   return { query: query as unknown as Db['query'] };

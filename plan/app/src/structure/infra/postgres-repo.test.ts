@@ -27,6 +27,7 @@ import {
   insertConnection,
   listConnectionsByOwner,
   deleteConnection,
+  deleteConnectionsForCard,
   replaceConnectionsForStructure,
 } from './postgres-repo';
 
@@ -315,6 +316,17 @@ describe('deleteConnection -- owner-scoped, non-disclosure (AC-03)', () => {
   it('a mismatched owner or missing connection deletes nothing and reports false', async () => {
     const query = vi.fn().mockResolvedValue({ rows: [] });
     await expect(deleteConnection({ query }, 'attacker-owner-id', 'connection-1')).resolves.toBe(false);
+  });
+});
+
+describe('deleteConnectionsForCard -- close-card.ts wipes a closed card\'s connections (D-132)', () => {
+  it('deletes rows where the card is either side of the connection', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    await deleteConnectionsForCard({ query }, 'card-1');
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toMatch(/DELETE FROM structure_connection/);
+    expect(sql).toMatch(/card_id_a = \$1 OR card_id_b = \$1/);
+    expect(params).toEqual(['card-1']);
   });
 });
 

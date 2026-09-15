@@ -98,6 +98,9 @@ function fakeDb(opts: {
     if (text.includes('structure_layout_position') && upper.startsWith('SELECT')) {
       return { rows: opts.activePositions ?? [] };
     }
+    if (text.includes('structure_connection') && upper.startsWith('DELETE')) {
+      return { rows: [] };
+    }
     if (upper.startsWith('SELECT') && text.includes('FROM structure WHERE')) {
       return { rows: opts.structure ? [opts.structure] : [] };
     }
@@ -122,6 +125,13 @@ function historyCalls(db: Db) {
   return queryCalls(db).filter(([text]) => text.includes('structure_history_event'));
 }
 
+/** Запити, що видаляють зв'язки картки (DELETE ... structure_connection). */
+function connectionDeleteCalls(db: Db) {
+  return queryCalls(db).filter(
+    ([text]) => text.includes('structure_connection') && text.trim().toUpperCase().startsWith('DELETE')
+  );
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -140,6 +150,16 @@ describe('closeCard -- AC-12/AC-15: закриття напрямку', () => {
     expect(historyWrites).toHaveLength(1);
     expect(historyWrites[0][1]).toContain(CARD_ID);
     expect(historyWrites[0][1]).toContain('closed');
+  });
+
+  it('deletes the closed card\'s connections (D-132) -- a line/arrow to a closed card would otherwise dangle', async () => {
+    const db = fakeDb({ structure: structureRow(), activePositions: [positionRow(CARD_ID, 3)] });
+
+    await closeCard(db, { ownerUserId: OWNER, cardId: CARD_ID });
+
+    const deletes = connectionDeleteCalls(db);
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0][1]).toEqual([CARD_ID]);
   });
 
   it('does not call transferMetricBlock when metricTransfers is omitted -- declined metrics stay behind', async () => {
@@ -195,6 +215,7 @@ describe('closeCard -- AC-12/AC-15: закриття напрямку', () => {
 
     expect(closeCalls(db)).toHaveLength(0);
     expect(historyCalls(db)).toHaveLength(0);
+    expect(connectionDeleteCalls(db)).toHaveLength(0);
     expect(transferMetricBlock).not.toHaveBeenCalled();
   });
 });
