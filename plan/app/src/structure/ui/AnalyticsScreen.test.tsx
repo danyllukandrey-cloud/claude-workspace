@@ -1,8 +1,10 @@
-// RED (T22 — SCR-03 Літопис-Аналітика, screens.md): component test for
-// AnalyticsScreen -- default-logic/default-no-scheme/empty/loading/
-// trend-unavailable states (spec.md AC-01, AC-04, AC-05, AC-06, AC-06b,
-// AC-07, AC-13). Component does not exist yet -- this is the RED step, no
-// production code written (test-author role).
+// Component test for AnalyticsScreen -- default-logic/default-no-scheme/
+// empty/loading/trend-unavailable states (spec.md AC-01, AC-04, AC-05,
+// AC-06, AC-06b, AC-07, AC-13), + живе тестування (Андрій, вимоги 16-18):
+// три-зонна розкладка, плаваючі кнопки "Архів"/"Звіт" і заглушка "звіт за
+// запитом". Селектори підлаштовані під нову верстку, сенс перевірок з
+// попередньої версії файлу збережено (дані про прогрес/ранг-розрив/тренд,
+// клік по "Архів", AC-06 без вердикту, AC-13 лічильник виключених).
 //
 // DI style (plan/app/CLAUDE.md, matches DeclarationScreen T20/CardDetailScreen):
 // `loadAnalytics` is an injected prop-function, no fetch() inside the
@@ -72,6 +74,49 @@ test('D-124: кнопка "Архів" видима й викликає injected
   expect(props.onOpenArchive).toHaveBeenCalledTimes(1);
 });
 
+test('вимога 16/18: "Архів" і "Звіт" плавають знизу зліва, поза звичайним потоком (не на всю ширину)', async () => {
+  const props = baseProps();
+  render(<AnalyticsScreen {...props} />);
+
+  await screen.findByText(/62%/);
+
+  const archiveButton = screen.getByRole('button', { name: 'Архів' });
+  const reportButton = screen.getByRole('button', { name: 'Звіт' });
+  const floatingWrapper = archiveButton.parentElement;
+
+  // Обидві кнопки -- сусіди в одній плаваючій обгортці.
+  expect(floatingWrapper).toBe(reportButton.parentElement);
+  // "Парить" знизу зліва, поверх контенту -- absolute/z-індекс, не звичайний
+  // елемент flex-колонки (там кнопка розтяглась би на всю ширину).
+  expect(floatingWrapper?.className).toMatch(/\babsolute\b/);
+  expect(floatingWrapper?.className).toMatch(/\bbottom-4\b/);
+  expect(floatingWrapper?.className).toMatch(/\bleft-4\b/);
+});
+
+test('вимога 18: клік по "Звіт" показує заглушку "звіт за запитом"', async () => {
+  const props = baseProps();
+  render(<AnalyticsScreen {...props} />);
+
+  await screen.findByText(/62%/);
+
+  expect(screen.queryByText(/звіт за запитом/i)).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Звіт' }));
+  expect(screen.getByText(/звіт за запитом/i)).toBeTruthy();
+
+  // Повторний клік ховає заглушку назад.
+  fireEvent.click(screen.getByRole('button', { name: 'Звіт' }));
+  expect(screen.queryByText(/звіт за запитом/i)).toBeNull();
+});
+
+test('вимога 17: третя зона ("звіти") -- чесний порожній стан, без вигаданих записів', async () => {
+  const props = baseProps();
+  render(<AnalyticsScreen {...props} />);
+
+  await screen.findByText(/62%/);
+  expect(screen.getByText('Звіти')).toBeTruthy();
+  expect(screen.getByText('Звітів поки немає')).toBeTruthy();
+});
+
 test('default-logic (AC-01/AC-06): показує середній прогрес і, для кожної картки, ранг-розрив без вердикту', async () => {
   const props = baseProps({
     layoutMode: 'logic',
@@ -86,6 +131,10 @@ test('default-logic (AC-01/AC-06): показує середній прогре�
 
   await screen.findByText(/62%/);
   expect(screen.getByText(/2.*виключ/i)).toBeTruthy();
+
+  // Зона 1 і зона 2 -- окремі підписи (вимога 17: дві крупні зони зверху).
+  expect(screen.getByText('Загальний стан')).toBeTruthy();
+  expect(screen.getByText('Показники по картках')).toBeTruthy();
 
   expect(screen.getByText('Картка A')).toBeTruthy();
   expect(screen.getByText(/40%/)).toBeTruthy();
@@ -120,7 +169,7 @@ test('default-no-scheme (AC-06b): без рангового розриву, на
   expect(screen.queryByText(/ранг/i)).toBeNull();
 });
 
-test('empty (AC-13): жодної картки з обчислюваним відсотком -- порожній стан з лічильником виключених', async () => {
+test('empty (AC-13): жодної картки з обчислюваним відсотком -- порожній стан у зоні 2 з лічильником виключених у зоні 1', async () => {
   const props = baseProps({
     layoutMode: 'free',
     average: null,
@@ -130,6 +179,7 @@ test('empty (AC-13): жодної картки з обчислюваним ві�
   render(<AnalyticsScreen {...props} />);
 
   await screen.findByText(/3.*виключ/i);
+  expect(screen.getByText('Немає карток з обчислюваним прогресом')).toBeTruthy();
   expect(screen.queryByText(/%/)).toBeNull();
 });
 
