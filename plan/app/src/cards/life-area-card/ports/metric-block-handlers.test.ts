@@ -9,7 +9,7 @@
 // картка-джерело; (3) AppError use-case шару проходить нагору без змін.
 
 import { describe, it, expect, vi } from 'vitest';
-import { createMetricBlock, transferMetricBlock, listMetricBlocks, archiveMetricBlock } from './metric-block-handlers';
+import { createMetricBlock, transferMetricBlock, listMetricBlocks, archiveMetricBlock, updateMetricBlock } from './metric-block-handlers';
 import { AppError } from '../../../shared/errors';
 import type { Db } from '../infra/postgres-repo';
 
@@ -336,5 +336,71 @@ describe('archiveMetricBlock port', () => {
     await expect(
       archiveMetricBlock({ query: vi.fn().mockResolvedValueOnce({ rows: [] }) }, 'user-1', 'card-1', 'does-not-exist')
     ).rejects.toBeInstanceOf(AppError);
+  });
+});
+
+// --- updateMetricBlock (CH-03, docs/features/life-area-card/changes.md) ----
+
+describe('updateMetricBlock port', () => {
+  it('returns the updated MetricBlock shaped exactly per the contract schema', async () => {
+    const updatedRow = { ...SOURCE_METRIC_BLOCK_ROW, label: 'Біг' };
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [SOURCE_METRIC_BLOCK_ROW] }) // findMetricBlockById
+      .mockResolvedValueOnce({ rows: [SOURCE_CARD_ROW] }) // findCardById
+      .mockResolvedValueOnce({ rows: [] }) // findMetricBlockByCardLabelUnit -- no collision
+      .mockResolvedValueOnce({ rows: [updatedRow] }); // updateMetricBlock
+    const db: Db = { query };
+
+    const result = await updateMetricBlock(db, 'user-1', 'card-source', 'block-1', { label: 'Біг' });
+
+    expect(result).toEqual({
+      id: 'block-1',
+      cardId: 'card-source',
+      label: 'Біг',
+      unit: 'км',
+      frequency: 'weekly',
+      targetCount: 5,
+      isOngoing: false,
+      targetDate: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+      status: 'active',
+    });
+  });
+
+  it('propagates card.not_found from the use-case unchanged', async () => {
+    const query = vi.fn().mockResolvedValueOnce({ rows: [] });
+    const db: Db = { query };
+
+    await expect(updateMetricBlock(db, 'user-1', 'card-1', 'does-not-exist', { label: 'x' })).rejects.toMatchObject({
+      code: 'card.not_found',
+      httpStatus: 404,
+    });
+  });
+
+  it('propagates a 409 metric_block.name_collision exactly as the use-case raises it', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [SOURCE_METRIC_BLOCK_ROW] })
+      .mockResolvedValueOnce({ rows: [SOURCE_CARD_ROW] })
+      .mockResolvedValueOnce({ rows: [OTHER_METRIC_BLOCK_ROW] }); // collision
+    const db: Db = { query };
+
+    await expect(
+      updateMetricBlock(db, 'user-1', 'card-source', 'block-1', { label: 'Плавання' })
+    ).rejects.toMatchObject({ code: 'metric_block.name_collision', httpStatus: 409 });
+  });
+
+  it('propagates a 422 metric_block.invalid_target_count exactly as the use-case raises it', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [SOURCE_METRIC_BLOCK_ROW] })
+      .mockResolvedValueOnce({ rows: [SOURCE_CARD_ROW] });
+    const db: Db = { query };
+
+    await expect(
+      updateMetricBlock(db, 'user-1', 'card-source', 'block-1', { targetCount: 0 })
+    ).rejects.toMatchObject({ code: 'metric_block.invalid_target_count', httpStatus: 422 });
   });
 });

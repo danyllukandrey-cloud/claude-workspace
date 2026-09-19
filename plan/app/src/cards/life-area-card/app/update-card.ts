@@ -28,8 +28,8 @@
 // чи поки composition root не готовий) use-case просто не робить цей крок --
 // не помилка, лише "Структура поки не підключена".
 
-import { markFilled } from '../domain/card';
-import type { Card } from '../domain/card';
+import { markFilled, setTrackingModeMetrics, setTrackingModeState, isCardHealthState, CardValidationError } from '../domain/card';
+import type { Card, CardTrackingMode, CardHealthState } from '../domain/card';
 import { findCardById, updateCard as updateCardRow, insertLifecycleEvent } from '../infra/postgres-repo';
 import type { CardRecord, Db } from '../infra/postgres-repo';
 import { AppError } from '../../../shared/errors';
@@ -43,6 +43,16 @@ export interface UpdateCardInput {
   description?: string | null;
   /** true -- спробувати позначити картку "заповненою" (AC-03) у цьому ж виклику. */
   markFilled?: boolean;
+  /**
+   * CH-02 (docs/features/life-area-card/changes.md): перемикає режим
+   * відстеження картки. 'state' вимагає healthState у ЦЬОМУ Ж виклику
+   * (domain/card.ts setTrackingModeState) -- 'metrics' завжди скидає
+   * healthState на null (setTrackingModeMetrics), незалежно від того, що
+   * передано в healthState.
+   */
+  trackingMode?: CardTrackingMode;
+  /** CH-02: обов'язкове, лише коли trackingMode === 'state' у цьому ж виклику. */
+  healthState?: CardHealthState | null;
 }
 
 /** Сигнатура збігається з structure/infra/history-repo.ts recordCardRenameEvent. */
@@ -73,7 +83,12 @@ export async function updateCard(
 
   // Патч будуємо з полів, які реально передали в цьому виклику -- Опис
   // можна зберегти окремо від позначення "заповнена" (тіж поле, різні наміри).
-  const patch: { name?: string; description?: string | null } = {};
+  const patch: {
+    name?: string;
+    description?: string | null;
+    trackingMode?: CardTrackingMode;
+    healthState?: CardHealthState | null;
+  } = {};
   if (input.name !== undefined) {
     patch.name = input.name;
   }
@@ -81,15 +96,42 @@ export async function updateCard(
     patch.description = input.description;
   }
 
+  // Поточна картка як доменний Card -- база і для markFilled() нижче, і для
+  // CH-02's trackingMode-перемикання (обидва -- чисті доменні функції, що
+  // повертають НОВУ копію, самі нічого в базу не пишуть).
+  const domainCard: Card = {
+    id: current.id,
+    name: current.name,
+    description: current.description,
+    status: current.status,
+    trackingMode: current.trackingMode,
+    healthState: current.healthState,
+  };
+
+  // CH-02: перемикання режиму ДО будь-якого запису в базу -- той самий
+  // принцип, що markFilled нижче: доменна валідація (тут -- "healthState
+  // обов'язковий для 'state'") кидається раніше за repo.updateCard.
+  if (input.trackingMode !== undefined) {
+    if (input.trackingMode === 'state') {
+      if (!isCardHealthState(input.healthState)) {
+        throw new CardValidationError(
+          'card.health_state_required',
+          'Оберіть стан картки: використовується, критично потребує відновлення чи на паузі'
+        );
+      }
+      const switched = setTrackingModeState(domainCard, input.healthState);
+      patch.trackingMode = switched.trackingMode;
+      patch.healthState = switched.healthState;
+    } else {
+      const switched = setTrackingModeMetrics(domainCard);
+      patch.trackingMode = switched.trackingMode;
+      patch.healthState = switched.healthState;
+    }
+  }
+
   if (input.markFilled) {
     // Ефективний Опис для переходу -- переданий зараз, або вже збережений раніше.
     const effectiveDescription = input.description !== undefined ? input.description : current.description;
-    const domainCard: Card = {
-      id: current.id,
-      name: current.name,
-      description: current.description,
-      status: current.status,
-    };
     // Пропускаємо CardValidationError як є (не обгортаємо в AppError): код і
     // повідомлення вже у форматі "card.xxx", домен -- єдине джерело правди
     // для цього правила (AC-03). Кидається раніше за будь-який виклик

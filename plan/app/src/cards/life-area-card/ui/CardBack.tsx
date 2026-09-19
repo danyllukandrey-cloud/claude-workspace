@@ -20,7 +20,23 @@ import { EntryHistoryList } from './EntryHistoryList';
 import { MetricBlockCard } from './MetricBlockCard';
 import { MetricBlockForm } from './MetricBlockForm';
 import type { MetricBlockFormValues } from './MetricBlockForm';
-import type { CardBackData, MetricBlockViewModel } from './types';
+import type { CardBackData, MetricBlockTransferTargetCard, MetricBlockViewModel } from './types';
+import type { CardTrackingMode, CardHealthState } from '../domain/card';
+
+// CH-02 (docs/features/life-area-card/changes.md): три можливі стани, той
+// самий порядок, що юзер-кейс перелічує їх.
+const HEALTH_STATE_OPTIONS: { value: CardHealthState; label: string }[] = [
+  { value: 'active', label: 'використовується' },
+  { value: 'critical', label: 'критично потребує відновлення' },
+  { value: 'paused', label: 'на паузі' },
+];
+
+/** Той самий колірний словник, що CardFace.tsx's HEALTH_STATE_DOT -- підказка кольору поруч із кожним варіантом вибору. */
+const HEALTH_STATE_DOT_CLASS: Record<CardHealthState, string> = {
+  active: 'bg-good',
+  critical: 'bg-bad',
+  paused: 'bg-warn',
+};
 
 export interface CardBackProps {
   /** Завантажує дані звороту картки (блоки-метрики, історія, агрегат). */
@@ -51,6 +67,34 @@ export interface CardBackProps {
    * значення -- той самий підхід, що onCreateMetricBlock.
    */
   onArchiveMetricBlock?: (metricBlockId: string) => Promise<void>;
+  /**
+   * CH-02 (docs/features/life-area-card/changes.md): зберігає режим
+   * відстеження картки ("картка: стан без вимірювань" чи звичайний
+   * метричний режим). Опційний, той самий DI-патерн, що onCreateMetricBlock
+   * -- без пропу вибір не рендериться (лише поточний стан, якщо він уже є).
+   */
+  onUpdateTracking?: (input: { trackingMode: CardTrackingMode; healthState: CardHealthState | null }) => Promise<void>;
+  /**
+   * CH-03 (docs/features/life-area-card/changes.md): зберігає перейменування
+   * чи зміну налаштувань (ціль/одиниця/частота) блоку-метрики -- БЕЗ
+   * перенесення на іншу картку (те робить onTransferMetricBlock нижче).
+   * Опційний, той самий DI-патерн, що решта дій -- без пропу олівець на
+   * MetricBlockCard не рендериться взагалі.
+   */
+  onUpdateMetricBlock?: (metricBlockId: string, values: MetricBlockFormValues) => Promise<void>;
+  /**
+   * CH-03: переносить блок-метрику на іншу картку -- викликає наявну
+   * transferMetricBlock (вже працює, нового бекенду для цієї дії не треба,
+   * той самий ендпоінт, що structure's "Закрити напрямок" уже використовує).
+   */
+  onTransferMetricBlock?: (metricBlockId: string, targetCardId: string) => Promise<void>;
+  /**
+   * CH-03: картки, куди можна перенести блок -- решта активних карток
+   * власника (без цієї самої). Композиційний корінь (DeckScreen.tsx) уже
+   * тримає повний список карток колоди -- жодного додаткового мережевого
+   * виклику тут не потрібно.
+   */
+  transferTargetCards?: MetricBlockTransferTargetCard[];
 }
 
 type LoadState = 'loading' | 'ready' | 'error';
@@ -65,6 +109,10 @@ export function CardBack({
   onRenameTransferredBlock,
   onCreateMetricBlock,
   onArchiveMetricBlock,
+  onUpdateTracking,
+  onUpdateMetricBlock,
+  onTransferMetricBlock,
+  transferTargetCards,
 }: CardBackProps): JSX.Element {
   const [state, setState] = useState<LoadState>('loading');
   const [data, setData] = useState<CardBackData | null>(null);
@@ -78,6 +126,14 @@ export function CardBack({
   // toggle-стан, що isCreatingBlock вище. Тримаємо весь MetricBlockViewModel,
   // не лише id -- діалогу потрібна label для тексту підтвердження.
   const [pendingDeleteBlock, setPendingDeleteBlock] = useState<MetricBlockViewModel | null>(null);
+  // CH-03: блок, для якого зараз відкрито редагування -- той самий "null --
+  // жоден" toggle-стан, що pendingDeleteBlock. Тримаємо весь
+  // MetricBlockViewModel, не лише id -- формі потрібні label/unit/settings
+  // для initialValues.
+  const [editingBlock, setEditingBlock] = useState<MetricBlockViewModel | null>(null);
+  const [transferTargetId, setTransferTargetId] = useState('');
+  const [isTransferring, setIsTransferring] = useState(false);
+  const [transferError, setTransferError] = useState<string | undefined>(undefined);
   // Review 2026-09-07, post-ship follow-up review (AC-12/E remainder):
   // handleFlagEntry нижче мав ТОЙ САМИЙ баг, що refresh() уже виправлено
   // (setState('error') на невдачі стирало всі дані) -- пропущено окремо,
@@ -92,6 +148,10 @@ export function CardBack({
   // автоховається -- користувач сам іде в чат, коли готовий, не поки
   // читає текст).
   const [showFlagHint, setShowFlagHint] = useState(false);
+  // CH-02: захист від подвійного кліку по радіо-вибору режиму, поки перший
+  // запит ще в польоті -- той самий isSubmitting-підхід, що isFlaggingEntry.
+  const [isSavingTracking, setIsSavingTracking] = useState(false);
+  const [trackingError, setTrackingError] = useState<string | null>(null);
   // Review 2026-09-07 E (T52): фоновий refresh (після успішної мутації) --
   // окремий, неблокуючий стан помилки, ніколи не `setState('error')` (той
   // самий шлях, що ПОЧАТКОВЕ завантаження) -- інакше невдалий фоновий
@@ -156,6 +216,12 @@ export function CardBack({
     return <Banner variant="error" text={error} />;
   }
 
+  // CH-02: `trackingMode` опційне на CardBackData (десятки наявних тестових
+  // fixtures передували цю зміну) -- 'metrics' той самий дефолт, що й сама
+  // база даних (postgres-repo.ts card.tracking_mode DEFAULT 'metrics').
+  const trackingMode = data.trackingMode ?? 'metrics';
+  const healthState = data.healthState ?? null;
+
   const handleFlagEntry = (entryId: string): void => {
     if (!onFlagEntry || isFlaggingEntry) return;
     // Той самий requestId-лічильник, що refresh() -- onFlagEntry теж
@@ -181,8 +247,64 @@ export function CardBack({
       .finally(() => setIsFlaggingEntry(false));
   };
 
+  /**
+   * CH-02: перемикає trackingMode/healthState -- той самий "викликати
+   * injected дію, потім refresh()" підхід, що handleCreateMetricBlock нижче.
+   * Захищено isSavingTracking від подвійного кліку (радіо-кнопки лишаються
+   * disabled, поки перший запит не завершився).
+   */
+  const handleUpdateTracking = (input: { trackingMode: CardTrackingMode; healthState: CardHealthState | null }): void => {
+    if (!onUpdateTracking || isSavingTracking) return;
+    setTrackingError(null);
+    setIsSavingTracking(true);
+    onUpdateTracking(input)
+      .then(() => {
+        refresh();
+      })
+      .catch((err: unknown) => {
+        setTrackingError(err instanceof Error ? err.message : 'Не вдалося зберегти режим картки');
+      })
+      .finally(() => setIsSavingTracking(false));
+  };
+
+  /**
+   * CH-03: перейменування/налаштування (без перенесення) -- ТОЙ САМИЙ підхід,
+   * що handleCreateMetricBlock нижче: не глушить/не перехоплює відхилення --
+   * MetricBlockForm сам показує submitError і лишається відкритою на невдачі
+   * (форма закривається лише в гілці .then(), яка не виконається на reject).
+   */
+  const handleSaveMetricBlockEdit = (values: MetricBlockFormValues): Promise<void> => {
+    if (!onUpdateMetricBlock || !editingBlock) return Promise.resolve();
+    return onUpdateMetricBlock(editingBlock.id, values).then(() => {
+      setEditingBlock(null);
+      refresh();
+    });
+  };
+
+  /** CH-03: перенесення на іншу картку -- наявна transferMetricBlock (injected), закриває редагування й перезавантажує зворот. */
+  const handleTransferMetricBlock = (): void => {
+    if (!onTransferMetricBlock || !editingBlock || !transferTargetId || isTransferring) return;
+    setTransferError(undefined);
+    setIsTransferring(true);
+    onTransferMetricBlock(editingBlock.id, transferTargetId)
+      .then(() => {
+        setEditingBlock(null);
+        setTransferTargetId('');
+        setIsTransferring(false);
+        refresh();
+      })
+      .catch((err: unknown) => {
+        setIsTransferring(false);
+        setTransferError(err instanceof Error ? err.message : 'Не вдалося перенести блок-метрику');
+      });
+  };
+
   const handleCreateMetricBlock = (values: MetricBlockFormValues): Promise<void> => {
-    if (!onCreateMetricBlock) return Promise.resolve();
+    // CH-02 (code review 2026-09-19): захист у глибині, ДРУГИЙ бар'єр поза
+    // disabled-кнопкою вище -- "стан без вимірювань" не додає жодного нового
+    // блоку-метрики, навіть якщо isCreatingBlock якимсь чином лишився true
+    // (напр. форма відкрита ДО перемикання режиму).
+    if (!onCreateMetricBlock || trackingMode === 'state') return Promise.resolve();
     return onCreateMetricBlock(values).then(() => {
       setIsCreatingBlock(false);
       refresh();
@@ -233,6 +355,58 @@ export function CardBack({
             банер над уже показаними даними, не заміна всього екрана. */}
         {refreshError !== null && <Banner variant="error" text={refreshError} />}
 
+        {/* CH-02 (docs/features/life-area-card/changes.md): "картка: стан без
+            вимірювань" -- НА САМОМУ ПОЧАТКУ налаштування картки, ПЕРЕД будь-
+            яким метричним контентом (той самий "ПЕРЕД усім" принцип, що D-111
+            уже застосував до "+ Додати блок-метрику" нижче). Опційний, як і
+            решта дій цього компонента -- без onUpdateTracking вибір узагалі
+            не рендериться (лише поточний стан лишається видимим деінде). */}
+        {onUpdateTracking && (
+          <fieldset className="m-0 flex flex-col gap-2 rounded-card border border-border bg-surface-solid p-3.5" disabled={isSavingTracking}>
+            <legend className="px-1 text-xs font-bold uppercase tracking-wide text-ink-muted">Режим картки</legend>
+            {/* Порядок навмисний (юзер-кейс CH-02): "стан без вимірювань" --
+                НАД "постійний процес з метриками (без дати)". */}
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-ink">
+              <input
+                type="radio"
+                name="cardTrackingMode"
+                checked={trackingMode === 'state'}
+                onChange={() => handleUpdateTracking({ trackingMode: 'state', healthState: healthState ?? 'active' })}
+                className="h-4 w-4 accent-ink"
+              />
+              Картка: стан без вимірювань
+            </label>
+            {trackingMode === 'state' && (
+              <div className="ml-6 flex flex-col gap-1.5">
+                {HEALTH_STATE_OPTIONS.map((option) => (
+                  <label key={option.value} className="flex cursor-pointer items-center gap-2 text-sm text-ink">
+                    <input
+                      type="radio"
+                      name="cardHealthState"
+                      checked={healthState === option.value}
+                      onChange={() => handleUpdateTracking({ trackingMode: 'state', healthState: option.value })}
+                      className="h-4 w-4 accent-ink"
+                    />
+                    <span className={`chip-gloss h-2.5 w-2.5 shrink-0 rounded-full ${HEALTH_STATE_DOT_CLASS[option.value]}`} aria-hidden="true" />
+                    {option.label}
+                  </label>
+                ))}
+              </div>
+            )}
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-ink">
+              <input
+                type="radio"
+                name="cardTrackingMode"
+                checked={trackingMode === 'metrics'}
+                onChange={() => handleUpdateTracking({ trackingMode: 'metrics', healthState: null })}
+                className="h-4 w-4 accent-ink"
+              />
+              Картка: постійний процес з метриками (без дати)
+            </label>
+            {trackingError !== null && <Banner variant="error" text={trackingError} />}
+          </fieldset>
+        )}
+
         {/* AC-14/AC-15: перенос уже стався зовні -- тут лише пропозиція
             перейменувати, коли він зіткнувся з наявним блоком тієї ж картки. */}
         {data.pendingTransferCollision && (
@@ -249,34 +423,62 @@ export function CardBack({
             Review 2026-09-07 A4 (AC-07/AC-08): рендериться НЕЗАЛЕЖНО від
             metricBlocks.length -- раніше з'являлась лише в порожньому стані,
             тож у картки з хоч одним блоком не було способу додати другий. */}
-        {onCreateMetricBlock &&
-          (isCreatingBlock ? (
-            <MetricBlockForm onSubmit={handleCreateMetricBlock} />
-          ) : (
-            <Button label="+ Додати блок-метрику" onClick={() => setIsCreatingBlock(true)} />
-          ))}
-
-        {data.metricBlocks.length === 0 ? (
-          <EmptyState
-            message="Ще немає жодної активної метрики"
-            actionHint="Додайте блок-метрику, щоб почати відстежувати прогрес"
-          />
-        ) : (
-          <div className="flex flex-col gap-3">
-            {data.aggregateProgress !== null && (
-              <p className="mt-1 font-display text-sm font-bold leading-relaxed text-ink">
-                Загальний прогрес: {Math.round(data.aggregateProgress * 100)}%
-              </p>
-            )}
-            {data.metricBlocks.map((block) => (
-              <MetricBlockCard
-                key={block.id}
-                block={block}
-                onDelete={onArchiveMetricBlock ? () => setPendingDeleteBlock(block) : undefined}
-              />
+        {/* CH-02: "стан без вимірювань" -- усі налаштування метрик стають
+            неактивними (disabled), не зникають: колишні блоки лишаються
+            видимими (історія прогресу не губиться), просто без можливості
+            їх чіпати, поки картка в цьому режимі. `pointer-events-none` +
+            приглушений вигляд -- лише ВІЗУАЛЬНИЙ шар (миша/дотик); code
+            review 2026-09-19 (CH-02/CH-03 diff): CSS pointer-events НЕ
+            блокує Enter/Space-активацію фокусованої кнопки з клавіатури,
+            тож кожен інтерактивний елемент нижче ДОДАТКОВО отримує СПРАВЖНІЙ
+            `disabled` -- "+ Додати" явно, MetricBlockCard's ×/✎ через свій
+            proп (той самий принцип, що <fieldset disabled> вище). */}
+        <div
+          className={trackingMode === 'state' ? 'pointer-events-none flex flex-col gap-3 opacity-40' : 'flex flex-col gap-3'}
+          aria-disabled={trackingMode === 'state'}
+        >
+          {trackingMode === 'state' && (
+            <p className="text-xs italic text-ink-faint">Картка в режимі "стан без вимірювань" -- метрики не використовуються.</p>
+          )}
+          {onCreateMetricBlock &&
+            (isCreatingBlock ? (
+              <MetricBlockForm onSubmit={handleCreateMetricBlock} />
+            ) : (
+              <Button label="+ Додати блок-метрику" onClick={() => setIsCreatingBlock(true)} disabled={trackingMode === 'state'} />
             ))}
-          </div>
-        )}
+
+          {data.metricBlocks.length === 0 ? (
+            <EmptyState
+              message="Ще немає жодної активної метрики"
+              actionHint="Додайте блок-метрику, щоб почати відстежувати прогрес"
+            />
+          ) : (
+            <div className="flex flex-col gap-3">
+              {data.aggregateProgress !== null && (
+                <p className="mt-1 font-display text-sm font-bold leading-relaxed text-ink">
+                  Загальний прогрес: {Math.round(data.aggregateProgress * 100)}%
+                </p>
+              )}
+              {data.metricBlocks.map((block) => (
+                <MetricBlockCard
+                  key={block.id}
+                  block={block}
+                  disabled={trackingMode === 'state'}
+                  onDelete={onArchiveMetricBlock ? () => setPendingDeleteBlock(block) : undefined}
+                  onEdit={
+                    onUpdateMetricBlock || onTransferMetricBlock
+                      ? () => {
+                          setTransferTargetId('');
+                          setTransferError(undefined);
+                          setEditingBlock(block);
+                        }
+                      : undefined
+                  }
+                />
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* Видалення блоку-метрики: клік "×" на MetricBlockCard відкриває
             ArchiveMetricBlockDialog саме для того блоку (pendingDeleteBlock).
@@ -289,6 +491,64 @@ export function CardBack({
             onArchive={handleArchiveMetricBlock}
             onCancel={() => setPendingDeleteBlock(null)}
           />
+        )}
+
+        {/* CH-03 (docs/features/life-area-card/changes.md): редагування блоку-
+            метрики -- олівець на MetricBlockCard відкриває цю панель саме для
+            того блоку (editingBlock). Два незалежних дійства всередині:
+            (1) MetricBlockForm перевикористаний як є (initialValues із
+            поточних label/unit/settings, onSubmit -- update, не create) для
+            перейменування/зміни налаштувань; (2) вибір картки-цілі +
+            "Перенести" -- наявна transferMetricBlock, окремий виклик. */}
+        {editingBlock && (onUpdateMetricBlock || onTransferMetricBlock) && (
+          <div className="flex flex-col gap-3 rounded-card border border-border bg-surface-solid p-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="font-display text-sm font-bold leading-relaxed text-ink">
+                Редагування «{editingBlock.label}»
+              </h3>
+              <Button label="Закрити" onClick={() => setEditingBlock(null)} />
+            </div>
+
+            {onUpdateMetricBlock && (
+              <MetricBlockForm
+                key={editingBlock.id}
+                initialValues={{
+                  label: editingBlock.label,
+                  unit: editingBlock.unit,
+                  targetCount: editingBlock.settings?.targetCount ?? null,
+                  isOngoing: editingBlock.settings?.isOngoing ?? false,
+                  targetDate: editingBlock.settings?.targetDate ?? null,
+                }}
+                onSubmit={handleSaveMetricBlockEdit}
+              />
+            )}
+
+            {onTransferMetricBlock && transferTargetCards && transferTargetCards.length > 0 && (
+              <div className="flex flex-col gap-2 border-t border-border pt-3">
+                <label className="flex flex-col gap-1.5 text-sm font-medium text-ink">
+                  Перенести на іншу картку
+                  <select
+                    value={transferTargetId}
+                    onChange={(event) => setTransferTargetId(event.target.value)}
+                    className="rounded-control border border-border bg-surface-solid px-3.5 py-2.5 text-sm font-normal text-ink focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
+                  >
+                    <option value="">Оберіть картку</option>
+                    {transferTargetCards.map((card) => (
+                      <option key={card.id} value={card.id}>
+                        {card.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {transferError !== undefined && <Banner variant="error" text={transferError} />}
+                <Button
+                  label="Перенести"
+                  onClick={handleTransferMetricBlock}
+                  disabled={!transferTargetId || isTransferring}
+                />
+              </div>
+            )}
+          </div>
         )}
 
         <button

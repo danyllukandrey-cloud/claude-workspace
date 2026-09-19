@@ -25,6 +25,21 @@ export interface MetricBlockCardProps {
    * (CardBack.tsx), тут лише факт кліку.
    */
   onDelete?: () => void;
+  /**
+   * CH-03 (docs/features/life-area-card/changes.md): відкриває редагування
+   * блоку -- перейменування, зміна налаштувань, перенесення на іншу картку.
+   * Той самий опційний патерн, що onDelete: без пропу олівець не рендериться.
+   * Сам вигляд редагування -- на рівень вище (CardBack.tsx), тут лише факт кліку.
+   */
+  onEdit?: () => void;
+  /**
+   * CH-02 (docs/features/life-area-card/changes.md): true, коли картка -- в
+   * режимі "стан без вимірювань" -- справжній HTML `disabled` на "×"/"✎", не
+   * лише CSS `pointer-events-none` на предку (CardBack.tsx): pointer-events
+   * блокує мишу/дотик, але НЕ блокує Enter/Space-активацію фокусованої
+   * кнопки клавіатурою -- code review 2026-09-19 (CH-02/CH-03 combined diff).
+   */
+  disabled?: boolean;
 }
 
 /**
@@ -39,7 +54,7 @@ function progressToneClasses(share: number): string {
   return 'border-bad/25 bg-bad/10 text-bad';
 }
 
-export function MetricBlockCard({ block, onDelete }: MetricBlockCardProps): JSX.Element {
+export function MetricBlockCard({ block, onDelete, onEdit, disabled = false }: MetricBlockCardProps): JSX.Element {
   const { progress } = block;
 
   return (
@@ -48,15 +63,32 @@ export function MetricBlockCard({ block, onDelete }: MetricBlockCardProps): JSX.
           виносять її трохи за межу картки, поверх кутка, а не в один ряд із
           відсотком нижче). absolute вимагає relative на контейнері (клас
           вище). Той самий опційний-проп патерн, що форма "+ Додати
-          блок-метрику" в CardBack -- без onDelete кнопки взагалі немає в DOM. */}
+          блок-метрику" в CardBack -- без onDelete кнопки взагалі немає в DOM.
+          `disabled` -- справжній HTML-атрибут (не лише CSS): блокує і
+          мишу/дотик, і Enter/Space з клавіатури. */}
       {onDelete && (
         <button
           type="button"
           aria-label={`Видалити метрику «${block.label}»`}
           onClick={onDelete}
-          className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-surface-solid text-xs font-bold leading-none text-ink-muted shadow-soft transition-colors hover:border-bad/40 hover:text-bad"
+          disabled={disabled}
+          className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-surface-solid text-xs font-bold leading-none text-ink-muted shadow-soft transition-colors hover:border-bad/40 hover:text-bad disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-ink-muted"
         >
           ×
+        </button>
+      )}
+      {/* CH-03: олівець -- правий нижній кут блоку (поруч із хрестиком
+          видалення, який стоїть у правому верхньому). Той самий опційний-проп
+          патерн, що "×" вище -- без onEdit узагалі немає в DOM. */}
+      {onEdit && (
+        <button
+          type="button"
+          aria-label={`Редагувати метрику «${block.label}»`}
+          onClick={onEdit}
+          disabled={disabled}
+          className="absolute -bottom-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-surface-solid text-xs leading-none text-ink-muted shadow-soft transition-colors hover:border-ink/40 hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-ink-muted"
+        >
+          ✎
         </button>
       )}
       {progress.kind === 'ongoing' ? (

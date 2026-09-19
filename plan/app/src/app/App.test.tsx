@@ -76,6 +76,16 @@ function baseProps() {
     // Реальний DELETE /cards/{id}/metric-blocks/{metricBlockId} (main.tsx) --
     // App замикає над cardId, той самий стиль, що createMetricBlock/onRename.
     archiveMetricBlock: vi.fn().mockResolvedValue(undefined),
+    // CH-02 (docs/features/life-area-card/changes.md): реальний PATCH
+    // /cards/{cardId} (trackingMode/healthState, main.tsx) -- App замикає над
+    // cardId, той самий стиль, що createMetricBlock/onRename.
+    onUpdateTracking: vi.fn().mockResolvedValue(undefined),
+    // CH-03 (docs/features/life-area-card/changes.md): реальний PATCH
+    // /cards/{cardId}/metric-blocks/{metricBlockId} і POST
+    // .../metric-blocks/transfer (main.tsx) -- App замикає над cardId, той
+    // самий стиль, що createMetricBlock/onRename.
+    onUpdateMetricBlock: vi.fn().mockResolvedValue(undefined),
+    onTransferMetricBlock: vi.fn().mockResolvedValue(undefined),
     // Review C10 (AC-03): реальний PATCH /cards/{cardId} (description/markFilled,
     // main.tsx) -- App замикає над cardId, той самий стиль, що onRename.
     onUpdateDescription: vi.fn().mockResolvedValue(undefined),
@@ -212,14 +222,16 @@ test('успішний обмін credential у LoginScreen пише сесію 
   });
 });
 
-// ISS-55 (RED, stage 1/3): App.tsx отримує третій екран 'create' -- клік на
-// кнопку "Створити картку" (DeckScreen.onCreateCard, щойно доданий проп)
-// перемикає рендер із DeckScreen на CreateCardForm; успішне збереження
-// викликає ін'єктований createCard і повертає назад на 'deck' з повторним
-// GET /cards (loadCards має бути викликаний ще раз -- DeckScreen.loadCards'
+// ISS-55 stage 1/3, оновлено CH-04 (docs/features/life-area-card/changes.md):
+// App.tsx більше НЕ тримає окремий Screen 'create' -- клік на кнопку
+// "Створити картку" перемикає внутрішній стан DeckScreen (isCreating),
+// показуючи inline CreateCardForm НА МІСЦІ передньої картки колоди
+// (DeckGrid's renderFront); успішне збереження викликає ін'єктований
+// createCard і повертає до звичайної колоди з повторним GET /cards
+// (loadCards має бути викликаний ще раз -- DeckScreen.loadCards'
 // референційна стабільність, docs у DeckScreen.tsx).
 
-test('ISS-55: клік "Створити картку" в Колоді перемикає екран на форму створення картки', async () => {
+test('ISS-55/CH-04: клік "Створити картку" в Колоді показує inline форму створення на місці передньої картки', async () => {
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
 
@@ -230,7 +242,8 @@ test('ISS-55: клік "Створити картку" в Колоді пере�
   fireEvent.click(createButton);
 
   // CreateCardForm (T27) -- єдиний, хто рендерить поле "Назва" з написом
-  // "Нова картка"; DeckScreen більше не повинен бути на екрані.
+  // "Нова картка"; CH-04: реальна картка "Спорт" ховається з DeckGrid, поки
+  // триває inline-створення (синтетичний placeholder-item замінює весь колоду).
   expect(await screen.findByRole('heading', { name: 'Нова картка' })).toBeTruthy();
   expect(screen.queryByText('Спорт')).toBeNull();
 });
@@ -549,7 +562,7 @@ test('ISS-60: створення блоку-метрики на передній
   await screen.findByText('Ще немає жодної активної метрики');
 
   fireEvent.click(screen.getByRole('button', { name: '+ Додати блок-метрику' }));
-  fireEvent.change(screen.getByLabelText('Що рахуємо:'), { target: { value: 'Тренування' } });
+  fireEvent.change(screen.getByLabelText('Що рахуємо/вимірюємо:'), { target: { value: 'Тренування' } });
   fireEvent.change(screen.getByLabelText('Одиниця:'), { target: { value: 'раз' } });
   fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
 

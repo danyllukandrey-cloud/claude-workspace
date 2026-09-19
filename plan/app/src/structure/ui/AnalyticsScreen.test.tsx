@@ -45,8 +45,8 @@ function baseState(overrides: Partial<AnalyticsScreenState> = {}): AnalyticsScre
     excludedCount: 2,
     trendAvailable: true,
     cards: [
-      { cardId: 'card-a', cardTitle: 'Картка A', progress: 0.4, gap: 0.2, trend: 'growing', unmaintained: false },
-      { cardId: 'card-b', cardTitle: 'Картка B', progress: 0.71, gap: -0.1, trend: 'shrinking', unmaintained: false },
+      { cardId: 'card-a', cardTitle: 'Картка A', progress: 0.4, gap: 0.2, trend: 'growing', unmaintained: false, healthState: null },
+      { cardId: 'card-b', cardTitle: 'Картка B', progress: 0.71, gap: -0.1, trend: 'shrinking', unmaintained: false, healthState: null },
     ],
     ...overrides,
   };
@@ -187,8 +187,8 @@ test('default-logic (AC-01/AC-06, CH-01): показує середній про
     average: 0.62,
     excludedCount: 2,
     cards: [
-      { cardId: 'card-a', cardTitle: 'Картка A', progress: 0.4, gap: 0.2, trend: 'growing', unmaintained: false },
-      { cardId: 'card-b', cardTitle: 'Картка B', progress: 0.71, gap: -0.1, trend: 'shrinking', unmaintained: false },
+      { cardId: 'card-a', cardTitle: 'Картка A', progress: 0.4, gap: 0.2, trend: 'growing', unmaintained: false, healthState: null },
+      { cardId: 'card-b', cardTitle: 'Картка B', progress: 0.71, gap: -0.1, trend: 'shrinking', unmaintained: false, healthState: null },
     ],
   });
   render(<AnalyticsScreen {...props} />);
@@ -219,8 +219,8 @@ test('default-no-scheme (AC-06b): без рангового розриву, на
     average: 0.55,
     excludedCount: 0,
     cards: [
-      { cardId: 'card-c', cardTitle: 'Картка C', progress: null, gap: null, trend: null, unmaintained: true },
-      { cardId: 'card-d', cardTitle: 'Картка D', progress: 0.8, gap: null, trend: 'growing', unmaintained: false },
+      { cardId: 'card-c', cardTitle: 'Картка C', progress: null, gap: null, trend: null, unmaintained: true, healthState: null },
+      { cardId: 'card-d', cardTitle: 'Картка D', progress: 0.8, gap: null, trend: 'growing', unmaintained: false, healthState: null },
     ],
   });
   render(<AnalyticsScreen {...props} />);
@@ -258,7 +258,7 @@ test('trend-unavailable: GET /structure/layout/history не відповів -- 
     excludedCount: 0,
     trendAvailable: false,
     cards: [
-      { cardId: 'card-a', cardTitle: 'Картка A', progress: 0.4, gap: 0.2, trend: null, unmaintained: false },
+      { cardId: 'card-a', cardTitle: 'Картка A', progress: 0.4, gap: 0.2, trend: null, unmaintained: false, healthState: null },
     ],
   });
   render(<AnalyticsScreen {...props} />);
@@ -269,4 +269,26 @@ test('trend-unavailable: GET /structure/layout/history не відповів -- 
 
   // Тренд не показується, коли відповідне джерело не відповіло.
   expect(screen.queryByText(/росте|меншає/i)).toBeNull();
+});
+
+// CH-02 (docs/features/structure/changes.md, скоординовано з life-area-card
+// CH-02): м'ячик стану в картці показників -- власний канал (loadAnalytics).
+
+test('CH-02: картка без healthState не показує жодного м\'ячика в картці показників', async () => {
+  const props = baseProps({
+    cards: [{ cardId: 'card-a', cardTitle: 'Картка A', progress: 0.4, gap: null, trend: null, unmaintained: false, healthState: null }],
+  });
+  render(<AnalyticsScreen {...props} />);
+
+  await screen.findByText('Картка A');
+  expect(screen.queryByLabelText(/Стан картки/)).toBeNull();
+});
+
+test('CH-02: картка з healthState показує м\'ячик стану в картці показників', async () => {
+  const props = baseProps({
+    cards: [{ cardId: 'card-a', cardTitle: 'Картка A', progress: null, gap: null, trend: null, unmaintained: false, healthState: 'paused' }],
+  });
+  render(<AnalyticsScreen {...props} />);
+
+  expect(await screen.findByLabelText('Стан картки: на паузі')).toBeTruthy();
 });

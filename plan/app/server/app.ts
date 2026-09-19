@@ -449,6 +449,24 @@ export function createApp(deps: AppDeps): express.Express {
     })
   );
 
+  app.patch(
+    '/api/v1/cards/:cardId/metric-blocks/:metricBlockId',
+    asyncHandler(async (req, res) => {
+      // CH-03 (docs/features/life-area-card/changes.md): перейменування й
+      // зміна налаштувань -- один UPDATE, жодного cross-feature side-effect
+      // (той самий "withTransaction не потрібен" міркування, що DELETE вище).
+      const block = await metricBlockHandlers.updateMetricBlock(
+        deps.db,
+        ownerUserId(req),
+        param(req, 'cardId'),
+        param(req, 'metricBlockId'),
+        req.body,
+        deps.recordAction
+      );
+      res.status(200).json(block);
+    })
+  );
+
   // --- Entries -----------------------------------------------------------
 
   app.post(

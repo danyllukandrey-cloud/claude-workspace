@@ -74,6 +74,10 @@ const TO_PROMOTE = [
   // вільним полотном (x/y відсотки) зі зв'язками замість фіксованої сітки.
   { slug: 'structure', staged: 'backend/08_add_position_xy', name: 'add-position-xy' },
   { slug: 'structure', staged: 'backend/09_create_structure_connection', name: 'create-structure-connection' },
+  // CH-02 (docs/features/life-area-card/changes.md): "картка: стан без
+  // вимірювань" -- adds card.tracking_mode/health_state, жодних крос-
+  // фічевих залежностей, тож у самому кінці, як і 08/12 вище.
+  { slug: 'life-area-card', staged: '09_add_card_tracking_mode', name: 'add-card-tracking-mode' },
 ];
 
 function readReadme() {

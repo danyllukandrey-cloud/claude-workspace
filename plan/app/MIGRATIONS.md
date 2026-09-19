@@ -41,3 +41,4 @@
 | `1789464101168_flatten-layout-mode.sql` | `structure/migrations/backend/07_flatten_layout_mode.{up,down}.sql` | `428767dc4c0add1fc7ecaebf41f17c54d15b917fb764b9e7c4251dff12e2346b` |
 | `1789479885291_add-position-xy.sql` | `structure/migrations/backend/08_add_position_xy.{up,down}.sql` | `686bdcca648c652fed0428c46eafa5b84dc79a836ecb5cfdeb8c3f657b36d8ba` |
 | `1789479885297_create-structure-connection.sql` | `structure/migrations/backend/09_create_structure_connection.{up,down}.sql` | `431773757cc57b279916f80c3876c359f60210319299472104cc41f3634bc5ba` |
+| `1789841424996_add-card-tracking-mode.sql` | `life-area-card/migrations/09_add_card_tracking_mode.{up,down}.sql` | `dee106861ff6ee0061eab9cd03b27f38958b9c408ea77fc510846afea078bc7d` |

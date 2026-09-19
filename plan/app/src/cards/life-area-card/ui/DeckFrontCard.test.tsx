@@ -12,7 +12,13 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { DeckFrontCard } from './DeckFrontCard';
 import type { CardBackData, CardFaceData } from './types';
 
-const FACE_DATA: CardFaceData = { name: 'Спорт', description: 'Регулярні тренування', dataWarning: null };
+const FACE_DATA: CardFaceData = {
+  name: 'Спорт',
+  description: 'Регулярні тренування',
+  dataWarning: null,
+  trackingMode: 'metrics',
+  healthState: null,
+};
 const BACK_DATA: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
 
 function baseProps() {

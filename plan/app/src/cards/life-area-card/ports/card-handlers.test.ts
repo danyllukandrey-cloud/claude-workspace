@@ -152,6 +152,8 @@ describe('listCards handler', () => {
       name: 'Спорт',
       description: null,
       status: 'active',
+      trackingMode: 'metrics',
+      healthState: null,
       createdAt: CARD_1.created_at.toISOString(),
       updatedAt: CARD_1.updated_at.toISOString(),
     });
@@ -176,6 +178,8 @@ describe('createCard handler', () => {
       name: 'Спорт',
       description: null,
       status: 'active',
+      trackingMode: 'metrics',
+      healthState: null,
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
     });
@@ -269,6 +273,8 @@ describe('getCard handler', () => {
       name: 'Спорт',
       description: null,
       status: 'active',
+      trackingMode: 'metrics',
+      healthState: null,
       aggregateProgress: 0.5,
       dataWarning: null,
       createdAt: expect.any(String),
