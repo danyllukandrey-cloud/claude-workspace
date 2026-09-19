@@ -1,10 +1,17 @@
 // Component test for AnalyticsScreen -- default-logic/default-no-scheme/
 // empty/loading/trend-unavailable states (spec.md AC-01, AC-04, AC-05,
 // AC-06, AC-06b, AC-07, AC-13), + живе тестування (Андрій, вимоги 16-18):
-// три-зонна розкладка, плаваючі кнопки "Архів"/"Звіт" і заглушка "звіт за
-// запитом". Селектори підлаштовані під нову верстку, сенс перевірок з
-// попередньої версії файлу збережено (дані про прогрес/ранг-розрив/тренд,
-// клік по "Архів", AC-06 без вердикту, AC-13 лічильник виключених).
+// зонна розкладка, плаваюча кнопка "Звіт" і заглушка "звіт за запитом".
+// Селектори підлаштовані під нову верстку, сенс перевірок з попередньої
+// версії файлу збережено (дані про прогрес/тренд, AC-06 без вердикту,
+// AC-13 лічильник виключених).
+//
+// CH-01 (docs/features/structure/changes.md): "Показники по картках"
+// переїхали ліворуч на всю висоту, "Загальний стан"+"Звіти" -- праворуч;
+// "ранг-розрив" прибрано з блоку показників ПОВНІСТЮ (для будь-якого
+// layoutMode); кнопка "Архів" прибрана з цього екрана ПОВНІСТЮ (переїхала
+// на Схему/Картки, App.test.tsx покриває нові точки входу) -- onOpenArchive
+// більше не проп цього компонента.
 //
 // DI style (plan/app/CLAUDE.md, matches DeclarationScreen T20/CardDetailScreen):
 // `loadAnalytics` is an injected prop-function, no fetch() inside the
@@ -48,8 +55,6 @@ function baseState(overrides: Partial<AnalyticsScreenState> = {}): AnalyticsScre
 function baseProps(stateOverrides: Partial<AnalyticsScreenState> = {}) {
   return {
     loadAnalytics: vi.fn().mockResolvedValue(baseState(stateOverrides)),
-    // D-124 (живе тестування): "Архів" переїхав сюди з Колоди.
-    onOpenArchive: vi.fn(),
     // Живе тестування: reportEntries тепер контрольований -- App.tsx
     // тримає сам стан (щоб пережити перемикання екранів). Тести, яким
     // байдужа поведінка "Звіт", просто не рендерять жодного запису.
@@ -87,7 +92,6 @@ test('loading: показує Spinner, поки GET /structure/layout (анал�
   render(
     <AnalyticsScreen
       loadAnalytics={loadAnalytics}
-      onOpenArchive={vi.fn()}
       reportEntries={[]}
       onAddReportEntry={vi.fn()}
     />
@@ -97,29 +101,26 @@ test('loading: показує Spinner, поки GET /structure/layout (анал�
   void resolveLoad;
 });
 
-test('D-124: кнопка "Архів" видима й викликає injected onOpenArchive', async () => {
+test('CH-01: кнопка "Архів" прибрана з цього екрана повністю -- переїхала на Схему/Картки', async () => {
   const props = baseProps();
   render(<AnalyticsScreen {...props} />);
 
   await screen.findByText(/62%/);
-  fireEvent.click(screen.getByRole('button', { name: 'Архів' }));
 
-  expect(props.onOpenArchive).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole('button', { name: 'Архів' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Архів карток' })).toBeNull();
 });
 
-test('вимога 16/18: "Архів" і "Звіт" плавають знизу справа, поза звичайним потоком (не на всю ширину)', async () => {
+test('вимога 18 (CH-01): "Звіт" плаває знизу справа, поза звичайним потоком (не на всю ширину)', async () => {
   const props = baseProps();
   render(<AnalyticsScreen {...props} />);
 
   await screen.findByText(/62%/);
 
-  const archiveButton = screen.getByRole('button', { name: 'Архів' });
   const reportButton = screen.getByRole('button', { name: 'Звіт' });
-  const floatingWrapper = archiveButton.parentElement;
+  const floatingWrapper = reportButton.parentElement;
 
-  // Обидві кнопки -- сусіди в одній плаваючій обгортці.
-  expect(floatingWrapper).toBe(reportButton.parentElement);
-  // "Парить" знизу зліва, поверх контенту -- absolute/z-індекс, не звичайний
+  // "Парить" знизу справа, поверх контенту -- absolute/z-індекс, не звичайний
   // елемент flex-колонки (там кнопка розтяглась би на всю ширину).
   expect(floatingWrapper?.className).toMatch(/\babsolute\b/);
   expect(floatingWrapper?.className).toMatch(/\bbottom-4\b/);
@@ -180,7 +181,7 @@ test('вимога 17: третя зона ("звіти") -- чесний пор
   expect(screen.getByText('Звітів поки немає')).toBeTruthy();
 });
 
-test('default-logic (AC-01/AC-06): показує середній прогрес і, для кожної картки, ранг-розрив без вердикту', async () => {
+test('default-logic (AC-01/AC-06, CH-01): показує середній прогрес і показники по картках, без ранг-розриву й без вердикту', async () => {
   const props = baseProps({
     layoutMode: 'logic',
     average: 0.62,
@@ -195,7 +196,8 @@ test('default-logic (AC-01/AC-06): показує середній прогре�
   await screen.findByText(/62%/);
   expect(screen.getByText(/2.*виключ/i)).toBeTruthy();
 
-  // Зона 1 і зона 2 -- окремі підписи (вимога 17: дві крупні зони зверху).
+  // CH-01: дві окремі зони -- "Показники по картках" (ліворуч, на всю
+  // висоту) і "Загальний стан" (праворуч, зверху) -- окремі підписи.
   expect(screen.getByText('Загальний стан')).toBeTruthy();
   expect(screen.getByText('Показники по картках')).toBeTruthy();
 
@@ -206,6 +208,9 @@ test('default-logic (AC-01/AC-06): показує середній прогре�
 
   // AC-06: жодного слова-вердикту на екрані.
   expect(screen.queryByText(/добре|погано|ефективно/i)).toBeNull();
+  // CH-01: ранг-розрив прибраний з блоку ПОВНІСТЮ -- навіть для
+  // layoutMode === 'logic' (baseState вище), де раніше показувався.
+  expect(screen.queryByText(/ранг-розрив/i)).toBeNull();
 });
 
 test('default-no-scheme (AC-06b): без рангового розриву, натомість прапорець "заявлено важливим, не підтримується"', async () => {

@@ -24,6 +24,9 @@ function baseProps(overrides: Partial<Parameters<typeof DeckScreen>[0]> = {}) {
   return {
     loadCards: vi.fn().mockResolvedValue([]),
     onCreateCard: vi.fn(),
+    // CH-01 (docs/features/life-area-card/changes.md): дубль "Архів карток"
+    // біля "Створити картку" -- App.tsx підставляє реальний shared callback.
+    onOpenArchive: vi.fn(),
     onSessionExpired: vi.fn(),
     loadCard: vi.fn().mockResolvedValue(FACE_DATA),
     loadBack: vi.fn().mockResolvedValue(BACK_DATA),
@@ -110,12 +113,14 @@ test('ISS-55: default-стан (DeckGrid з картками) показує к�
   expect(onCreateCard).toHaveBeenCalledTimes(1);
 });
 
-// D-124 (живе тестування): "Архів" переїхав на Літопис-Аналітику
-// (AnalyticsScreen.test.tsx покриває його там), "Вийти" -- у верхній бар
-// (App.test.tsx). Колишні ISS-55 stage 3 / ISS-58 тести тут прибрано --
-// DeckScreen більше не рендерить ці кнопки взагалі.
+// D-124 (живе тестування): "Вийти" переїхало у верхній бар (App.test.tsx),
+// не рендериться тут. Колишня кнопка "Архів" (яка вела на Літопис-
+// Аналітику) теж прибрана звідси тим самим рішенням -- але CH-01
+// (docs/features/life-area-card/changes.md) повертає СЮДИ окрему кнопку
+// "Архів карток" (дубль зі Схеми, не повернення старої D-124 поведінки),
+// тести нижче її покривають.
 
-test('D-124: єдина кнопка внизу ("Створити картку") -- автоширини, не на всю сторінку', async () => {
+test('D-124/CH-01: кнопки внизу ("Створити картку" + "Архів карток") -- автоширини, не на всю сторінку', async () => {
   const items = [{ id: 'card-1', name: 'Спорт' }];
   const props = baseProps({ loadCards: vi.fn().mockResolvedValue(items) });
 
@@ -123,13 +128,40 @@ test('D-124: єдина кнопка внизу ("Створити картку"
 
   await screen.findByRole('heading', { name: 'Спорт' });
   const button = screen.getByRole('button', { name: 'Створити картку' });
+  const archiveButton = screen.getByRole('button', { name: 'Архів карток' });
 
-  // Автоширини -- обгортка `flex justify-center`, НЕ `flex-col` (де flex
-  // за замовчуванням стретчив би дитину на всю ширину колонки). Пінимо сам
-  // контракт (клас батька), не виміряний піксельний розмір -- jsdom не
+  // Автоширини -- спільна обгортка `flex justify-center`, НЕ `flex-col` (де
+  // flex за замовчуванням стретчив би дитину на всю ширину колонки). Пінимо
+  // сам контракт (клас батька), не виміряний піксельний розмір -- jsdom не
   // рахує реальний layout.
+  expect(button.parentElement).toBe(archiveButton.parentElement);
   expect(button.parentElement?.className).toContain('justify-center');
   expect(button.parentElement?.className).not.toContain('flex-col');
+});
+
+test('CH-01 (life-area-card/changes.md): клік "Архів карток" викликає injected onOpenArchive', async () => {
+  const items = [{ id: 'card-1', name: 'Спорт' }];
+  const onOpenArchive = vi.fn();
+  const props = baseProps({ loadCards: vi.fn().mockResolvedValue(items), onOpenArchive });
+
+  render(<DeckScreen {...props} />);
+
+  await screen.findByRole('heading', { name: 'Спорт' });
+  fireEvent.click(screen.getByRole('button', { name: 'Архів карток' }));
+
+  expect(onOpenArchive).toHaveBeenCalledTimes(1);
+});
+
+test('CH-01: empty-стан теж показує "Архів карток" поруч із "Створити картку"', async () => {
+  const onOpenArchive = vi.fn();
+  const props = baseProps({ loadCards: vi.fn().mockResolvedValue([]), onOpenArchive });
+
+  render(<DeckScreen {...props} />);
+
+  await screen.findByText('Тут ще немає жодної картки');
+  fireEvent.click(screen.getByRole('button', { name: 'Архів карток' }));
+
+  expect(onOpenArchive).toHaveBeenCalledTimes(1);
 });
 
 // Review 2026-09-07 C14 (docs/features/life-area-card/_review/review-2026-09-07.md):

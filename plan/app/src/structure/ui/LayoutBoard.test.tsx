@@ -97,6 +97,9 @@ function baseProps(stateOverrides: Partial<LayoutBoardState> = {}) {
     onCreateConnection: vi.fn().mockResolvedValue(undefined),
     onDeleteConnection: vi.fn().mockResolvedValue(undefined),
     onSaveLayoutMode: vi.fn().mockResolvedValue(undefined),
+    // CH-01 (docs/features/structure/changes.md): "Архів карток" біля
+    // "Конфігурація" -- App.tsx підставляє реальний shared callback.
+    onOpenArchive: vi.fn(),
   };
 }
 
@@ -111,6 +114,7 @@ test('loading: показує Spinner, поки GET /structure/layout ще в п
       onCreateConnection={vi.fn()}
       onDeleteConnection={vi.fn()}
       onSaveLayoutMode={vi.fn()}
+      onOpenArchive={vi.fn()}
     />,
   );
 
@@ -412,6 +416,7 @@ test('AC-12: після успішного закриття діалог зни�
     onCreateConnection: vi.fn().mockResolvedValue(undefined),
     onDeleteConnection: vi.fn().mockResolvedValue(undefined),
     onSaveLayoutMode: vi.fn().mockResolvedValue(undefined),
+    onOpenArchive: vi.fn(),
     ...closeCapability(),
   };
   render(<LayoutBoard {...props} />);
@@ -453,6 +458,20 @@ test('AC-12 + купка нерозкладених: картку звідти �
 
   fireEvent.click(openA);
   expect(props.loadCloseCardOptions).toHaveBeenCalledWith('card-a');
+});
+
+// --- CH-01 (docs/features/structure/changes.md): "Архів карток" -------------
+
+test('CH-01: кнопка "Архів карток" видима поруч із "Конфігурація" й викликає injected onOpenArchive', async () => {
+  const props = baseProps();
+  render(<LayoutBoard {...props} />);
+
+  await screen.findByTestId('canvas');
+  expect(screen.getByRole('button', { name: 'Конфігурація' })).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Архів карток' }));
+
+  expect(props.onOpenArchive).toHaveBeenCalledTimes(1);
 });
 
 // --- Живе тестування: "Конфігурація" -- пікер режиму розкладки (D-131) -------

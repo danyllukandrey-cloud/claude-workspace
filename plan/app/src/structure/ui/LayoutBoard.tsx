@@ -29,6 +29,11 @@
 // CONFIG-екран (пікер режиму розкладки, ConfirmDialog про авто-розклад) --
 // ЛИШАЄТЬСЯ як є з попереднього проходу (D-131), логіка вибору режиму тут не
 // змінюється. Змінюється лише BOARD-екран (сама канва).
+//
+// CH-01 (docs/features/structure/changes.md): кнопка "Архів карток" додана
+// в тулбар BOARD-екрана, поруч із "Конфігурація" -- друга точка входу в
+// архів (перша -- дубль на DeckScreen, life-area-card CH-01), обидві через
+// той самий onOpenArchive, який App.tsx підставляє однаково в обидва місця.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
@@ -119,6 +124,13 @@ export interface LayoutBoardProps {
   loadCloseCardOptions?: (cardId: string) => Promise<LayoutBoardCloseCardOptions>;
   /** AC-12 -- POST /structure/layout/{cardId}/close. Опційний разом із loadCloseCardOptions. */
   onCloseCard?: (input: { cardId: string; metricTransfers: CloseCardMetricTransferInput[] }) => Promise<void>;
+  /**
+   * CH-01 (docs/features/structure/changes.md): кнопка "Архів карток" біля
+   * "Конфігурація" -- та сама точка входу, що дубль на DeckScreen
+   * (life-area-card CH-01, координовано). App.tsx (composition root)
+   * підставляє СПІЛЬНИЙ callback в обидва місця -- не окрему реалізацію тут.
+   */
+  onOpenArchive: () => void;
 }
 
 interface AppErrorShape {
@@ -145,6 +157,7 @@ export function LayoutBoard({
   onSaveLayoutMode,
   loadCloseCardOptions,
   onCloseCard,
+  onOpenArchive,
 }: LayoutBoardProps): JSX.Element {
   const [loading, setLoading] = useState(true);
   const [state, setState] = useState<LayoutBoardState>({ layoutMode: null, cards: [], connections: [] });
@@ -749,6 +762,10 @@ export function LayoutBoard({
           </svg>
         </button>
         <Button label="Конфігурація" onClick={openConfig} />
+        {/* CH-01 (structure/changes.md): "Архів карток" по центру біля
+            "Конфігурація" -- той самий тулбар, той самий shared callback
+            (App.tsx), що дубль цієї кнопки на DeckScreen (Картки). */}
+        <Button label="Архів карток" onClick={onOpenArchive} />
       </div>
     </div>
   );

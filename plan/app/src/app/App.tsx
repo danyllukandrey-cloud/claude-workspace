@@ -159,12 +159,13 @@ export interface AppProps {
 //
 // Задача 13: варіант 'archive' носить `from` -- напрямок (Direction), з
 // якого користувач відкрив архів, щоб кнопка "Назад" повертала саме туди
-// (а не завжди на 'cards' / екран Картки, як було). Зараз єдиний вхід в
-// архів -- AnalyticsScreen.onOpenArchive нижче ('analytics'), тож `from`
-// завжди 'analytics' на практиці, але поле типізоване як Direction, а не
-// як буквальний літерал -- якщо колись з'явиться ще один вхід в архів, він
-// просто підставить свій напрямок, і "Назад" сам поведеться правильно без
-// додаткової гілки коду.
+// (а не завжди на 'cards' / екран Картки, як було). CH-01 (structure +
+// life-area-card, docs/features/structure/changes.md,
+// docs/features/life-area-card/changes.md): тепер ДВА входи в архів --
+// LayoutBoard.onOpenArchive ('layout', кнопка "Архів карток" на Схемі) і
+// DeckScreen.onOpenArchive ('cards', той самий підпис на Картках) -- поле й
+// далі типізоване як Direction, а не буквальний літерал, тож "Назад" сам
+// повертає туди, звідки реально прийшли, без додаткової гілки коду.
 type Screen = { screen: 'deck' } | { screen: 'create' } | { screen: 'archive'; from: Direction };
 
 // T24 (sad.md §5 "Навігація (чотири напрямки)") + T29 (агент, D-25 "єдиний
@@ -325,6 +326,18 @@ export function App({
     setSession(null);
   }, [clearStoredSession]);
 
+  // CH-01 (structure + life-area-card, docs/features/structure/changes.md,
+  // docs/features/life-area-card/changes.md): "Архів карток" тепер живе на
+  // ДВОХ екранах (Схема, Картки) замість колишньої єдиної кнопки "Архів" на
+  // Аналітиці (D-124). Обидві кнопки мають вести до ОДНІЄЇ й тієї самої
+  // поведінки -- єдиний callback тут, на рівні app-composition (plan/app/
+  // CLAUDE.md "Правило залежностей": app склеює, фічі -- ні), а не окрема
+  // копія логіки в LayoutBoard і DeckScreen.
+  const openArchive = useCallback((from: Direction) => {
+    setDirection('cards');
+    setScreen({ screen: 'archive', from });
+  }, []);
+
   if (isSessionValid(session, now)) {
     return (
       // D-120: слайд-каркас застосунку -- тонка титульна смуга (бренд-назва)
@@ -464,22 +477,15 @@ export function App({
               onSaveLayoutMode={onSaveDeclaration}
               loadCloseCardOptions={loadCloseCardOptions}
               onCloseCard={onCloseCard}
+              // CH-01 (structure): "Архів карток" біля "Конфігурація" --
+              // openArchive вище, той самий shared callback, що DeckScreen
+              // нижче отримує для свого дубля кнопки.
+              onOpenArchive={() => openArchive('layout')}
             />
           )}
           {direction === 'analytics' && (
             <AnalyticsScreen
               loadAnalytics={loadAnalytics}
-              // D-124 (живе тестування): "Архів" переїхав сюди з Колоди --
-              // перемикає ОБИДВА рівні стану одразу (direction на 'cards' +
-              // внутрішній Screen на 'archive'), бо сам ArchiveScreen (SCR-07)
-              // лишається під-навігацією "Картки", не власним напрямком.
-              onOpenArchive={() => {
-                setDirection('cards');
-                // Задача 13: запам'ятовуємо, що цей архів відкрили з
-                // Аналітики, щоб "Назад" (нижче) повернув сюди ж, а не на
-                // Картки.
-                setScreen({ screen: 'archive', from: 'analytics' });
-              }}
               reportEntries={analyticsReportEntries}
               onAddReportEntry={() => {
                 analyticsReportCountRef.current += 1;
@@ -515,7 +521,7 @@ export function App({
           )}
           {direction === 'cards' && screen.screen === 'archive' && (
             // Живе тестування (Андрій): "Назад" -- плаваюча, знизу справа,
-            // поверх контенту (той самий патерн, що Архів/Звіт на
+            // поверх контенту (той самий патерн, що плаваюча "Звіт" на
             // AnalyticsScreen.tsx) -- не суцільна смуга зверху, як було.
             <div className="relative flex h-full min-h-0 flex-col">
               <ArchiveScreen
@@ -528,10 +534,11 @@ export function App({
                   label="← Назад"
                   onClick={() => {
                     // Задача 13: повертаємось туди, звідки відкрили архів
-                    // (screen.from -- напр. 'analytics'), не завжди на 'cards'
-                    // -- раніше цей клік вів на Картки навіть коли користувач
-                    // прийшов із Аналітики, бо direction лишався 'cards' з
-                    // моменту onOpenArchive.
+                    // (screen.from -- CH-01: 'layout' зі Схеми чи 'cards' з
+                    // Карток, openArchive вище), не завжди на 'cards' --
+                    // раніше цей клік вів на Картки навіть коли користувач
+                    // прийшов з іншого напрямку, бо direction лишався 'cards'
+                    // з моменту відкриття архіву.
                     setDirection(screen.from);
                     setScreen({ screen: 'deck' });
                   }}
@@ -543,9 +550,11 @@ export function App({
             <DeckScreen
               loadCards={loadCards}
               onCreateCard={() => setScreen({ screen: 'create' })}
-              // D-124 (живе тестування): "Архів"/"Вийти" прибрано звідси --
-              // "Архів" переїхав на Літопис-Аналітику (AnalyticsScreen.onOpenArchive
-              // вище), "Вийти" -- у верхній бар (поруч із шестернею).
+              // D-124 (живе тестування, історичний крок): "Вийти" прибрано
+              // звідси -- переїхало у верхній бар (поруч із шестернею).
+              // "Архів карток" ЛИШАЄТЬСЯ/ПОВЕРТАЄТЬСЯ сюди -- CH-01
+              // (onOpenArchive нижче), не D-124 (та стара кнопка вела на
+              // Аналітику й давно прибрана звідти).
               //
               // Review 2026-09-07 C14 (AC-04): 401 при завантаженні колоди --
               // той самий шлях, що ручний "Вийти" (сесія все одно недійсна,
@@ -564,6 +573,10 @@ export function App({
               onFlagEntry={onFlagEntry}
               onCreateMetricBlock={createMetricBlock}
               onArchiveMetricBlock={archiveMetricBlock}
+              // CH-01 (life-area-card): дубль кнопки "Архів карток" біля
+              // "Створити картку" -- той самий shared callback, що LayoutBoard
+              // вище отримує для своєї кнопки; обидві ведуть в те саме місце.
+              onOpenArchive={() => openArchive('cards')}
             />
           )}
         </div>
