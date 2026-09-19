@@ -24,14 +24,14 @@
 // "now" теж ін'єктовано -- порівняння expiresAt з поточним часом інакше
 // недетерміноване між прогонами тесту (сьогодні збігається, за рік -- ні).
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { App } from './App';
 import type { DeckGridItem, EntryViewModel } from '../cards/life-area-card';
 import type {
   AccountScreenResource,
   ChatMessage,
   ChatProposal,
-  ReportViewModel,
+  LogEntryViewModel,
   RuleSettingsScreenRule,
   RuleSettingsScreenTargetCard,
 } from '../agent';
@@ -43,8 +43,8 @@ function baseProps() {
   return {
     readStoredSession: vi.fn().mockReturnValue(null),
     writeStoredSession: vi.fn(),
-    // ISS-58: кнопка "Вийти" (DeckScreen.onLogout) стирає сесію -- реальний
-    // localStorage.removeItem (main.tsx).
+    // ISS-58: кнопка "Вийти" (верхній бар, App.tsx -- переїхала з DeckScreen,
+    // D-124) стирає сесію -- реальний localStorage.removeItem (main.tsx).
     clearStoredSession: vi.fn(),
     loadCards: vi.fn().mockReturnValue(new Promise<DeckGridItem[]>(() => {})),
     requestSession: vi.fn(),
@@ -53,11 +53,11 @@ function baseProps() {
     // ISS-55, stage 1/3: ін'єкція реального POST /cards (createCard, main.tsx),
     // яку App викликає з екрана 'create' (CreateCardForm.onCreate).
     createCard: vi.fn(),
-    // ISS-55, stage 2/3: відкриття картки з Колоди (CardDetailScreen) --
-    // навігація на 'detail' тепер ВНУТРІШНЯ (App сам перемикає screen, той
-    // самий стиль, що onCreateCard) -- зовнішній injected `onOpenCard` прибрано
-    // з AppProps, замість нього App отримує fetch-функції ЗА cardId, які сам
-    // передає в CardDetailScreen, коли перемкнувся на 'detail'.
+    // D-121 (живе тестування): окремий екран "відкрити картку" (CardDetailScreen,
+    // стан 'detail') прибрано -- передня картка колоди сама показує повний
+    // вміст одразу. Ці самі fetch-функції ЗА cardId тепер ідуть прямо в
+    // DeckScreen без обгортання (раніше App в'язав їх до screen.cardId для
+    // CardDetailScreen).
     loadCard: vi.fn().mockResolvedValue({ name: 'Спорт', description: 'опис', dataWarning: null }),
     loadBack: vi.fn().mockResolvedValue({ metricBlocks: [], aggregateProgress: null, entries: [] }),
     onRename: vi.fn().mockResolvedValue(undefined),
@@ -73,6 +73,9 @@ function baseProps() {
     // ISS-60 (docs/ISSUES.md): реальний POST /cards/{id}/metric-blocks
     // (main.tsx) -- App замикає над cardId, той самий стиль, що onRename.
     createMetricBlock: vi.fn().mockResolvedValue(undefined),
+    // Реальний DELETE /cards/{id}/metric-blocks/{metricBlockId} (main.tsx) --
+    // App замикає над cardId, той самий стиль, що createMetricBlock/onRename.
+    archiveMetricBlock: vi.fn().mockResolvedValue(undefined),
     // Review C10 (AC-03): реальний PATCH /cards/{cardId} (description/markFilled,
     // main.tsx) -- App замикає над cardId, той самий стиль, що onRename.
     onUpdateDescription: vi.fn().mockResolvedValue(undefined),
@@ -89,10 +92,12 @@ function baseProps() {
     // structure/ui/LayoutBoard.tsx (loadLayout/onMoveCard) і
     // structure/ui/AnalyticsScreen.tsx (loadAnalytics) -- App лише
     // прокидає їх без змін (той самий DI-стиль, що loadCards).
-    loadStructure: vi.fn().mockResolvedValue({ declaration: null, layoutMode: null, logicVariant: null, hasArrangedCards: false }),
+    loadStructure: vi.fn().mockResolvedValue({ declaration: null }),
     onSaveDeclaration: vi.fn().mockResolvedValue(undefined),
-    loadLayout: vi.fn().mockResolvedValue({ cellCount: 0, justReset: false, cards: [] }),
+    loadLayout: vi.fn().mockResolvedValue({ layoutMode: null, cards: [], connections: [] }),
     onMoveCard: vi.fn().mockResolvedValue(undefined),
+    onCreateConnection: vi.fn().mockResolvedValue(undefined),
+    onDeleteConnection: vi.fn().mockResolvedValue(undefined),
     loadAnalytics: vi.fn().mockResolvedValue({ layoutMode: null, average: null, excludedCount: 0, trendAvailable: true, cards: [] }),
     // Review-fix 2026-09-11 (verify): LayoutBoard.loadCloseCardOptions/onCloseCard
     // уже написані й протестовані (SCR-04), main.tsx їх уже експортує -- але App
@@ -101,10 +106,10 @@ function baseProps() {
     // що loadLayout/onMoveCard вище.
     loadCloseCardOptions: vi.fn().mockResolvedValue({ metricBlocks: [], targetCards: [] }),
     onCloseCard: vi.fn().mockResolvedValue(undefined),
-    // T29 (агент, D-25 "єдиний канал прямого вводу"): Чат стає дефолтним
-    // напрямком (DoD T29) -- baseProps резолвить ці три одразу (не pending
-    // Promise), щоб ChatScreen не залишав жоден тест підвислим на Spinner,
-    // коли тест сам не про Чат.
+    // D-121: ChatPanel монтується ЗАВЖДИ (постійна, поза перемикачем
+    // direction) -- тож ці три мають резолвитись одразу (не pending Promise)
+    // у КОЖНОМУ тесті, не лише тих, що самі про Чат, інакше кожен тест
+    // застрягає на фоновому Spinner всередині панелі.
     loadChatHistory: vi.fn().mockResolvedValue([] as ChatMessage[]),
     loadChatOnboarding: vi.fn().mockResolvedValue({ welcomeShown: true, message: null }),
     loadActiveChatProposal: vi.fn().mockResolvedValue(null as ChatProposal | null),
@@ -113,7 +118,7 @@ function baseProps() {
     loadRuleTargetCards: vi.fn().mockResolvedValue([] as RuleSettingsScreenTargetCard[]),
     loadRules: vi.fn().mockResolvedValue([] as RuleSettingsScreenRule[]),
     onSaveRule: vi.fn(),
-    loadReports: vi.fn().mockResolvedValue([] as ReportViewModel[]),
+    loadActionLog: vi.fn().mockResolvedValue([] as LogEntryViewModel[]),
     loadSyncResources: vi.fn().mockResolvedValue([] as AccountScreenResource[]),
     onAddSyncResource: vi.fn(),
     onRemoveSyncResource: vi.fn(),
@@ -165,11 +170,12 @@ test('з валідним (не протермінованим) токеном �
 
   render(<App {...props} />);
 
-  // T29: дефолтний напрямок -- Чат, не Картки, тож loadCards НЕ викликається
-  // одразу при вході -- лише коли користувач сам відкриє "Картки".
+  // D-121: дефолтний напрямок контентної зони -- Картки (Чат більше не
+  // напрямок, він постійна ChatPanel поза цим перемикачем) -- loadCards
+  // викликається одразу при вході, без кліку.
   expect(props.renderGoogleButton).not.toHaveBeenCalled();
-  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
-  expect(props.loadCards).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(props.loadCards).toHaveBeenCalledTimes(1));
+  expect(await screen.findByRole('button', { name: 'Картки' })).toBeTruthy();
 });
 
 test('успішний обмін credential у LoginScreen пише сесію в сховище і перемикає рендер на DeckScreen (ADR-0006, крок 3)', async () => {
@@ -194,36 +200,33 @@ test('успішний обмін credential у LoginScreen пише сесію 
   capturedOnCredential?.('fake-google-id-token');
 
   // Після успішного обміну -- сесія (token+expiresAt, той самий формат, що
-  // читає readStoredSession) пишеться в сховище, і екран перемикається (T29:
-  // на нав-меню з дефолтним напрямком Чат, не одразу DeckScreen).
-  expect(await screen.findByRole('heading', { name: 'Чат' })).toBeTruthy();
+  // читає readStoredSession) пишеться в сховище, і екран перемикається на
+  // нав-меню застосунку (D-121: дефолтний напрямок -- Картки, тож loadCards
+  // викликається одразу, без кліку).
+  expect(await screen.findByRole('button', { name: 'Картки' })).toBeTruthy();
+  await waitFor(() => expect(props.loadCards).toHaveBeenCalledTimes(1));
 
   expect(props.writeStoredSession).toHaveBeenCalledWith({
     token: sessionResult.token,
     expiresAt: sessionResult.expiresAt,
   });
-
-  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
-  await screen.findByRole('status'); // Spinner DeckScreen -- loadCards ще не резолвнувся (pending Promise з baseProps).
-  expect(props.loadCards).toHaveBeenCalledTimes(1);
 });
 
 // ISS-55 (RED, stage 1/3): App.tsx отримує третій екран 'create' -- клік на
-// кнопку "+ Створити картку" (DeckScreen.onCreateCard, щойно доданий проп)
+// кнопку "Створити картку" (DeckScreen.onCreateCard, щойно доданий проп)
 // перемикає рендер із DeckScreen на CreateCardForm; успішне збереження
 // викликає ін'єктований createCard і повертає назад на 'deck' з повторним
 // GET /cards (loadCards має бути викликаний ще раз -- DeckScreen.loadCards'
 // референційна стабільність, docs у DeckScreen.tsx).
 
-test('ISS-55: клік "+ Створити картку" в Колоді перемикає екран на форму створення картки', async () => {
+test('ISS-55: клік "Створити картку" в Колоді перемикає екран на форму створення картки', async () => {
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
 
   render(<App {...props} />);
-  // T29: дефолтний напрямок -- Чат, тож спершу переходимо на Картки.
-  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
+  // D-121: дефолтний напрямок -- уже Картки, окремий клік не потрібен.
 
-  const createButton = await screen.findByRole('button', { name: '+ Створити картку' });
+  const createButton = await screen.findByRole('button', { name: 'Створити картку' });
   fireEvent.click(createButton);
 
   // CreateCardForm (T27) -- єдиний, хто рендерить поле "Назва" з написом
@@ -240,7 +243,7 @@ test('ISS-55: успішне створення картки викликає in
   render(<App {...props} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
-  const createButton = await screen.findByRole('button', { name: '+ Створити картку' });
+  const createButton = await screen.findByRole('button', { name: 'Створити картку' });
   fireEvent.click(createButton);
 
   const nameField = await screen.findByLabelText('Назва');
@@ -255,29 +258,25 @@ test('ISS-55: успішне створення картки викликає in
   expect(props.loadCards).toHaveBeenCalledTimes(2);
 });
 
-// ISS-55, stage 2/3 (RED): клік на тайл картки в Колоді (DeckGrid, T25)
-// відкриває CardDetailScreen (композиція CardFace/CardBack, ще не написана --
-// див. CardDetailScreen.test.tsx). App сам перемикає внутрішній screen на
-// 'detail' з обраним cardId (той самий стиль, що onCreateCard) і передає в
-// CardDetailScreen ін'єктовані loadCard/loadBack/onRename, ЗВ'ЯЗАНІ з cardId
-// тайла, що відкрили -- саме тому props.loadCard/loadBack не приймають
-// аргументів (CardFace/CardBack фіксований контракт), а App сам створює
-// замикання над cardId при передачі.
+// D-121 (живе тестування): "Картка в колоді має одразу бути готова так ніби
+// вона відкрита" -- клік на тайл, щоб "відкрити" картку, БІЛЬШЕ НЕ ІСНУЄ
+// (раніше -- ISS-55 stage 2/3, CardDetailScreen, прибраний). Передня картка
+// показує повний вміст (CardFace) одразу після завантаження колоди --
+// App сам не в'яже loadCard/loadBack до жодного screen.cardId (немає такого
+// стану більше), просто прокидає ці AppProps прямо в DeckScreen без змін.
 
-test('ISS-55 stage 2: клік на тайл картки в Колоді відкриває деталі картки (CardDetailScreen)', async () => {
+test('D-121: передня картка колоди одразу показує повний вміст (CardFace), без окремого кліку "відкрити"', async () => {
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
 
   render(<App {...props} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Спорт' }));
-
-  // CardFace (T26) -- єдиний, хто рендерить назву картки як <h2>; DeckGrid
-  // більше не на екрані (кнопка "+ Створити картку" -- DeckScreen-специфічна).
+  // CardFace (T26) -- єдиний, хто рендерить назву картки як <h2>; кнопка
+  // "Створити картку" (DeckScreen-специфічна) лишається поряд, не зникає.
   expect(await screen.findByRole('heading', { name: 'Спорт' })).toBeTruthy();
-  expect(screen.queryByRole('button', { name: '+ Створити картку' })).toBeNull();
-  expect(props.loadCard).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole('button', { name: 'Створити картку' })).toBeTruthy();
+  expect(props.loadCard).toHaveBeenCalledWith('card-1');
 });
 
 // Review 2026-09-07 E (RED, T52): "loadCard/loadBack порушують задокументований
@@ -310,14 +309,13 @@ test('review-followup: onSessionExpired передається в DeckScreen р�
   expect(props.loadCards).toHaveBeenCalledTimes(1);
 });
 
-test('T52: loadCard передається в CardDetailScreen референційно стабільним -- повторний рендер App без навігації НЕ викликає його знову', async () => {
+test('T52 (перенесено, D-121): loadCard, переданий у DeckFrontCard, референційно стабільний -- повторний рендер App без навігації НЕ викликає його знову', async () => {
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
 
   const { rerender } = render(<App {...props} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Спорт' }));
   await screen.findByRole('heading', { name: 'Спорт' });
   expect(props.loadCard).toHaveBeenCalledTimes(1);
 
@@ -330,45 +328,28 @@ test('T52: loadCard передається в CardDetailScreen референц�
   expect(props.loadCard).toHaveBeenCalledTimes(1);
 });
 
-test('ISS-55 stage 2: кнопка "← Назад" у деталях картки повертає на Колоду з повторним завантаженням', async () => {
+test('D-121: перейменування передньої картки викликає injected onRename(cardId, назва)', async () => {
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
 
   render(<App {...props} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Спорт' }));
-  await screen.findByRole('heading', { name: 'Спорт' });
-
-  fireEvent.click(screen.getByRole('button', { name: '← Назад' }));
-
-  // Повернення на 'deck' -- тайл картки знову видимий як кнопка DeckGrid.
-  expect(await screen.findByRole('button', { name: 'Спорт' })).toBeTruthy();
-  expect(props.loadCards).toHaveBeenCalledTimes(2);
-});
-
-test('ISS-55 stage 2: перейменування картки в деталях викликає injected onRename(cardId, назва)', async () => {
-  const props = validSessionProps();
-  props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
-
-  render(<App {...props} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
-
-  fireEvent.click(await screen.findByRole('button', { name: 'Спорт' }));
   fireEvent.click(await screen.findByRole('heading', { name: 'Спорт' }));
   fireEvent.change(screen.getByLabelText('Назва'), { target: { value: 'Спорт і здоров’я' } });
   fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
 
-  // onRename в AppProps приймає (cardId, name) -- App сам звужує до
-  // CardDetailScreen-контракту (name: string) => Promise<void> через замикання.
+  // onRename в AppProps приймає (cardId, name) -- App прокидає його прямо в
+  // DeckScreen, DeckFrontCard сам звужує до (name: string) => Promise<void>
+  // через замикання над cardId.
   expect(props.onRename).toHaveBeenCalledWith('card-1', 'Спорт і здоров’я');
 });
 
 // Review 2026-09-07 C11 (RED, docs/features/life-area-card/_review/review-2026-09-07.md,
 // AC-12): кнопка "виправити" в історії записів раніше нікуди не була
-// підключена від App.tsx -- клік нічого не робив. AppProps отримує новий
-// injected onFlagEntry(cardId, entryId), App замикає над cardId (той самий
-// стиль, що onRename) і прокидає в CardDetailScreen -> CardBack без змін.
+// підключена від App.tsx -- клік нічого не робив. AppProps отримує
+// injected onFlagEntry(cardId, entryId) -- App прокидає його прямо в
+// DeckScreen (D-121), DeckFrontCard сам замикає над cardId для CardBack.
 
 test('C11/AC-12: клік "виправити" в історії записів викликає injected onFlagEntry(cardId, entryId)', async () => {
   const props = validSessionProps();
@@ -384,7 +365,6 @@ test('C11/AC-12: клік "виправити" в історії записів 
   render(<App {...props} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Спорт' }));
   fireEvent.click(await screen.findByRole('button', { name: /перегорнути/ }));
   fireEvent.click(await screen.findByRole('button', { name: /Історія записів/ }));
   fireEvent.click(await screen.findByRole('button', { name: 'виправити' }));
@@ -392,52 +372,75 @@ test('C11/AC-12: клік "виправити" в історії записів 
   expect(props.onFlagEntry).toHaveBeenCalledWith('card-1', 'entry-1');
 });
 
-// ISS-55, stage 3/3 (RED): App.tsx отримує четвертий екран 'archive' -- клік
-// на кнопку "Архів" у Колоді (DeckScreen.onOpenArchive, щойно доданий проп)
-// перемикає рендер на ArchiveScreen (T36, SCR-07), вже написаний і
-// протестований ізольовано, але досі нічим не досяжний з App. Обгортаю
-// ArchiveScreen тонкою "← Назад" кнопкою прямо в App.tsx (той самий вибір,
-// що CardDetailScreen у stage 2) -- ArchiveScreen сам не має кнопки назад
-// (фіксований контракт T36), і окремий файл-обгортка був би зайвим для
-// одного <button> з тим самим текстом "← Назад", що вже використовує деталі
-// картки. Повернення на 'deck' повторно викликає loadCards (той самий стиль
-// ремаунту, що onBack у CardDetailScreen).
+// ISS-55, stage 3/3: App.tsx отримує четвертий екран 'archive' -- клік на
+// кнопку "Архів" перемикає рендер на ArchiveScreen (T36, SCR-07). Обгортаю
+// ArchiveScreen тонкою "← Назад" кнопкою прямо в App.tsx -- ArchiveScreen сам
+// не має кнопки назад (фіксований контракт T36). Повернення на 'deck'
+// повторно викликає loadCards (той самий стиль ремаунту, що раніше мав
+// onBack у прибраному CardDetailScreen, D-121).
+//
+// D-124 (живе тестування): "Архів" переїхав з Колоди на Літопис-Аналітику --
+// клік перемикає ОБИДВА рівні стану одразу (direction на 'cards' +
+// внутрішній Screen на 'archive'), тому тести нижче спершу переходять на
+// "Аналітика", а не на "Картки".
 
-test('ISS-55 stage 3: клік "Архів" у Колоді перемикає екран на ArchiveScreen', async () => {
+test('ISS-55 stage 3+D-124: клік "Архів" на Літопис-Аналітиці перемикає екран на ArchiveScreen', async () => {
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
   props.loadArchivedCards.mockResolvedValue([{ id: 'card-2', name: 'Читання' }]);
 
   render(<App {...props} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
-
-  const archiveButton = await screen.findByRole('button', { name: 'Архів' });
-  fireEvent.click(archiveButton);
+  fireEvent.click(await screen.findByRole('button', { name: 'Аналітика' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Архів' }));
 
   // ArchiveScreen (T36) рендерить архівовані тайли через DeckGrid -- "Читання"
-  // видиме, тоді як активна картка "Спорт" (Колода) більше не на екрані.
+  // видиме; direction тим часом перемкнувся назад на "Картки" (D-124).
   expect(await screen.findByText('Читання')).toBeTruthy();
-  expect(screen.queryByText('Спорт')).toBeNull();
   expect(props.loadArchivedCards).toHaveBeenCalledTimes(1);
 });
 
-test('ISS-55 stage 3: кнопка "← Назад" в Архіві повертає на Колоду з повторним завантаженням', async () => {
+// Задача 13 (живе тестування): раніше "← Назад" завжди виставляв Screen на
+// 'deck' -- у зв'язці з direction='cards' (виставленим ще при відкритті
+// архіву з onOpenArchive) це вело на Картки, а не туди, звідки користувач
+// реально прийшов. Архів зараз відкривається лише з Аналітики (onOpenArchive
+// вище), тож "Назад" має повернути саме на AnalyticsScreen.
+test('Задача 13: кнопка "← Назад" в Архіві, відкритому з Аналітики, повертає на Аналітику', async () => {
   const props = validSessionProps();
-  props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
   props.loadArchivedCards.mockResolvedValue([]);
 
   render(<App {...props} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
-
+  fireEvent.click(await screen.findByRole('button', { name: 'Аналітика' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Архів' }));
   await screen.findByText('Архів порожній');
 
   fireEvent.click(screen.getByRole('button', { name: '← Назад' }));
 
-  // Повернення на 'deck' -- тайл активної картки знову видимий, loadCards
-  // викликано вдруге (перший раз при первинному монтуванні Колоди).
-  expect(await screen.findByRole('button', { name: 'Спорт' })).toBeTruthy();
-  expect(props.loadCards).toHaveBeenCalledTimes(2);
+  // Повернення на 'analytics' -- AnalyticsScreen знову видимий (кнопка
+  // "Архів" -- її власний елемент), loadAnalytics викликано вдруге (перший
+  // раз при первинному монтуванні Аналітики, перед відкриттям архіву).
+  expect(await screen.findByRole('button', { name: 'Архів' })).toBeTruthy();
+  expect(props.loadAnalytics).toHaveBeenCalledTimes(2);
+});
+
+// Живе тестування (Андрій): "При натисканні на картки я попадаю в архів
+// чомусь" -- "Картки" раніше лише перемикав direction, а Screen лишався
+// 'archive' (D-111: навмисно, "Картки не скидає під-навігацію create/detail/
+// archive"), тому клік із Архіву повертав в Архів. Тепер "Картки" ЗАВЖДИ
+// скидає й Screen на 'deck' -- цей тест пінить саме реальний баг-сценарій.
+test('живе тестування: клік "Картки" з Архіву (відкритого з Аналітики) веде на Колоду, не лишає в Архіві', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
+  props.loadArchivedCards.mockResolvedValue([]);
+
+  render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Аналітика' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Архів' }));
+  await screen.findByText('Архів порожній');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Картки' }));
+
+  expect(await screen.findByRole('heading', { name: 'Спорт' })).toBeTruthy();
+  expect(screen.queryByText('Архів порожній')).toBeNull();
 });
 
 test('ISS-55 stage 3: розархівування картки в Архіві викликає injected onRestoreCard(cardId)', async () => {
@@ -446,8 +449,7 @@ test('ISS-55 stage 3: розархівування картки в Архіві 
   props.loadArchivedCards.mockResolvedValue([{ id: 'card-2', name: 'Читання' }]);
 
   render(<App {...props} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
-
+  fireEvent.click(await screen.findByRole('button', { name: 'Аналітика' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Архів' }));
   fireEvent.click(await screen.findByText('Читання'));
   fireEvent.click(await screen.findByRole('button', { name: 'Розархівувати' }));
@@ -455,19 +457,19 @@ test('ISS-55 stage 3: розархівування картки в Архіві 
   expect(props.onRestoreCard).toHaveBeenCalledWith('card-2');
 });
 
-// ISS-56 (RED, docs/ISSUES.md): CardFace отримав "Архівувати" в меню "..." ->
+// ISS-56 (docs/ISSUES.md): CardFace отримав "Архівувати" в меню "..." ->
 // ArchiveCardDialog (T29) -> injected AppProps.archiveCard(cardId) (DELETE
-// /cards/{cardId}, main.tsx) -> після успіху екран повертається на 'deck' з
-// повторним loadCards (та сама "ремаунт перезавантажує" ідіома, що onBack).
+// /cards/{cardId}, main.tsx) -> D-121: після успіху DeckFrontCard.onArchived
+// сигналить DeckScreen перезавантажити колоду (та сама "ремаунт
+// перезавантажує" ідіома, що раніше мав onBack у прибраному CardDetailScreen).
 
-test('ISS-56: архівування картки в деталях викликає injected archiveCard(cardId) і повертає до Колоди з повторним завантаженням', async () => {
+test('ISS-56: архівування передньої картки викликає injected archiveCard(cardId) і перезавантажує колоду', async () => {
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
 
   render(<App {...props} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Спорт' }));
   await screen.findByRole('heading', { name: 'Спорт' });
 
   fireEvent.click(screen.getByRole('button', { name: 'Меню картки' }));
@@ -476,17 +478,18 @@ test('ISS-56: архівування картки в деталях виклик
 
   expect(props.archiveCard).toHaveBeenCalledWith('card-1');
 
-  // Повернення на 'deck' -- тайл картки знову видимий, loadCards викликано
-  // вдруге (перший раз при первинному відкритті Колоди).
-  expect(await screen.findByRole('button', { name: 'Спорт' })).toBeTruthy();
+  // Колода перезавантажується (мок loadCards повертає ту саму статичну
+  // відповідь -- тест пінить сам факт повторного виклику, не реальне
+  // зникнення картки, те саме обмеження мав і попередній варіант тесту).
+  expect(await screen.findByRole('heading', { name: 'Спорт' })).toBeTruthy();
   expect(props.loadCards).toHaveBeenCalledTimes(2);
 });
 
-// ISS-60 (RED, docs/ISSUES.md): App замикає createMetricBlock над cardId
-// обраної картки й передає в CardDetailScreen -> CardBack (той самий стиль,
-// що onRename/loadCard/loadBack вище).
+// ISS-60 (docs/ISSUES.md): App прокидає createMetricBlock прямо в
+// DeckScreen -> DeckFrontCard -> CardBack, DeckFrontCard сам замикає над
+// cardId передньої картки (той самий стиль, що onRename/loadCard/loadBack).
 
-test('ISS-60: створення блоку-метрики в деталях картки викликає injected createMetricBlock(cardId, values)', async () => {
+test('ISS-60: створення блоку-метрики на передній картці викликає injected createMetricBlock(cardId, values)', async () => {
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
   props.loadBack.mockResolvedValue({ metricBlocks: [], aggregateProgress: null, entries: [] });
@@ -494,7 +497,6 @@ test('ISS-60: створення блоку-метрики в деталях к�
   render(<App {...props} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Спорт' }));
   fireEvent.click(await screen.findByRole('button', { name: /перегорнути/ }));
   await screen.findByText('Ще немає жодної активної метрики');
 
@@ -512,18 +514,50 @@ test('ISS-60: створення блоку-метрики в деталях к�
   });
 });
 
-test('ISS-58: клік "Вийти" в Колоді стирає сесію і повертає на LoginScreen', async () => {
+// Видалення блоку-метрики: App прокидає archiveMetricBlock прямо в
+// DeckScreen -> DeckFrontCard -> CardBack, DeckFrontCard сам замикає над
+// cardId передньої картки (той самий стиль, що createMetricBlock/onFlagEntry).
+
+test('видалення блоку-метрики на передній картці (кнопка "×" -> ввід "видалити" -> "Видалити") викликає injected archiveMetricBlock(cardId, metricBlockId)', async () => {
   const props = validSessionProps();
-  props.loadCards.mockResolvedValue([]);
+  props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
+  props.loadBack.mockResolvedValue({
+    metricBlocks: [
+      { id: 'mb1', label: 'Тренування', unit: 'раз', progress: { kind: 'bounded', share: 0.5, overGoal: 0 }, hasPendingEntry: false },
+    ],
+    aggregateProgress: 0.5,
+    entries: [],
+  });
 
   render(<App {...props} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
+  fireEvent.click(await screen.findByRole('button', { name: /перегорнути/ }));
+  await screen.findByText('Тренування');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Видалити метрику «Тренування»' }));
+  // ChatPanel (постійна панель, D-121) теж має власне текстове поле --
+  // getByRole('textbox') на рівні всього App неоднозначний, тому питаємо
+  // лише всередині діалогу підтвердження (role="dialog").
+  const dialog = screen.getByRole('dialog');
+  fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'видалити' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Видалити' }));
+
+  expect(props.archiveMetricBlock).toHaveBeenCalledWith('card-1', 'mb1');
+});
+
+test('D-124: клік "Вийти" у верхньому барі (поруч із шестернею) стирає сесію і повертає на LoginScreen', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([]);
+
+  render(<App {...props} />);
+  // "Вийти" тепер у верхньому барі, поза перемикачем direction -- досяжна
+  // одразу, без навігації на жоден конкретний напрямок.
   fireEvent.click(await screen.findByRole('button', { name: 'Вийти' }));
 
   expect(props.clearStoredSession).toHaveBeenCalledTimes(1);
   // Той самий контракт, що тест "без токена в сховищі" вище -- LoginScreen
-  // єдиний, хто монтує GIS-кнопку; DeckScreen більше не на екрані.
+  // єдиний, хто монтує GIS-кнопку.
   await waitFor(() => expect(props.renderGoogleButton).toHaveBeenCalledTimes(1));
 });
 
@@ -556,19 +590,18 @@ test('C14/AC-04: 401 (AppError, httpStatus 401) з loadCards стирає сес
 // специфічне для того екрана (текст/поле, унікальне для DeclarationScreen /
 // LayoutBoard / AnalyticsScreen), клік на "Картки" повертає на DeckScreen.
 
-test('T24: після входу видно нижнє нав-меню з 4 пунктами (Декларація/Схема/Літопис-Аналітика/Картки)', async () => {
+test('T24: після входу видно нижнє нав-меню з 4 пунктами (Декларація/Схема/Аналітика/Картки)', async () => {
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([]);
 
   render(<App {...props} />);
-  // T29: дефолтний напрямок тепер Чат (D-25), не Картки -- перевіряємо DeckScreen явним переходом.
-  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
+  // D-121: дефолтний напрямок -- знову Картки (Чат більше не "напрямок").
 
   await screen.findByText('Тут ще немає жодної картки');
 
   expect(await screen.findByRole('button', { name: 'Декларація' })).toBeTruthy();
   expect(await screen.findByRole('button', { name: 'Схема' })).toBeTruthy();
-  expect(await screen.findByRole('button', { name: 'Літопис-Аналітика' })).toBeTruthy();
+  expect(await screen.findByRole('button', { name: 'Аналітика' })).toBeTruthy();
   expect(await screen.findByRole('button', { name: 'Картки' })).toBeTruthy();
 });
 
@@ -580,8 +613,10 @@ test('T24: клік "Декларація" в нав-меню перемикає
 
   fireEvent.click(await screen.findByRole('button', { name: 'Декларація' }));
 
-  // DeclarationScreen.tsx -- унікальне поле "Картина світу, навіщо, пріоритет".
-  expect(await screen.findByLabelText('Картина світу, навіщо, пріоритет')).toBeTruthy();
+  // DeclarationScreen.tsx -- VIEW за замовчуванням (declaration: null з мока
+  // вище) -- унікальний курсивний текст-підказка цього екрана.
+  expect(await screen.findByText('Тексту декларації поки немає')).toBeTruthy();
+  expect(await screen.findByRole('button', { name: 'Змінити декларацію' })).toBeTruthy();
   expect(props.loadStructure).toHaveBeenCalledTimes(1);
   expect(screen.queryByText('Тут ще немає жодної картки')).toBeNull();
 });
@@ -590,9 +625,9 @@ test('AC-12 (review-fix 2026-09-11): на Схемі з loadCloseCardOptions/onC
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([]);
   props.loadLayout.mockResolvedValue({
-    cellCount: 4,
-    justReset: false,
-    cards: [{ cardId: 'card-1', cardTitle: 'Спорт', cellIndex: 0, baseOrder: 0 }],
+    layoutMode: null,
+    cards: [{ cardId: 'card-1', cardTitle: 'Спорт', x: 20, y: 30 }],
+    connections: [],
   });
 
   render(<App {...props} />);
@@ -617,26 +652,25 @@ test('T24: клік "Схема" в нав-меню перемикає екра�
   expect(props.loadLayout).toHaveBeenCalledTimes(1);
 });
 
-test('T24: клік "Літопис-Аналітика" в нав-меню перемикає екран на AnalyticsScreen (loadAnalytics)', async () => {
+test('T24: клік "Аналітика" в нав-меню перемикає екран на AnalyticsScreen (loadAnalytics)', async () => {
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([]);
 
   render(<App {...props} />);
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Літопис-Аналітика' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Аналітика' }));
 
   // AnalyticsScreen.tsx -- унікальний рядок "N картки виключено з середнього".
   expect(await screen.findByText('0 картки виключено з середнього (немає метрики)')).toBeTruthy();
   expect(props.loadAnalytics).toHaveBeenCalledTimes(1);
 });
 
-test('T24: клік "Картки" повертає на DeckScreen, під-навігація create/detail/archive лишається робочою', async () => {
+test('T24: клік "Картки" повертає на DeckScreen, під-навігація create/archive лишається робочою (D-121: "detail" більше нема)', async () => {
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
 
   render(<App {...props} />);
-  // T29: дефолтний напрямок тепер Чат -- відкриваємо Картки явно першим кроком.
-  fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
+  // D-121: дефолтний напрямок -- уже Картки.
   await screen.findByText('Спорт');
 
   // Переходимо на інший напрямок і повертаємось -- "Картки" має відновити ту саму DeckScreen-навігацію.
@@ -644,36 +678,79 @@ test('T24: клік "Картки" повертає на DeckScreen, під-на
   await screen.findByText('Спорт', { exact: false }).catch(() => undefined);
   fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
-  expect(await screen.findByRole('button', { name: 'Спорт' })).toBeTruthy();
+  expect(await screen.findByRole('heading', { name: 'Спорт' })).toBeTruthy();
 
   // Під-навігація "Картки" (create) все ще досяжна під тим самим нав-меню.
-  fireEvent.click(await screen.findByRole('button', { name: '+ Створити картку' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Створити картку' }));
   expect(await screen.findByRole('heading', { name: 'Нова картка' })).toBeTruthy();
 });
 
-// T29 (агент, D-25 "агент -- єдиний канал прямого вводу продукту ПЛАН",
-// tasks.json DoD: "App boots with Чат as the default screen plus nav entries
-// for Налаштування правил / Звіти активності / Обліковий запис і дані"):
+// T29 (агент, D-25 "агент -- єдиний канал прямого вводу продукту ПЛАН") --
 // той самий self-check дух, що review 2026-09-11 MUST-FIX 4/5 для Структури
 // -- ці тести пінять РЕАЛЬНУ досяжність з App, не лише факт, що компонент
 // написаний і протестований ізольовано (agent/ui/*.test.tsx).
+//
+// D-121 (docs/app-shell.md) замінює T29 DoD "App boots with Чат as the
+// default screen" -- Чат більше не "напрямок" контентної зони, тож ця
+// частина DoD більше не застосовна буквально: перевіряємо натомість, що
+// ChatPanel ЗАВЖДИ змонтована одночасно з дефолтним напрямком (Картки), не
+// одне ЗАМІСТЬ іншого.
 
-test('T29: після входу дефолтний екран -- Чат (не Картки), і всі 4 нових пункти меню видно одразу', async () => {
+test('T29+D-121+D-123: після входу видно і дефолтний екран Картки, і постійну ChatPanel, і 3 пункти меню шестерні досяжні', async () => {
   const props = validSessionProps();
 
   render(<App {...props} />);
 
-  expect(await screen.findByRole('heading', { name: 'Чат' })).toBeTruthy();
+  // ChatPanel -- більше не має власного заголовка-сторінки (D-121); досяжність
+  // через сам композер, завжди видимий незалежно від розгорнута/згорнута.
+  expect(await screen.findByLabelText('Повідомлення')).toBeTruthy();
   expect(props.loadChatHistory).toHaveBeenCalledTimes(1);
-  expect(props.loadCards).not.toHaveBeenCalled();
+  // D-121: Картки -- знову дефолтний напрямок контентної зони, тож loadCards
+  // теж викликається одразу, ОДНОЧАСНО з loadChatHistory (не взаємовиключно).
+  await waitFor(() => expect(props.loadCards).toHaveBeenCalledTimes(1));
 
-  expect(await screen.findByRole('button', { name: 'Чат' })).toBeTruthy();
-  expect(await screen.findByRole('button', { name: 'Налаштування правил' })).toBeTruthy();
-  expect(await screen.findByRole('button', { name: 'Звіти активності' })).toBeTruthy();
-  expect(await screen.findByRole('button', { name: 'Обліковий запис і дані' })).toBeTruthy();
+  // D-123: ці 3 пункти більше не в нижньому нав-меню одразу -- за значком
+  // шестерні (верхній бар) у меню, role="menu".
+  fireEvent.click(await screen.findByRole('button', { name: 'Меню налаштувань' }));
+  expect(await screen.findByRole('menuitem', { name: 'Налаштування правил' })).toBeTruthy();
+  expect(await screen.findByRole('menuitem', { name: 'Лог дій' })).toBeTruthy();
+  expect(await screen.findByRole('menuitem', { name: 'Обліковий запис і дані' })).toBeTruthy();
 });
 
-test('T29: клік "Налаштування правил" перемикає екран на RuleSettingsScreen (loadRules/loadRuleTargetCards)', async () => {
+// Задача 9: стандартна поведінка випадного меню -- клік будь-де поза меню й
+// поза кнопкою-шестернею закриває меню, не лише повторний клік по шестерні
+// чи вибір пункту (обидва вже покриті тестами вище/нижче).
+test('Задача 9: клік поза меню шестерні закриває його', async () => {
+  const props = validSessionProps();
+
+  render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Меню налаштувань' }));
+  expect(await screen.findByRole('menu')).toBeTruthy();
+
+  // Клік по заголовку "ПЛАН" -- точно поза меню й поза шестернею.
+  fireEvent.mouseDown(await screen.findByText('ПЛАН'));
+
+  await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+});
+
+test('Задача 9: клік по самій шестерні, поки меню відкрите, закриває його лише один раз (без подвійного тригера)', async () => {
+  const props = validSessionProps();
+
+  render(<App {...props} />);
+  const gearButton = await screen.findByRole('button', { name: 'Меню налаштувань' });
+  fireEvent.click(gearButton);
+  expect(await screen.findByRole('menu')).toBeTruthy();
+
+  // mousedown на самій кнопці (document-listener) + click одразу після
+  // (React onClick, той самий toggle) -- імітує реальний клік мишею.
+  fireEvent.mouseDown(gearButton);
+  fireEvent.click(gearButton);
+
+  // Мав закритися (toggle), а не лишитись відкритим через подвійний тригер.
+  expect(screen.queryByRole('menu')).toBeNull();
+});
+
+test('T29+D-123: клік "Налаштування правил" у меню шестерні перемикає екран на RuleSettingsScreen (loadRules/loadRuleTargetCards)', async () => {
   const props = validSessionProps();
   props.loadRuleTargetCards.mockResolvedValue([{ cardId: 'card-1', cardTitle: 'Спорт' }]);
   props.loadRules.mockResolvedValue([
@@ -681,7 +758,8 @@ test('T29: клік "Налаштування правил" перемикає �
   ]);
 
   render(<App {...props} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Налаштування правил' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Меню налаштувань' }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Налаштування правил' }));
 
   expect(await screen.findByRole('heading', { name: 'Налаштування правил' })).toBeTruthy();
   await waitFor(() => expect(props.loadRules).toHaveBeenCalledWith(null));
@@ -693,25 +771,27 @@ test('T29: клік "Налаштування правил" перемикає �
   expect(await screen.findByRole('option', { name: 'Спорт' })).toBeTruthy();
 });
 
-test('T29: клік "Звіти активності" перемикає екран на ReportsScreen (loadReports)', async () => {
+test('T29+D-123: клік "Лог дій" у меню шестерні перемикає екран на LogScreen (loadActionLog)', async () => {
   const props = validSessionProps();
-  props.loadReports.mockResolvedValue([{ id: 'report-1', periodLabel: 'Тижневий, 01.09–07.09', summary: 'Підсумок тижня', status: 'generated' }]);
+  props.loadActionLog.mockResolvedValue([{ id: 'log-1', occurredAtLabel: '15.09 10:00', action: 'Створено картку «Спорт»' }]);
 
   render(<App {...props} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Звіти активності' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Меню налаштувань' }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Лог дій' }));
 
-  expect(await screen.findByRole('heading', { name: 'Звіти активності' })).toBeTruthy();
-  expect(await screen.findByText('Підсумок тижня')).toBeTruthy();
-  expect(props.loadReports).toHaveBeenCalledTimes(1);
+  expect(await screen.findByRole('heading', { name: 'Лог дій' })).toBeTruthy();
+  expect(await screen.findByText('Створено картку «Спорт»')).toBeTruthy();
+  expect(props.loadActionLog).toHaveBeenCalledTimes(1);
 });
 
-test('T29: клік "Обліковий запис і дані" перемикає екран на AccountScreen (loadSyncResources) і онDeleted завершує сесію', async () => {
+test('T29+D-123: клік "Обліковий запис і дані" у меню шестерні перемикає екран на AccountScreen (loadSyncResources) і онDeleted завершує сесію', async () => {
   const props = validSessionProps();
   props.loadSyncResources.mockResolvedValue([]);
   props.onDeleteAccount.mockResolvedValue(undefined);
 
   render(<App {...props} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Обліковий запис і дані' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Меню налаштувань' }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Обліковий запис і дані' }));
 
   expect(await screen.findByRole('heading', { name: 'Обліковий запис і дані' })).toBeTruthy();
   expect(props.loadSyncResources).toHaveBeenCalledTimes(1);
@@ -732,7 +812,7 @@ test('T29: надсилання повідомлення в Чаті викли�
   props.sendChatMessage.mockResolvedValue({ reply: 'Записав: пробіг 5 км', proposal: null });
 
   render(<App {...props} />);
-  await screen.findByRole('heading', { name: 'Чат' });
+  await screen.findByLabelText('Повідомлення'); // D-121: ChatPanel завжди змонтована, без переходу на "Чат".
 
   fireEvent.change(screen.getByLabelText('Повідомлення'), { target: { value: 'пробіг 5 км' } });
   fireEvent.click(screen.getByRole('button', { name: 'Надіслати' }));

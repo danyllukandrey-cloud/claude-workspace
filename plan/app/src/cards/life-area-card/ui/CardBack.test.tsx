@@ -42,7 +42,10 @@ test('SCR-03 default: показує частку виконання по бло
   };
   render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
 
-  expect(await screen.findByText(/Тренування: 50%/)).toBeTruthy();
+  // MetricBlockCard (задача 6): назва зліва, відсоток -- окремим кружечком
+  // справа, тому це вже два різні DOM-вузли, не один текстовий рядок.
+  expect(await screen.findByText('Тренування')).toBeTruthy();
+  expect(screen.getByText('50%')).toBeTruthy();
   expect(screen.getByText(/Загальний прогрес: 50%/)).toBeTruthy();
   expect(screen.queryByText(/понад ціль/)).toBeNull();
 });
@@ -57,7 +60,8 @@ test('SCR-03 capped: лічильник понад ціль показує 100% 
   };
   render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
 
-  expect(await screen.findByText(/Тренування: 100%/)).toBeTruthy();
+  expect(await screen.findByText('Тренування')).toBeTruthy();
+  expect(screen.getByText('100%')).toBeTruthy();
   expect(screen.getByText(/\+3 раз понад ціль/)).toBeTruthy();
 });
 
@@ -69,7 +73,9 @@ test('SCR-03 ongoing: постійний процес показує накоп�
   };
   render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
 
-  expect(await screen.findByText(/Біг: постійний процес — 40 км/)).toBeTruthy();
+  expect(await screen.findByText('Біг')).toBeTruthy();
+  expect(screen.getByText('40 км')).toBeTruthy();
+  expect(screen.getByText('постійний процес')).toBeTruthy();
   // Ongoing-блок не має частки -- нема жодного bounded-блоку, агрегат null, лінія не рендериться.
   expect(screen.queryByText(/Загальний прогрес/)).toBeNull();
 });
@@ -156,6 +162,33 @@ test('SCR-03 AC-12: клік "виправити" в історії виклик
   expect(screen.queryByRole('button', { name: 'виправити' })).toBeNull();
 });
 
+// Живе тестування (Андрій): "натиснув виправити -- нічого не відбувається,
+// тільки кулька червоніє" -- механізм працював як задумано (EntryHistoryList.tsx
+// коментар), але без підказки це виглядало як мертва кнопка. Підказка
+// з'являється одразу після успішного flag.
+test('живе тестування: після успішного "виправити" з\'являється підказка йти в чат з агентом', async () => {
+  const initial: CardBackData = {
+    metricBlocks: [],
+    aggregateProgress: null,
+    entries: [makeEntry({ id: 'e1', status: 'confirmed', summary: '+1 тренування' })],
+  };
+  const corrected: CardBackData = {
+    metricBlocks: [],
+    aggregateProgress: null,
+    entries: [makeEntry({ id: 'e1', status: 'rejected', summary: '+1 тренування (скасовано)' })],
+  };
+  const onFlagEntry = vi.fn().mockResolvedValue(corrected);
+
+  render(<CardBack loadBack={() => Promise.resolve(initial)} onFlip={vi.fn()} onFlagEntry={onFlagEntry} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: /Історія записів/ }));
+  expect(screen.queryByText(/напишіть агенту в чаті/i)).toBeNull();
+
+  fireEvent.click(await screen.findByRole('button', { name: 'виправити' }));
+
+  expect(await screen.findByText(/напишіть агенту в чаті/i)).toBeTruthy();
+});
+
 // Review 2026-09-07, post-ship follow-up review (AC-12/E, RED): невдале
 // onFlagEntry раніше робило те саме, що невдалий ПОЧАТКОВИЙ load
 // (setState('error')) -- стирало вже показані дані заради банера на весь
@@ -174,13 +207,14 @@ test('T52-remainder: невдалий onFlagEntry НЕ стирає вже за�
 
   render(<CardBack loadBack={() => Promise.resolve(initial)} onFlip={vi.fn()} onFlagEntry={onFlagEntry} />);
 
-  await screen.findByText(/Тренування: 50%/);
+  await screen.findByText('Тренування');
   fireEvent.click(screen.getByRole('button', { name: /Історія записів/ }));
   fireEvent.click(await screen.findByRole('button', { name: 'виправити' }));
 
   await screen.findByText('Мережа впала');
   // Дані й досі на екрані -- не замінені банером помилки на весь екран.
-  expect(screen.getByText(/Тренування: 50%/)).toBeTruthy();
+  expect(screen.getByText('Тренування')).toBeTruthy();
+  expect(screen.getByText('50%')).toBeTruthy();
   expect(screen.getByText('+1 тренування')).toBeTruthy();
 });
 
@@ -243,17 +277,18 @@ test('SCR-03 transfer-collision: пропонує перейменувати б�
   fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
 
   expect(onRenameTransferredBlock).toHaveBeenCalledWith({ metricBlockId: 'mb9', newLabel: 'Тренування (перенесено)' });
-  expect(await screen.findByText(/Тренування \(перенесено\): постійний процес — 12 раз/)).toBeTruthy();
+  expect(await screen.findByText('Тренування (перенесено)')).toBeTruthy();
+  expect(screen.getByText('12 раз')).toBeTruthy();
   // Колізію вирішено -- форма перейменування зникає.
   expect(screen.queryByLabelText('Нова назва блоку-метрики')).toBeNull();
 });
 
-test('SCR-03: клік "← лицьова" викликає onFlip', async () => {
+test('SCR-03: клік "← перегорнути" викликає onFlip', async () => {
   const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
   const onFlip = vi.fn();
   render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={onFlip} />);
 
-  fireEvent.click(await screen.findByRole('button', { name: /лицьова/ }));
+  fireEvent.click(await screen.findByRole('button', { name: /перегорнути/ }));
 
   expect(onFlip).toHaveBeenCalledTimes(1);
 });
@@ -267,10 +302,10 @@ test('SCR-03: клік "← лицьова" викликає onFlip', async () =
 // повторний виклик loadBack, не повернене значення.
 
 // D-111 (docs/DECISIONS.md): порожній стан -- "+ Додати блок-метрику"
-// ПЕРЕД текстом "Ще немає...", а "← лицьова" -- ОСТАННІМ елементом (унизу,
+// ПЕРЕД текстом "Ще немає...", а "← перегорнути" -- ОСТАННІМ елементом (унизу,
 // перед тим, як CardDetailScreen додасть "← Назад").
 
-test('D-111: порожній стан -- порядок "+ Додати блок-метрику" -> "Ще немає..." -> "Історія записів" -> "← лицьова"', async () => {
+test('D-111: порожній стан -- порядок "+ Додати блок-метрику" -> "Ще немає..." -> "Історія записів" -> "← перегорнути"', async () => {
   const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
   const { container } = render(
     <CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateMetricBlock={vi.fn()} />,
@@ -282,7 +317,7 @@ test('D-111: порожній стан -- порядок "+ Додати бло�
   const idxCreate = text.indexOf('Додати блок-метрику');
   const idxEmpty = text.indexOf('Ще немає жодної активної метрики');
   const idxHistory = text.indexOf('Історія записів');
-  const idxFlip = text.indexOf('лицьова');
+  const idxFlip = text.indexOf('перегорнути');
 
   expect(idxCreate).toBeGreaterThan(-1);
   expect(idxCreate).toBeLessThan(idxEmpty);
@@ -332,7 +367,8 @@ test('ISS-60: успішне збереження форми викликає on
   fireEvent.change(screen.getByLabelText('Одиниця:'), { target: { value: 'раз' } });
   fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
 
-  await screen.findByText(/Тренування: 0%/);
+  await screen.findByText('Тренування');
+  expect(screen.getByText('0%')).toBeTruthy();
 
   const expected: MetricBlockFormValues = {
     label: 'Тренування',
@@ -361,7 +397,8 @@ test('A4: "+ Додати блок-метрику" видима і коли в �
   };
   render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateMetricBlock={vi.fn()} />);
 
-  await screen.findByText(/Тренування: 50%/);
+  await screen.findByText('Тренування');
+  expect(screen.getByText('50%')).toBeTruthy();
 
   expect(screen.getByRole('button', { name: '+ Додати блок-метрику' })).toBeTruthy();
 });
@@ -387,7 +424,8 @@ test('T52: невдалий фоновий refresh (після успішног�
 
   render(<CardBack loadBack={loadBack} onFlip={vi.fn()} onCreateMetricBlock={onCreateMetricBlock} />);
 
-  await screen.findByText(/Тренування: 50%/);
+  await screen.findByText('Тренування');
+  expect(screen.getByText('50%')).toBeTruthy();
 
   fireEvent.click(screen.getByRole('button', { name: '+ Додати блок-метрику' }));
   fireEvent.change(screen.getByLabelText('Що рахуємо:'), { target: { value: 'Сон' } });
@@ -397,7 +435,112 @@ test('T52: невдалий фоновий refresh (після успішног�
   await vi.waitFor(() => expect(loadBack).toHaveBeenCalledTimes(2));
 
   // Дані й досі на екрані -- НЕ замінені банером помилки на весь екран.
-  expect(screen.getByText(/Тренування: 50%/)).toBeTruthy();
+  expect(screen.getByText('Тренування')).toBeTruthy();
+  expect(screen.getByText('50%')).toBeTruthy();
+});
+
+// Видалення блоку-метрики: клік "×" на MetricBlockCard відкриває
+// ArchiveMetricBlockDialog; підтвердження ("видалити" + Enter/галочка)
+// викликає injected onArchiveMetricBlock(metricBlockId), потім
+// перезавантажує зворот (refresh()) -- той самий "ремаунт перезавантажує"
+// підхід, що ISS-60 тести вище для onCreateMetricBlock. Опційний, як і
+// onCreateMetricBlock -- без нього кнопка "×" не рендериться взагалі.
+
+test('без onArchiveMetricBlock кнопка "×" не рендериться на жодному блоці', async () => {
+  const data: CardBackData = {
+    metricBlocks: [
+      { id: 'mb1', label: 'Тренування', unit: 'раз', progress: { kind: 'bounded', share: 0.5, overGoal: 0 }, hasPendingEntry: false },
+    ],
+    aggregateProgress: 0.5,
+    entries: [],
+  };
+  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
+
+  await screen.findByText('Тренування');
+  expect(screen.queryByRole('button', { name: /Видалити метрику/ })).toBeNull();
+});
+
+test('з onArchiveMetricBlock клік "×" відкриває ArchiveMetricBlockDialog з назвою блоку', async () => {
+  const data: CardBackData = {
+    metricBlocks: [
+      { id: 'mb1', label: 'Тренування', unit: 'раз', progress: { kind: 'bounded', share: 0.5, overGoal: 0 }, hasPendingEntry: false },
+    ],
+    aggregateProgress: 0.5,
+    entries: [],
+  };
+  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onArchiveMetricBlock={vi.fn()} />);
+
+  await screen.findByText('Тренування');
+  fireEvent.click(screen.getByRole('button', { name: 'Видалити метрику «Тренування»' }));
+
+  expect(screen.getByText(/Видалити метрику «Тренування»\?/)).toBeTruthy();
+});
+
+test('підтвердження видалення (ввід «видалити» + клік "Видалити") викликає onArchiveMetricBlock(metricBlockId) і перезавантажує зворот', async () => {
+  const withBlock: CardBackData = {
+    metricBlocks: [
+      { id: 'mb1', label: 'Тренування', unit: 'раз', progress: { kind: 'bounded', share: 0.5, overGoal: 0 }, hasPendingEntry: false },
+    ],
+    aggregateProgress: 0.5,
+    entries: [],
+  };
+  const afterArchive: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
+  const loadBack = vi.fn().mockResolvedValueOnce(withBlock).mockResolvedValueOnce(afterArchive);
+  const onArchiveMetricBlock = vi.fn().mockResolvedValue(undefined);
+
+  render(<CardBack loadBack={loadBack} onFlip={vi.fn()} onArchiveMetricBlock={onArchiveMetricBlock} />);
+
+  await screen.findByText('Тренування');
+  fireEvent.click(screen.getByRole('button', { name: 'Видалити метрику «Тренування»' }));
+
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'видалити' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Видалити' }));
+
+  expect(onArchiveMetricBlock).toHaveBeenCalledWith('mb1');
+  await screen.findByText('Ще немає жодної активної метрики');
+  expect(loadBack).toHaveBeenCalledTimes(2);
+  // Діалог закрився разом з успіхом.
+  expect(screen.queryByText(/Видалити метрику/)).toBeNull();
+});
+
+test('скасування діалогу видалення НЕ викликає onArchiveMetricBlock, блок лишається', async () => {
+  const data: CardBackData = {
+    metricBlocks: [
+      { id: 'mb1', label: 'Тренування', unit: 'раз', progress: { kind: 'bounded', share: 0.5, overGoal: 0 }, hasPendingEntry: false },
+    ],
+    aggregateProgress: 0.5,
+    entries: [],
+  };
+  const onArchiveMetricBlock = vi.fn().mockResolvedValue(undefined);
+  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onArchiveMetricBlock={onArchiveMetricBlock} />);
+
+  await screen.findByText('Тренування');
+  fireEvent.click(screen.getByRole('button', { name: 'Видалити метрику «Тренування»' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Скасувати' }));
+
+  expect(onArchiveMetricBlock).not.toHaveBeenCalled();
+  expect(screen.getByText('Тренування')).toBeTruthy();
+  expect(screen.queryByText(/Видалити метрику/)).toBeNull();
+});
+
+test('невдалий onArchiveMetricBlock (404 card.not_found) показує Banner у діалозі, блок лишається на екрані', async () => {
+  const data: CardBackData = {
+    metricBlocks: [
+      { id: 'mb1', label: 'Тренування', unit: 'раз', progress: { kind: 'bounded', share: 0.5, overGoal: 0 }, hasPendingEntry: false },
+    ],
+    aggregateProgress: 0.5,
+    entries: [],
+  };
+  const onArchiveMetricBlock = vi.fn().mockRejectedValue(new Error('Метрику не знайдено'));
+  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onArchiveMetricBlock={onArchiveMetricBlock} />);
+
+  await screen.findByText('Тренування');
+  fireEvent.click(screen.getByRole('button', { name: 'Видалити метрику «Тренування»' }));
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'видалити' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Видалити' }));
+
+  expect(await screen.findByText('Метрику не знайдено')).toBeTruthy();
+  expect(screen.getByText('Тренування')).toBeTruthy();
 });
 
 test('T52: фоновий refresh ігнорує застарілу (out-of-order) відповідь -- перемагає та, що issued пізніше', async () => {
@@ -421,7 +564,8 @@ test('T52: фоновий refresh ігнорує застарілу (out-of-orde
   const onCreateMetricBlock = vi.fn().mockResolvedValue(undefined);
 
   render(<CardBack loadBack={loadBack} onFlip={vi.fn()} onCreateMetricBlock={onCreateMetricBlock} />);
-  await screen.findByText(/Тренування: 0%/);
+  await screen.findByText('Тренування');
+  expect(screen.getByText('0%')).toBeTruthy();
 
   // Триггер #1 -- refresh стає "у польоті", не резолвиться.
   fireEvent.click(screen.getByRole('button', { name: '+ Додати блок-метрику' }));
@@ -435,12 +579,14 @@ test('T52: фоновий refresh ігнорує застарілу (out-of-orde
   fireEvent.change(screen.getByLabelText('Що рахуємо:'), { target: { value: 'Сон' } });
   fireEvent.change(screen.getByLabelText('Одиниця:'), { target: { value: 'год' } });
   fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
-  await screen.findByText(/Тренування: 60%/);
+  await screen.findByText('60%');
+  expect(screen.queryByText('30%')).toBeNull();
 
   // Застаріла відповідь #1 нарешті приходить -- має бути ПРОІГНОРОВАНА.
   await act(async () => {
     resolveStaleRefresh(staleData);
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
-  expect(screen.getByText(/Тренування: 60%/)).toBeTruthy();
+  expect(screen.getByText('60%')).toBeTruthy();
+  expect(screen.queryByText('30%')).toBeNull();
 });

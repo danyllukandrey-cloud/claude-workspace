@@ -36,3 +36,8 @@
 | `1789122610006_add-logic-variant.sql` | `structure/migrations/backend/04_add_logic_variant.{up,down}.sql` | `57360a2e568cd37429a70e7842177d96d2a55cfe96439b391c5ed92b4ff02bb1` |
 | `1789123033656_create-structure-history-event.sql` | `structure/migrations/backend/05_create_structure_history_event.{up,down}.sql` | `013f2e70eb3c5f6be0f29ee5725a601b16bf084f663bc44ea20dadfe9bd5eebf` |
 | `1789151324598_make-cell-index-nullable.sql` | `structure/migrations/backend/06_make_cell_index_nullable.{up,down}.sql` | `25e7368bc101d760544ca73fbe5decd5b61879a0842ddbb526b6eed664a4ed33` |
+| `1789458805273_add-metric-block-status.sql` | `life-area-card/migrations/08_add_metric_block_status.{up,down}.sql` | `5d6ffd6a2c53fda9c2d8cd3cfcb12af8f5619f48cc8fe55184ea0447a763996b` |
+| `1789463867853_create-action-log.sql` | `agent/migrations/12_create_action_log.{up,down}.sql` | `3d505164fff585416f0f5ac8fce3482536e04c5f1bc1c0312de1830e5e810e70` |
+| `1789464101168_flatten-layout-mode.sql` | `structure/migrations/backend/07_flatten_layout_mode.{up,down}.sql` | `428767dc4c0add1fc7ecaebf41f17c54d15b917fb764b9e7c4251dff12e2346b` |
+| `1789479885291_add-position-xy.sql` | `structure/migrations/backend/08_add_position_xy.{up,down}.sql` | `686bdcca648c652fed0428c46eafa5b84dc79a836ecb5cfdeb8c3f657b36d8ba` |
+| `1789479885297_create-structure-connection.sql` | `structure/migrations/backend/09_create_structure_connection.{up,down}.sql` | `431773757cc57b279916f80c3876c359f60210319299472104cc41f3634bc5ba` |

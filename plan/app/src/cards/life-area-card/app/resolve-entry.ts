@@ -36,6 +36,9 @@ import { AppError } from '../../../shared/errors';
 /** Точно значення EntryResolve.status контракту -- не 'pending', resolveEntry його ніколи не встановлює. */
 export type EntryResolutionStatus = 'confirmed' | 'rejected';
 
+/** Лог дій -- сигнатура збігається з agent/app/record-action.ts's `recordAction` (create-card.ts докладніше). */
+export type RecordAction = (db: Db, input: { ownerUserId: string; action: string }) => Promise<void>;
+
 export interface ResolveEntryInput {
   ownerUserId: string;
   entryId: string;
@@ -50,7 +53,7 @@ export interface ResolveEntryInput {
  * часто на вже підтверджений запис). Non-disclosure (AC-04): чужий/неіснуючий
  * запис -- AppError('entry.not_found', 404), updateEntryStatus в цьому разі не викликається.
  */
-export async function resolveEntry(db: Db, input: ResolveEntryInput): Promise<EntryRecord> {
+export async function resolveEntry(db: Db, input: ResolveEntryInput, recordAction?: RecordAction): Promise<EntryRecord> {
   const record = await findEntryById(db, input.entryId);
   const card = record ? await findCardById(db, input.ownerUserId, record.cardId) : null;
 
@@ -97,6 +100,11 @@ export async function resolveEntry(db: Db, input: ResolveEntryInput): Promise<En
     // Теоретично недосяжно одразу після знайденого вище рядка, але
     // non-disclosure дотримуємось і тут -- жодних припущень назовні про причину null.
     throw new AppError('entry.not_found', 'Запис не знайдено', 404);
+  }
+
+  if (recordAction) {
+    const verb = input.status === 'confirmed' ? 'Підтверджено' : 'Відхилено';
+    await recordAction(db, { ownerUserId: input.ownerUserId, action: `${verb} запис ${updated.amount} на картці «${card.name}»` });
   }
 
   return updated;

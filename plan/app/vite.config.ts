@@ -1,12 +1,14 @@
 /// <reference types="vitest" />
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 // Налаштування збірки та локального запуску.
-// PWA-маніфест і Tailwind з'являться пізніше — задачі S1 і S4 у docs/features/_scaffold/tasks.json.
+// PWA-маніфест з'явиться пізніше — задача S1 у docs/features/_scaffold/tasks.json.
+// Tailwind (S4) підключено 2026-09-13 -- src/app/theme.css.
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   // Root .env (правило єдиного джерела) -- DATABASE_URL/JWT_SECRET лишаються
   // недоступні браузеру (Vite експонує лише VITE_-префіксовані змінні),
   // VITE_GOOGLE_CLIENT_ID (ADR-0006 "### Фронтенд (ISS-52)") читається звідти.

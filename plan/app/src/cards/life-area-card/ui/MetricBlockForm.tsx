@@ -105,8 +105,11 @@ export function MetricBlockForm({ initialValues, onSubmit }: MetricBlockFormProp
   }
 
   return (
-    <form onSubmit={handleSubmit}>
-      <h2>Новий блок-метрика</h2>
+    <form
+      onSubmit={handleSubmit}
+      className="flex flex-col gap-4 rounded-card border border-border bg-surface-solid p-4"
+    >
+      <h2 className="font-display text-lg font-bold leading-relaxed text-ink">Новий блок-метрика</h2>
       {submitError && <Banner variant="error" text={submitError} />}
       {/* D-111 (docs/DECISIONS.md): порядок полів -- що рахуємо -> постійний
           процес одразу після -> одиниця -> ціль+дата в одному рядку. Живе
@@ -121,11 +124,12 @@ export function MetricBlockForm({ initialValues, onSubmit }: MetricBlockFormProp
         required
         hint="Наприклад: «тренування», «книги», «схудлі кілограми». Навіщо: це те, що агент бачитиме й пропонуватиме рахувати далі."
       />
-      <label>
+      <label className="flex items-center gap-2 text-sm font-medium text-ink">
         <input
           type="checkbox"
           checked={isOngoing}
           onChange={(event) => setIsOngoing(event.target.checked)}
+          className="h-4 w-4 rounded border-border"
         />
         Постійний процес (без дати)
       </label>
@@ -137,20 +141,23 @@ export function MetricBlockForm({ initialValues, onSubmit }: MetricBlockFormProp
         required
         hint="Наприклад: «раз», «кг», «сторінка». Навіщо: одиниця показується поруч із кожним записом і ціллю."
       />
-      <div>
-        <NumberField
-          label="Ціль:"
-          value={targetCount}
-          onChange={setTargetCount}
-          hint="Наприклад: 12 (тренувань), 5 (кг). Навіщо: ціль визначає, коли прогрес по цьому блоку вважається завершеним."
-        />
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="min-w-[140px] flex-1">
+          <NumberField
+            label="Ціль:"
+            value={targetCount}
+            onChange={setTargetCount}
+            hint="Наприклад: 12 (тренувань), 5 (кг). Навіщо: ціль визначає, коли прогрес по цьому блоку вважається завершеним."
+          />
+        </div>
         {!isOngoing && (
-          <label>
+          <label className="flex min-w-[140px] flex-1 flex-col gap-1.5 text-sm font-medium text-ink">
             До:
             <input
               type="date"
               value={targetDate ?? ''}
               onChange={(event) => setTargetDate(event.target.value === '' ? null : event.target.value)}
+              className="rounded-control border border-border bg-surface-solid px-3.5 py-2.5 text-sm font-normal text-ink focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
             />
           </label>
         )}

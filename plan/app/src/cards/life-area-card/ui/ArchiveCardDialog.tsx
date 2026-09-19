@@ -65,7 +65,19 @@ export function ArchiveCardDialog({
         onCancel={onCancel}
         confirmDisabled={isArchiving}
       />
-      {error !== null && <Banner variant="error" text={error} />}
+      {/* D-120: ConfirmDialog уже несе свій fixed-overlay (inset-0, z-50) --
+          другий overlay навколо нього не додаємо. Ця обгортка лише
+          виносить Banner ПОВЕРХ того самого overlay (z-[60]), біля низу
+          екрана, без власного backdrop -- інакше Banner лишився б у звичайному
+          потоці документа під напівпрозорою підкладкою модалки й був би
+          практично не видимий користувачу. */}
+      {error !== null && (
+        <div className="fixed inset-x-0 bottom-6 z-[60] flex justify-center px-4">
+          <div className="w-full max-w-sm">
+            <Banner variant="error" text={error} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

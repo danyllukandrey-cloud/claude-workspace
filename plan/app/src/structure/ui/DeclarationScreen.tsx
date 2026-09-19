@@ -1,62 +1,51 @@
-// SCR-01 — Декларація (spec.md AC-09, AC-10, AC-11, AC-11b, AC-16, AC-16b).
+// SCR-01 — Декларація (spec.md AC-09, AC-10).
 //
 // DI (plan/app/CLAUDE.md, той самий стиль, що CardDetailScreen/
 // ArchiveCardDialog): loadStructure/onSave — ін'єктовані пропи-функції,
 // жодного fetch() тут. Реальний HTTP-транспорт (ports/) підключає
 // викликач цього компонента.
 //
-// AC-11/AC-11b/AC-16/AC-16b: зміна layoutMode, або зміна logicVariant поки
-// layoutMode лишається 'logic', коли вже є розкладені картки
-// (hasArrangedCards), скидає розташування карток (T5/switchLayoutMode,
-// switchLogicVariant) — тому підтверджується через ConfirmDialog ПЕРЕД
-// збереженням. Без розкладених карток — застосовується одразу, без діалогу.
+// Живе тестування (Андрій): екран має ДВА стани, не одну форму. VIEW
+// (за замовчуванням) — текст декларації READ-ONLY, плаваюча кнопка знизу
+// по центру "Змінити декларацію" (та сама, що вже плаває на AnalyticsScreen/
+// App.tsx архівному екрані — "Архів"/"Звіт"/"Назад"). Клік перемикає на
+// EDIT — той самий textarea, що був тут завжди, БЕЗ жодного налаштування
+// розкладки (LAYOUT_MODE_OPTIONS переїхав цілком на LayoutBoard.tsx,
+// "Конфігурація" — там і питання "де далі розкладати", не тут). У EDIT
+// та сама кнопка (той самий підпис "Змінити декларацію") діє як "Зберегти":
+// клік викликає onSave лише з полем declaration і повертає на VIEW зі
+// свіжим текстом.
+//
+// ConfirmDialog/hasArrangedCards тут більше немає — той сценарій
+// (AC-11/AC-11b) стосувався виключно зміни layoutMode, яка звідси пішла
+// разом із пікером на LayoutBoard.tsx.
+//
+// Порожня декларація у VIEW — курсив (italic), той самий стиль, що вже є в
+// застосунку для "Опис ще не заповнено" (CardFace.tsx) — "Тексту декларації
+// поки немає".
 //
 // Save-failure discrimination (мірорить src/app/main.tsx): onSave, що
 // падає з AppError-подібною помилкою (є code/httpStatus — сервер
-// відповів), показує Banner variant="error" з текстом помилки. onSave,
-// що падає зі звичайною Error (fetch сам не спрацював — офлайн), означає,
-// що запис прийнято локально і синхронізується пізніше — Banner
-// variant="info".
+// відповів), показує Banner variant="error" і ЛИШАЄ користувача в EDIT
+// (значення не збереглось — виправляти є що). onSave, що падає зі звичайною
+// Error (fetch сам не спрацював — офлайн), означає, що запис прийнято
+// локально і синхронізується пізніше — Banner variant="info", і екран усе
+// одно повертається на VIEW (той самий принцип, що спроба вважається
+// прийнятою).
 
 import { useEffect, useState } from 'react';
-import { Banner, Button, ConfirmDialog, Spinner } from '../../shared/ui';
-import type { LayoutMode, LogicVariant } from '../domain/layout';
+import { Banner, Button, Spinner } from '../../shared/ui';
 
 export interface DeclarationScreenState {
   declaration: string | null;
-  layoutMode: LayoutMode;
-  logicVariant: LogicVariant;
-  hasArrangedCards: boolean;
 }
 
 export interface DeclarationScreenProps {
-  /** Завантажує поточну декларацію й режим розкладки. */
+  /** Завантажує поточну декларацію. */
   loadStructure: () => Promise<DeclarationScreenState>;
-  /** Зберігає нові значення. Кидає AppError-подібну помилку (code/httpStatus), якщо відповів сервер, або звичайну Error при мережевому збої (офлайн). */
-  onSave: (input: { declaration: string; layoutMode: LayoutMode; logicVariant: LogicVariant }) => Promise<void>;
+  /** Зберігає новий текст декларації. Кидає AppError-подібну помилку (code/httpStatus), якщо відповів сервер, або звичайну Error при мережевому збої (офлайн). */
+  onSave: (input: { declaration: string }) => Promise<void>;
 }
-
-interface LayoutModeOption {
-  value: Exclude<LayoutMode, null>;
-  label: string;
-}
-
-const LAYOUT_MODE_OPTIONS: LayoutModeOption[] = [
-  { value: 'single', label: 'Одна картка' },
-  { value: 'free', label: 'Вільно' },
-  { value: 'logic', label: 'За логікою' },
-];
-
-interface LogicVariantOption {
-  value: Exclude<LogicVariant, null>;
-  label: string;
-}
-
-const LOGIC_VARIANT_OPTIONS: LogicVariantOption[] = [
-  { value: 'balance', label: 'Баланс навколо ядра' },
-  { value: 'focus', label: 'Фокус і спостереження' },
-  { value: 'cause_effect', label: 'Причина і наслідок' },
-];
 
 interface AppErrorShape {
   message: string;
@@ -71,25 +60,17 @@ function isAppErrorShape(err: unknown): err is AppErrorShape {
   return typeof err === 'object' && err !== null && 'code' in err && 'httpStatus' in err;
 }
 
+type ScreenMode = 'view' | 'edit';
+
 export function DeclarationScreen({ loadStructure, onSave }: DeclarationScreenProps): JSX.Element {
   const [loading, setLoading] = useState(true);
+  const [mode, setMode] = useState<ScreenMode>('view');
   const [declaration, setDeclaration] = useState('');
-  const [layoutMode, setLayoutMode] = useState<LayoutMode>(null);
-  const [logicVariant, setLogicVariant] = useState<LogicVariant>(null);
-  const [hasArrangedCards, setHasArrangedCards] = useState(false);
-  const [savedLayoutMode, setSavedLayoutMode] = useState<LayoutMode>(null);
-  const [savedLogicVariant, setSavedLogicVariant] = useState<LogicVariant>(null);
   const [banner, setBanner] = useState<{ variant: 'success' | 'error' | 'info'; text: string } | null>(null);
-  const [confirmPending, setConfirmPending] = useState(false);
 
   useEffect(() => {
     loadStructure().then((state) => {
       setDeclaration(state.declaration ?? '');
-      setLayoutMode(state.layoutMode);
-      setLogicVariant(state.logicVariant);
-      setHasArrangedCards(state.hasArrangedCards);
-      setSavedLayoutMode(state.layoutMode);
-      setSavedLogicVariant(state.logicVariant);
       setLoading(false);
     });
     // Навмисно без loadStructure у deps -- викликається рівно раз при монтуванні
@@ -101,21 +82,20 @@ export function DeclarationScreen({ loadStructure, onSave }: DeclarationScreenPr
     return <Spinner />;
   }
 
-  const handleLayoutModeChange = (newMode: Exclude<LayoutMode, null>): void => {
-    setLayoutMode(newMode);
-    if (newMode !== 'logic') {
-      setLogicVariant(null);
-    }
+  const startEdit = (): void => {
+    setBanner(null);
+    setMode('edit');
   };
 
-  const persist = async (nextLayoutMode: LayoutMode, nextLogicVariant: LogicVariant): Promise<void> => {
+  const persist = async (): Promise<void> => {
     try {
-      await onSave({ declaration, layoutMode: nextLayoutMode, logicVariant: nextLogicVariant });
-      setSavedLayoutMode(nextLayoutMode);
-      setSavedLogicVariant(nextLogicVariant);
+      await onSave({ declaration });
       setBanner({ variant: 'success', text: 'Збережено' });
+      setMode('view');
     } catch (err: unknown) {
       if (isAppErrorShape(err)) {
+        // Значення не збереглось -- лишаємось в EDIT, є що виправляти й
+        // повторити спробу.
         setBanner({ variant: 'error', text: err.message });
       } else {
         const message = err instanceof Error ? err.message : 'Не вдалося зберегти';
@@ -123,84 +103,64 @@ export function DeclarationScreen({ loadStructure, onSave }: DeclarationScreenPr
           variant: 'info',
           text: `Немає з'єднання -- зміни збережено локально й будуть синхронізовані пізніше (офлайн). ${message}`,
         });
+        setMode('view');
       }
     }
   };
 
-  const handleSave = (): void => {
-    const layoutChanged = layoutMode !== savedLayoutMode;
-    const variantChanged = layoutMode === 'logic' && logicVariant !== savedLogicVariant;
-    const needsConfirm = hasArrangedCards && (layoutChanged || variantChanged);
-
-    if (needsConfirm) {
-      setConfirmPending(true);
-      return;
+  const handleButtonClick = (): void => {
+    if (mode === 'view') {
+      startEdit();
+    } else {
+      void persist();
     }
-
-    void persist(layoutMode, logicVariant);
   };
 
-  const handleConfirmChange = (): void => {
-    setConfirmPending(false);
-    void persist(layoutMode, logicVariant);
-  };
+  const hasDeclaration = declaration.trim().length > 0;
 
-  const handleCancelChange = (): void => {
-    setConfirmPending(false);
-    setLayoutMode(savedLayoutMode);
-    setLogicVariant(savedLogicVariant);
-  };
+  // Живе тестування (Андрій): "цей формат по центру відноситься тільки до
+  // системного тексту. Текст що буде введений має бути відформатований по
+  // ліву сторону." -- вузька центрована колонка (max-w-md mx-auto) пасує
+  // короткому системному повідомленню-заглушці, але виглядає "криво" для
+  // РЕАЛЬНОГО тексту декларації -- той має читатись зліва направо на
+  // ширшій колонці, як звичайний текст, а не тулитись по центру екрана.
+  const isPlaceholder = mode === 'view' && !hasDeclaration;
 
   return (
-    <div>
-      <label>
-        Картина світу, навіщо, пріоритет
-        <textarea value={declaration} onChange={(event) => setDeclaration(event.target.value)} />
-      </label>
-
-      <fieldset>
-        {LAYOUT_MODE_OPTIONS.map((option) => (
-          <label key={option.value}>
-            <input
-              type="radio"
-              name="layoutMode"
-              checked={layoutMode === option.value}
-              onChange={() => handleLayoutModeChange(option.value)}
+    <div className="relative flex h-full min-h-0 flex-col">
+      <div
+        className={`flex flex-1 flex-col gap-6 overflow-y-auto px-4 py-6 pb-20 ${
+          isPlaceholder ? 'mx-auto w-full max-w-md items-center text-center' : 'mx-auto w-full max-w-2xl'
+        }`}
+      >
+        {mode === 'view' ? (
+          hasDeclaration ? (
+            <p className="whitespace-pre-wrap text-left text-sm italic text-ink-muted">{declaration}</p>
+          ) : (
+            <p className="text-sm italic text-ink-faint">Тексту декларації поки немає</p>
+          )
+        ) : (
+          <label className="flex flex-col gap-1.5 text-sm font-medium text-ink">
+            Картина світу, навіщо, пріоритет
+            <textarea
+              value={declaration}
+              onChange={(event) => setDeclaration(event.target.value)}
+              rows={5}
+              className="min-h-32 resize-y rounded-control border border-border bg-surface-solid px-3.5 py-2.5 font-sans text-sm font-normal italic text-ink placeholder:text-ink-faint focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
             />
-            {option.label}
           </label>
-        ))}
-      </fieldset>
+        )}
 
-      {layoutMode === 'logic' && (
-        <fieldset>
-          {LOGIC_VARIANT_OPTIONS.map((option) => (
-            <label key={option.value}>
-              <input
-                type="radio"
-                name="logicVariant"
-                checked={logicVariant === option.value}
-                onChange={() => setLogicVariant(option.value)}
-              />
-              {option.label}
-            </label>
-          ))}
-        </fieldset>
-      )}
+        {banner !== null && <Banner variant={banner.variant} text={banner.text} />}
+      </div>
 
-      <Button label="Зберегти" onClick={handleSave} />
-
-      {banner !== null && <Banner variant={banner.variant} text={banner.text} />}
-
-      {confirmPending && (
-        <ConfirmDialog
-          message="Зміна розкладки скине розташування вже розкладених карток. Продовжити?"
-          confirmLabel="Змінити"
-          cancelLabel="Скасувати"
-          onConfirm={handleConfirmChange}
-          onCancel={handleCancelChange}
-        />
-      )}
+      {/* Живе тестування (Андрій): "по середині" -- не зліва/справа, як
+          Архів/Звіт/Назад в інших екранах цього ж застосунку -- тут навмисно
+          left-1/2 -translate-x-1/2, той самий floating-патерн (absolute
+          відносно кореневого relative-контейнера, поверх контенту, z-20). */}
+      <div className="absolute bottom-4 left-1/2 z-20 -translate-x-1/2">
+        <Button label="Змінити декларацію" onClick={handleButtonClick} />
+      </div>
     </div>
   );
 }

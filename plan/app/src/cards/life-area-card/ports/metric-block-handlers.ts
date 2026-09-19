@@ -46,6 +46,8 @@
 
 import { createMetricBlock as createMetricBlockUseCase } from '../app/create-metric-block';
 import { transferMetricBlock as transferMetricBlockUseCase } from '../app/transfer-metric-block';
+import { archiveMetricBlock as archiveMetricBlockUseCase } from '../app/archive-metric-block';
+import type { RecordAction } from '../app/archive-metric-block';
 import { findCardById, listMetricBlocksByCard } from '../infra/postgres-repo';
 import type { Db, MetricBlockRecord } from '../infra/postgres-repo';
 import { AppError } from '../../../shared/errors';
@@ -79,6 +81,8 @@ export interface MetricBlock {
   targetDate: string | null;
   createdAt: string;
   updatedAt: string;
+  /** D-127 -- мʼяка архівація окремого блоку-метрики (US-17/AC-20), той самий підхід, що card.status. */
+  status: 'active' | 'archived';
 }
 
 /**
@@ -104,6 +108,7 @@ function toMetricBlock(record: MetricBlockRecord): MetricBlock {
     targetDate: record.targetDate ? toDateOnlyString(record.targetDate) : null,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
+    status: record.status,
   };
 }
 
@@ -116,6 +121,13 @@ function toMetricBlock(record: MetricBlockRecord): MetricBlock {
  * Без пагінації -- припущення MVP-масштабу (одиниці блоків на картку), НЕ
  * письмове обмеження з spec.md/screens.md (openapi.yaml, той самий опис
  * дослівно) -- переглянути, якщо практика покаже інше.
+ *
+ * D-127 (US-17/AC-20): архівовані блоки (status: 'archived') відфільтровано
+ * тут, у порт-шарі -- той самий "зникає зі звичайного списку" підхід, що
+ * listActiveCardsByOwner для архівованих карток колоди. Фільтр in-memory, не
+ * SQL-запитом (listMetricBlocksByCard лишається без статусного фільтра, бо
+ * інші викликачі -- app/create-entry.ts, agent/app/handle-message.ts --
+ * досі потребують УСІХ блоків картки, не лише активних).
  */
 export async function listMetricBlocks(db: Db, ownerUserId: string, cardId: string): Promise<MetricBlock[]> {
   const card = await findCardById(db, ownerUserId, cardId);
@@ -124,7 +136,7 @@ export async function listMetricBlocks(db: Db, ownerUserId: string, cardId: stri
   }
 
   const blocks = await listMetricBlocksByCard(db, cardId);
-  return blocks.map(toMetricBlock);
+  return blocks.filter((block) => block.status === 'active').map(toMetricBlock);
 }
 
 /**
@@ -132,17 +144,27 @@ export async function listMetricBlocks(db: Db, ownerUserId: string, cardId: stri
  * (AC-05/AC-07/AC-08). Кидає (пропускає) AppError('card.not_found', ..., 404)
  * від use-case шару для чужої чи неіснуючої картки (non-disclosure, AC-04).
  */
-export async function createMetricBlock(db: Db, ownerUserId: string, cardId: string, body: MetricBlockCreateBody): Promise<MetricBlock> {
-  const record = await createMetricBlockUseCase(db, {
-    ownerUserId,
-    cardId,
-    label: body.label,
-    unit: body.unit,
-    frequency: body.frequency,
-    targetCount: body.targetCount,
-    isOngoing: body.isOngoing,
-    targetDate: body.targetDate,
-  });
+export async function createMetricBlock(
+  db: Db,
+  ownerUserId: string,
+  cardId: string,
+  body: MetricBlockCreateBody,
+  recordAction?: RecordAction
+): Promise<MetricBlock> {
+  const record = await createMetricBlockUseCase(
+    db,
+    {
+      ownerUserId,
+      cardId,
+      label: body.label,
+      unit: body.unit,
+      frequency: body.frequency,
+      targetCount: body.targetCount,
+      isOngoing: body.isOngoing,
+      targetDate: body.targetDate,
+    },
+    recordAction
+  );
   return toMetricBlock(record);
 }
 
@@ -162,13 +184,36 @@ export async function transferMetricBlock(
   db: Db,
   ownerUserId: string,
   cardId: string,
-  body: MetricBlockTransferRequestBody
+  body: MetricBlockTransferRequestBody,
+  recordAction?: RecordAction
 ): Promise<MetricBlock> {
-  const record = await transferMetricBlockUseCase(db, {
-    ownerUserId,
-    targetCardId: cardId,
-    metricBlockId: body.sourceMetricBlockId,
-    newLabel: body.newLabel ?? undefined,
-  });
+  const record = await transferMetricBlockUseCase(
+    db,
+    {
+      ownerUserId,
+      targetCardId: cardId,
+      metricBlockId: body.sourceMetricBlockId,
+      newLabel: body.newLabel ?? undefined,
+    },
+    recordAction
+  );
+  return toMetricBlock(record);
+}
+
+/**
+ * DELETE /api/v1/cards/{cardId}/metric-blocks/{metricBlockId} (US-17/AC-20, D-127) --
+ * мʼяка архівація ОДНОГО блоку-метрики (не всієї картки). Пропускає нагору
+ * AppError від use-case: 404 card.not_found -- один код на "блок не існує",
+ * "блок чужий" і "cardId зі шляху не відповідає справжній картці блоку"
+ * (non-disclosure AC-04, той самий код, що ISS-30 уже встановив для transfer).
+ */
+export async function archiveMetricBlock(
+  db: Db,
+  ownerUserId: string,
+  cardId: string,
+  metricBlockId: string,
+  recordAction?: RecordAction
+): Promise<MetricBlock> {
+  const record = await archiveMetricBlockUseCase(db, { ownerUserId, cardId, metricBlockId }, recordAction);
   return toMetricBlock(record);
 }

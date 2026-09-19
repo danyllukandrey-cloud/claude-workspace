@@ -217,66 +217,109 @@ export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived, on
   const hasDescription = Boolean(data.description && data.description.trim());
 
   return (
-    <div>
-      {isRenaming ? (
-        <>
-          <TextField label="Назва" value={draftName} onChange={setDraftName} />
-          <Button label="Скасувати" onClick={cancelRename} disabled={isSavingName} />
-          <Button label="Зберегти" onClick={saveRename} disabled={isSavingName} />
-          {renameError && <Banner variant="error" text={renameError} />}
-        </>
-      ) : (
-        <>
-          {/* AC-19: "торкається назви АБО обирає «Перейменувати» в меню" --
-              обидва входи ведуть у той самий startRename. */}
-          <h2 onClick={startRename}>{data.name}</h2>
-          <button type="button" aria-label="Меню картки" onClick={toggleMenu}>
-            ...
-          </button>
-          {isMenuOpen && (
-            <div role="menu">
-              <button type="button" role="menuitem" onClick={startRename}>
-                Перейменувати
-              </button>
-              <button type="button" role="menuitem" onClick={startArchive}>
-                Архівувати
-              </button>
+    // Живе тестування (Андрій, баг 2): скрол і кнопка "перегорнути" -- на
+    // РІЗНИХ рівнях (CardShell.tsx більше не скролить сам себе). Внутрішня
+    // обгортка нижче (flex-1 min-h-0 overflow-y-auto) несе ввесь контент,
+    // КРІМ кнопки -- САМЕ вона скролиться, якщо контенту забагато. Кнопка --
+    // сестринський елемент ПІСЛЯ обгортки, природно лишається внизу (flex-1
+    // забирає решту висоти в сусіда), mt-auto їй більше не потрібен.
+    <div className="flex h-full flex-col gap-4">
+      <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
+        {isRenaming ? (
+          <div className="flex flex-col gap-3">
+            <TextField label="Назва" value={draftName} onChange={setDraftName} />
+            <div className="flex justify-end gap-3">
+              <Button label="Скасувати" onClick={cancelRename} disabled={isSavingName} />
+              <Button label="Зберегти" onClick={saveRename} disabled={isSavingName} />
             </div>
-          )}
-          {isArchiving && (
-            <ArchiveCardDialog cardName={data.name} onArchive={confirmArchive} onCancel={cancelArchive} />
-          )}
-        </>
-      )}
+            {renameError && <Banner variant="error" text={renameError} />}
+          </div>
+        ) : (
+          <>
+            {/* AC-19: "торкається назви АБО обирає «Перейменувати» в меню" --
+                обидва входи ведуть у той самий startRename. */}
+            <div className="relative flex items-start justify-between gap-3">
+              <h2 onClick={startRename} className="cursor-pointer font-display text-xl font-bold leading-relaxed text-ink">
+                {data.name}
+              </h2>
+              <button
+                type="button"
+                aria-label="Меню картки"
+                onClick={toggleMenu}
+                className="shrink-0 rounded-control px-2 py-1 text-lg font-bold leading-none text-ink-muted transition-colors hover:bg-border hover:text-ink"
+              >
+                ...
+              </button>
+              {isMenuOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-full z-10 mt-1 flex w-44 flex-col gap-0.5 rounded-control border border-border bg-surface-solid p-1.5 shadow-soft"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={startRename}
+                    className="w-full rounded-control px-3 py-2 text-left text-sm font-medium text-ink transition-colors hover:bg-border"
+                  >
+                    Перейменувати
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={startArchive}
+                    className="w-full rounded-control px-3 py-2 text-left text-sm font-medium text-bad transition-colors hover:bg-bad/10"
+                  >
+                    Архівувати
+                  </button>
+                </div>
+              )}
+            </div>
+            {isArchiving && (
+              <ArchiveCardDialog cardName={data.name} onArchive={confirmArchive} onCancel={cancelArchive} />
+            )}
+          </>
+        )}
 
-      {/* AC-10: непорозв'язана суперечність у даних -- показуємо, не блокуючи
-          решту картки. 'info', не 'error' -- агент лише пропонує розібратись
-          разом, тон без вердикту (design-system.md, D-42/D-60). */}
-      {data.dataWarning && <Banner variant="info" text={data.dataWarning} />}
+        {/* AC-10: непорозв'язана суперечність у даних -- показуємо, не блокуючи
+            решту картки. 'info', не 'error' -- агент лише пропонує розібратись
+            разом, тон без вердикту (design-system.md, D-42/D-60). */}
+        {data.dataWarning && <Banner variant="info" text={data.dataWarning} />}
 
-      {isEditingDescription ? (
-        <>
-          <TextField label="Опис (навіщо)" value={draftDescription} onChange={setDraftDescription} />
-          <label>
-            <input
-              type="checkbox"
-              checked={draftMarkFilled}
-              onChange={(event) => setDraftMarkFilled(event.target.checked)}
-            />
-            Позначити заповненою
-          </label>
-          <Button label="Скасувати" onClick={cancelEditDescription} disabled={isSavingDescription} />
-          <Button label="Зберегти" onClick={saveDescription} disabled={isSavingDescription} />
-          {descriptionError && <Banner variant="error" text={descriptionError} />}
-        </>
-      ) : hasDescription ? (
-        <p onClick={startEditDescription}>{data.description}</p>
-      ) : (
-        <p onClick={startEditDescription}>Опис ще не заповнено</p>
-      )}
+        {isEditingDescription ? (
+          <div className="flex flex-col gap-3">
+            <TextField label="Опис (навіщо)" value={draftDescription} onChange={setDraftDescription} />
+            <label className="flex items-center gap-2 text-sm font-medium text-ink">
+              <input
+                type="checkbox"
+                checked={draftMarkFilled}
+                onChange={(event) => setDraftMarkFilled(event.target.checked)}
+                className="h-4 w-4 rounded border-border"
+              />
+              Позначити заповненою
+            </label>
+            <div className="flex justify-end gap-3">
+              <Button label="Скасувати" onClick={cancelEditDescription} disabled={isSavingDescription} />
+              <Button label="Зберегти" onClick={saveDescription} disabled={isSavingDescription} />
+            </div>
+            {descriptionError && <Banner variant="error" text={descriptionError} />}
+          </div>
+        ) : hasDescription ? (
+          <p onClick={startEditDescription} className="cursor-pointer text-sm italic text-ink-muted">
+            {data.description}
+          </p>
+        ) : (
+          <p onClick={startEditDescription} className="cursor-pointer text-sm italic text-ink-faint">
+            Опис ще не заповнено
+          </p>
+        )}
+      </div>
 
       {!isRenaming && !isEditingDescription && (
-        <button type="button" onClick={onFlip}>
+        <button
+          type="button"
+          onClick={onFlip}
+          className="w-full rounded-control border border-border px-4 py-2.5 text-sm font-bold text-ink transition-colors hover:bg-border"
+        >
           перегорнути →
         </button>
       )}

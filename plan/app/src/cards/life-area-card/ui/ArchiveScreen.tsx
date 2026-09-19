@@ -2,8 +2,13 @@
 // перегляд однієї архівованої картки з можливістю розархівувати (AC-17).
 //
 // default стан ПЕРЕВИКОРИСТОВУЄ наявний DeckGrid (T25, ISS-46) у режимі
-// "архів" -- DeckGrid навмисно узагальнений (items+onOpen, нічого не знає
-// про статус картки), тож нової сітки тайлів тут не пишемо. card-view --
+// "архів" -- DeckGrid навмисно узагальнений (items+renderFront, нічого не
+// знає про статус картки), тож нової сітки тайлів тут не пишемо. D-121
+// (живе тестування): передня картка в основній колоді (DeckScreen.tsx)
+// перестала бути кнопкою-назвою, що "відкриває" картку окремим екраном --
+// але Архів свідомо НЕ зачіпається цим рішенням (Андрій: "поки не чіпаю"),
+// тож тут renderFront і далі повертає просту кнопку-назву з тим самим
+// onOpen-подібним кліком, що раніше ніс сам DeckGrid. card-view --
 // CardShell (shared/ui) + Button "Розархівувати" (AC-17) + read-only історія
 // записів (AC-18: "історія записів видима"); поки картка не розархівована,
 // новий запис на ній недоступний (тут немає жодної дії його додати), і сама
@@ -130,33 +135,42 @@ export function ArchiveScreen({
     const handleBack = (): void => setState({ status: 'list', items });
 
     return (
-      <div>
-        <h1>Архів карток</h1>
+      <div className="flex h-full min-h-0 flex-col gap-4 p-4 pb-20">
+        <h1 className="font-display text-xl font-bold leading-relaxed text-ink">Архів карток</h1>
         <CardShell
           isFlipped={false}
           front={
-            <div>
-              <h2>{card.name}</h2>
-            <p>Картка в архіві -- новий запис недоступний, поки її не розархівовано</p>
-            <Button label="Розархівувати" onClick={handleRestore} disabled={isRestoring} />
-            {restoreError !== null && <Banner variant="error" text={restoreError} />}
+            // Живе тестування (Андрій, баг 2): CardShell.tsx більше не скролить
+            // себе сам -- цей виклик не має власної кнопки-футера (на відміну
+            // від CardFace/CardBack), тож переносимо той самий патерн
+            // (flex-1 min-h-0 overflow-y-auto) сюди, щоб не втратити скрол при
+            // довгій історії записів.
+            <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
+              <h2 className="font-display text-lg font-bold leading-relaxed text-ink">{card.name}</h2>
+              <p className="text-sm italic text-ink-muted">Картка в архіві -- новий запис недоступний, поки її не розархівовано</p>
+              <Button label="Розархівувати" onClick={handleRestore} disabled={isRestoring} />
+              {restoreError !== null && <Banner variant="error" text={restoreError} />}
 
-            {history.status === 'loading' && <Spinner />}
-            {history.status === 'error' && <Banner variant="error" text={history.message} />}
-            {history.status === 'ready' && (
-              <div>
-                <h3>Історія записів</h3>
-                <ul>
-                  {history.entries.map((entry) => (
-                    <li key={entry.id}>
-                      <span>{entry.recordedAtLabel}</span> <span>{entry.summary}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <Button label="← Назад" onClick={handleBack} />
-          </div>
+              {history.status === 'loading' && <Spinner />}
+              {history.status === 'error' && <Banner variant="error" text={history.message} />}
+              {history.status === 'ready' && (
+                <div className="flex flex-col gap-2">
+                  <h3 className="text-sm font-bold leading-relaxed text-ink">Історія записів</h3>
+                  <ul className="flex flex-col gap-2">
+                    {history.entries.map((entry) => (
+                      <li
+                        key={entry.id}
+                        className="flex items-center justify-between gap-2 rounded-control border border-border bg-surface-solid px-3.5 py-2.5 text-sm"
+                      >
+                        <span className="text-ink-muted">{entry.recordedAtLabel}</span>
+                        <span className="font-medium text-ink">{entry.summary}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <Button label="← Назад" onClick={handleBack} />
+            </div>
           }
           back={null}
         />
@@ -166,8 +180,8 @@ export function ArchiveScreen({
 
   if (state.items.length === 0) {
     return (
-      <div>
-        <h1>Архів карток</h1>
+      <div className="flex h-full min-h-0 flex-col gap-4 p-4 pb-20">
+        <h1 className="font-display text-xl font-bold leading-relaxed text-ink">Архів карток</h1>
         <EmptyState message="Архів порожній" actionHint="Заархівовані картки з'являться тут після архівації" />
       </div>
     );
@@ -206,9 +220,20 @@ export function ArchiveScreen({
   };
 
   return (
-    <div>
-      <h1>Архів карток</h1>
-      <DeckGrid items={items} onOpen={handleOpen} />
+    <div className="flex h-full min-h-0 flex-col gap-4 p-4 pb-20">
+      <h1 className="font-display text-xl font-bold leading-relaxed text-ink">Архів карток</h1>
+      <DeckGrid
+        items={items}
+        renderFront={(item) => (
+          <button
+            type="button"
+            onClick={() => handleOpen(item.id)}
+            className="absolute inset-0 flex items-start overflow-hidden rounded-card border border-border bg-surface-solid p-5 text-left font-display text-lg font-semibold text-ink shadow-soft transition-transform hover:-translate-y-0.5 break-words"
+          >
+            {item.name}
+          </button>
+        )}
+      />
     </div>
   );
 }

@@ -999,7 +999,7 @@ describe('handleMessage -- AC-01/AC-02/AC-05 fix: an incomplete proposal never b
     const result = await handleMessage(db, askClaude, { userId: USER_ID, text: 'пробіг трохи' });
 
     // Previously this created an 'active' agent_proposal with proposed_amount
-    // NULL -- ChatScreen would render a working "Підтвердити" button, and
+    // NULL -- ChatPanel would render a working "Підтвердити" button, and
     // confirm.ts would only THEN throw 409 agent.proposal_incomplete. Now the
     // same clarification branch as AC-04/AC-05 applies instead -- a dead end
     // never reaches the user.

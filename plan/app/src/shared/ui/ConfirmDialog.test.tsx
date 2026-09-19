@@ -100,3 +100,57 @@ test('confirmDisabled: кнопка підтвердження вимкнена 
 
   expect(props.onConfirm).not.toHaveBeenCalled();
 });
+
+// Видалення блоку-метрики: requireTypedWord -- підтвердження через ввід
+// слова. Без пропу компонент поводиться рівно як вище (усі тести над цим
+// блоком не передають requireTypedWord взагалі) -- нижче лише нова поведінка.
+
+test('без requireTypedWord -- жодного текстового поля й жодної окремої галочки, кнопка підтвердження звичайна', () => {
+  render(<ConfirmDialog {...baseProps()} />);
+
+  expect(screen.queryByRole('textbox')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Підтвердити' })).toBeNull();
+});
+
+// Живе тестування (Андрій): окрема кнопка-галочка поруч із полем прибрана --
+// дублювала головну кнопку confirmLabel. Enter у полі й сама кнопка
+// confirmLabel лишаються єдиними способами підтвердити (тести нижче).
+
+test('requireTypedWord: кнопка підтвердження вимкнена, поки введений текст не збігається точно', () => {
+  render(<ConfirmDialog {...baseProps()} requireTypedWord="видалити" />);
+
+  const confirmButton = screen.getByRole('button', { name: 'Видалити' });
+  expect(confirmButton.hasAttribute('disabled')).toBe(true);
+
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'видал' } });
+  expect(confirmButton.hasAttribute('disabled')).toBe(true);
+
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'видалити' } });
+  expect(confirmButton.hasAttribute('disabled')).toBe(false);
+});
+
+test('requireTypedWord: Enter у полі підтверджує лише після точного збігу', () => {
+  const props = baseProps();
+  render(<ConfirmDialog {...props} requireTypedWord="видалити" />);
+
+  const input = screen.getByRole('textbox');
+  fireEvent.keyDown(input, { key: 'Enter' });
+  expect(props.onConfirm).not.toHaveBeenCalled();
+
+  fireEvent.change(input, { target: { value: 'видалити' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  expect(props.onConfirm).toHaveBeenCalledTimes(1);
+});
+
+test('requireTypedWord: головна кнопка підтвердження теж підтверджує лише після точного збігу', () => {
+  const props = baseProps();
+  render(<ConfirmDialog {...props} requireTypedWord="видалити" />);
+
+  const confirmButton = screen.getByRole('button', { name: 'Видалити' });
+  fireEvent.click(confirmButton);
+  expect(props.onConfirm).not.toHaveBeenCalled();
+
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'видалити' } });
+  fireEvent.click(confirmButton);
+  expect(props.onConfirm).toHaveBeenCalledTimes(1);
+});

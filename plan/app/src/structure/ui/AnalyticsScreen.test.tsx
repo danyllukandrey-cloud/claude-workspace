@@ -1,8 +1,10 @@
-// RED (T22 — SCR-03 Літопис-Аналітика, screens.md): component test for
-// AnalyticsScreen -- default-logic/default-no-scheme/empty/loading/
-// trend-unavailable states (spec.md AC-01, AC-04, AC-05, AC-06, AC-06b,
-// AC-07, AC-13). Component does not exist yet -- this is the RED step, no
-// production code written (test-author role).
+// Component test for AnalyticsScreen -- default-logic/default-no-scheme/
+// empty/loading/trend-unavailable states (spec.md AC-01, AC-04, AC-05,
+// AC-06, AC-06b, AC-07, AC-13), + живе тестування (Андрій, вимоги 16-18):
+// три-зонна розкладка, плаваючі кнопки "Архів"/"Звіт" і заглушка "звіт за
+// запитом". Селектори підлаштовані під нову верстку, сенс перевірок з
+// попередньої версії файлу збережено (дані про прогрес/ранг-розрив/тренд,
+// клік по "Архів", AC-06 без вердикту, AC-13 лічильник виключених).
 //
 // DI style (plan/app/CLAUDE.md, matches DeclarationScreen T20/CardDetailScreen):
 // `loadAnalytics` is an injected prop-function, no fetch() inside the
@@ -24,9 +26,10 @@
 // silently folded into the average or shown as zero -- their count is
 // always shown separately, even in the non-empty states.
 
-import { render, screen } from '@testing-library/react';
+import { useState } from 'react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { AnalyticsScreen } from './AnalyticsScreen';
-import type { AnalyticsScreenState } from './AnalyticsScreen';
+import type { AnalyticsScreenProps, AnalyticsScreenState } from './AnalyticsScreen';
 
 function baseState(overrides: Partial<AnalyticsScreenState> = {}): AnalyticsScreenState {
   return {
@@ -45,7 +48,34 @@ function baseState(overrides: Partial<AnalyticsScreenState> = {}): AnalyticsScre
 function baseProps(stateOverrides: Partial<AnalyticsScreenState> = {}) {
   return {
     loadAnalytics: vi.fn().mockResolvedValue(baseState(stateOverrides)),
+    // D-124 (живе тестування): "Архів" переїхав сюди з Колоди.
+    onOpenArchive: vi.fn(),
+    // Живе тестування: reportEntries тепер контрольований -- App.tsx
+    // тримає сам стан (щоб пережити перемикання екранів). Тести, яким
+    // байдужа поведінка "Звіт", просто не рендерять жодного запису.
+    reportEntries: [] as string[],
+    onAddReportEntry: vi.fn(),
   };
+}
+
+/**
+ * Живе тестування: імітує App.tsx -- реальний власник reportEntries-стану,
+ * що переживає розмонтування/перемонтування AnalyticsScreen (та сама
+ * перевірка, що робить App.tsx: direction перемикається геть і назад).
+ */
+function ControlledAnalyticsScreen(
+  props: Omit<AnalyticsScreenProps, 'reportEntries' | 'onAddReportEntry'> & { mounted: boolean }
+) {
+  const { mounted, ...rest } = props;
+  const [reportEntries, setReportEntries] = useState<string[]>([]);
+  if (!mounted) return null;
+  return (
+    <AnalyticsScreen
+      {...rest}
+      reportEntries={reportEntries}
+      onAddReportEntry={() => setReportEntries((prev) => ['звіт за запитом', ...prev])}
+    />
+  );
 }
 
 test('loading: показує Spinner, поки GET /structure/layout (аналітика) ще в польоті', () => {
@@ -54,10 +84,100 @@ test('loading: показує Spinner, поки GET /structure/layout (анал�
     () => new Promise<AnalyticsScreenState>((resolve) => { resolveLoad = resolve; }),
   );
 
-  render(<AnalyticsScreen loadAnalytics={loadAnalytics} />);
+  render(
+    <AnalyticsScreen
+      loadAnalytics={loadAnalytics}
+      onOpenArchive={vi.fn()}
+      reportEntries={[]}
+      onAddReportEntry={vi.fn()}
+    />
+  );
 
   expect(screen.getByRole('status')).toBeTruthy();
   void resolveLoad;
+});
+
+test('D-124: кнопка "Архів" видима й викликає injected onOpenArchive', async () => {
+  const props = baseProps();
+  render(<AnalyticsScreen {...props} />);
+
+  await screen.findByText(/62%/);
+  fireEvent.click(screen.getByRole('button', { name: 'Архів' }));
+
+  expect(props.onOpenArchive).toHaveBeenCalledTimes(1);
+});
+
+test('вимога 16/18: "Архів" і "Звіт" плавають знизу справа, поза звичайним потоком (не на всю ширину)', async () => {
+  const props = baseProps();
+  render(<AnalyticsScreen {...props} />);
+
+  await screen.findByText(/62%/);
+
+  const archiveButton = screen.getByRole('button', { name: 'Архів' });
+  const reportButton = screen.getByRole('button', { name: 'Звіт' });
+  const floatingWrapper = archiveButton.parentElement;
+
+  // Обидві кнопки -- сусіди в одній плаваючій обгортці.
+  expect(floatingWrapper).toBe(reportButton.parentElement);
+  // "Парить" знизу зліва, поверх контенту -- absolute/z-індекс, не звичайний
+  // елемент flex-колонки (там кнопка розтяглась би на всю ширину).
+  expect(floatingWrapper?.className).toMatch(/\babsolute\b/);
+  expect(floatingWrapper?.className).toMatch(/\bbottom-4\b/);
+  expect(floatingWrapper?.className).toMatch(/\bright-4\b/);
+});
+
+test('живе тестування: кожен клік по "Звіт" ДОДАЄ новий запис у стрічку Зони 3, не замінює попередній', async () => {
+  const props = baseProps();
+  render(<ControlledAnalyticsScreen {...props} mounted />);
+
+  await screen.findByText(/62%/);
+
+  expect(screen.queryByText(/звіт за запитом/i)).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Звіт' }));
+  expect(screen.getAllByText(/звіт за запитом/i)).toHaveLength(1);
+
+  // Другий клік -- ДРУГИЙ запис поруч із першим (не приховує перший).
+  fireEvent.click(screen.getByRole('button', { name: 'Звіт' }));
+  expect(screen.getAllByText(/звіт за запитом/i)).toHaveLength(2);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Звіт' }));
+  expect(screen.getAllByText(/звіт за запитом/i)).toHaveLength(3);
+});
+
+// Живе тестування (Андрій): "Звіти зникають при перемиканні" -- цей тест
+// пінить сам баг-сценарій, той самий шаблон, що App.tsx реально робить
+// (direction перемикається геть -- AnalyticsScreen розмонтовується -- і
+// назад -- монтується знову): стан має пережити це, бо тепер контрольований
+// ззовні (тим самим "власником", що не розмонтовується), не useState
+// усередині самого AnalyticsScreen.
+test('живе тестування: записи Звітів переживають розмонтування/перемонтування AnalyticsScreen (перемикання екранів)', async () => {
+  const props = baseProps();
+  const { rerender } = render(<ControlledAnalyticsScreen {...props} mounted />);
+
+  await screen.findByText(/62%/);
+  fireEvent.click(screen.getByRole('button', { name: 'Звіт' }));
+  expect(screen.getAllByText(/звіт за запитом/i)).toHaveLength(1);
+
+  // "Перемикаємось на інший екран" -- AnalyticsScreen розмонтовується.
+  rerender(<ControlledAnalyticsScreen {...baseProps()} mounted={false} />);
+  expect(screen.queryByText(/звіт за запитом/i)).toBeNull();
+
+  // "Повертаємось на Аналітику" -- новий екземпляр AnalyticsScreen, але
+  // reportEntries приходить від того самого зовнішнього власника (не скинутий).
+  rerender(<ControlledAnalyticsScreen {...baseProps()} mounted />);
+  await screen.findByText(/62%/);
+  expect(screen.getAllByText(/звіт за запитом/i)).toHaveLength(1);
+});
+
+
+test('вимога 17: третя зона ("звіти") -- чесний порожній стан, без вигаданих записів', async () => {
+  const props = baseProps();
+  render(<AnalyticsScreen {...props} />);
+
+  await screen.findByText(/62%/);
+  expect(screen.getByText('Звіти')).toBeTruthy();
+  expect(screen.getByText('Звітів поки немає')).toBeTruthy();
 });
 
 test('default-logic (AC-01/AC-06): показує середній прогрес і, для кожної картки, ранг-розрив без вердикту', async () => {
@@ -74,6 +194,10 @@ test('default-logic (AC-01/AC-06): показує середній прогре�
 
   await screen.findByText(/62%/);
   expect(screen.getByText(/2.*виключ/i)).toBeTruthy();
+
+  // Зона 1 і зона 2 -- окремі підписи (вимога 17: дві крупні зони зверху).
+  expect(screen.getByText('Загальний стан')).toBeTruthy();
+  expect(screen.getByText('Показники по картках')).toBeTruthy();
 
   expect(screen.getByText('Картка A')).toBeTruthy();
   expect(screen.getByText(/40%/)).toBeTruthy();
@@ -108,7 +232,7 @@ test('default-no-scheme (AC-06b): без рангового розриву, на
   expect(screen.queryByText(/ранг/i)).toBeNull();
 });
 
-test('empty (AC-13): жодної картки з обчислюваним відсотком -- порожній стан з лічильником виключених', async () => {
+test('empty (AC-13): жодної картки з обчислюваним відсотком -- порожній стан у зоні 2 з лічильником виключених у зоні 1', async () => {
   const props = baseProps({
     layoutMode: 'free',
     average: null,
@@ -118,6 +242,7 @@ test('empty (AC-13): жодної картки з обчислюваним ві�
   render(<AnalyticsScreen {...props} />);
 
   await screen.findByText(/3.*виключ/i);
+  expect(screen.getByText('Немає карток з обчислюваним прогресом')).toBeTruthy();
   expect(screen.queryByText(/%/)).toBeNull();
 });
 

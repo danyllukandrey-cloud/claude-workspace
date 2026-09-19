@@ -3,7 +3,7 @@ status: Living
 tool: code
 figma_file: ""
 pen_file: ""
-updated_at: "2026-09-06"
+updated_at: "2026-09-15"
 ---
 # Design system — ПЛАН
 
@@ -12,7 +12,7 @@ updated_at: "2026-09-06"
 ## Platform posture
 
 - **Posture:** mobile-first — PWA встановлюється на телефон (D-24), головний сценарій використання — телефон; екрани спершу проєктуються під вузький екран, потім адаптуються вгору.
-- **Breakpoints / device classes:** ще не зафіксовано — Tailwind матиме стандартні брейкпоінти, коли з'явиться `tailwind.config.ts` (`implement`).
+- **Breakpoints / device classes:** стандартні Tailwind (`sm`/`md`/`lg`/…) — Tailwind підключено [D-120](DECISIONS.md#d-120), окремих брейкпоінтів проєкт поки не потребував.
 
 ## Design tool
 
@@ -21,27 +21,32 @@ updated_at: "2026-09-06"
 
 ## Token source
 
-- **Colors:** ще не існує — `plan/app/tailwind.config.ts` (з'явиться разом з `implement`).
-- **Spacing / sizing:** те саме джерело, коли з'явиться.
-- **Typography:** те саме джерело, коли з'явиться.
+- **Colors / typography / shadows / radius:** [`plan/app/src/app/theme.css`](../plan/app/src/app/theme.css) ([D-120](DECISIONS.md#d-120), оновлено) — Tailwind v4 `@theme` (не `tailwind.config.ts`, той шлях був для Tailwind v3). Світла тема — базові значення; темна — те саме ім'я змінної, нове значення під `prefers-color-scheme: dark` (автоматично за системною темою пристрою, ручного перемикача в застосунку нема).
+- **Спільна ідея (обидві теми):** фон і поверхня картки — майже невидимі відтінки (не чистий білий/чорний); за картками — розмита кольорова підкладка ("сфумато"), видна крізь напівпрозору матову картку. **Фірмового кольору-заливки більше немає** — оранжевий (`--color-accent`/`accent-ink`/`accent-soft`) прибрано з палітри повністю. Кнопки й інтерактивні елементи тепер прозорі, з рамкою (`border-border`, або підсилена `border-ink` у стані вибрано/фокус) і тим самим ефектом скла (`backdrop-blur`), що вже має `CardShell` — "сфумато"-плями позаду просвічують крізь них. Увесь текст — лише чорний або білий (`--color-ink`, за темою), без винятків.
+- **Окрема "мова" кольору — статус виміру (світлофор):** червоний/жовтий/зелений (`--color-bad`/`--color-warn`/`--color-good`) — єдині кольори в палітрі, що не є ink/border/поверхнею — лише стан конкретного виміру, завжди глянцевий (`.chip-gloss` у `theme.css` — світлова пляма + внутрішня тінь, на відміну від матових кнопок/карток). Підпис статусу лишається фактом, не оцінкою («у межах плану», не «добре») — узгоджено з [D-42](DECISIONS.md#d-42)/[D-60](DECISIONS.md#d-60) («тон без вердикту»). Ця мова кольору не змінилась разом з видаленням фірмового accent-кольору — лишається окремою і незмінною.
+- **Виняток ([D-126](DECISIONS.md#d-126)):** прогрес-бейдж блоку-метрики (`MetricBlockCard.tsx`, `plan/app/src/cards/life-area-card/ui/`) теж пофарбований у ці кольори good/warn/bad — але за порогом `progress.share` (не за `entry.status`), і в матовому стилі картки, без `.chip-gloss`. Це свідомо ширше застосування того самого колірного коду, не порушення правила мовчки.
+- **Spacing / sizing:** типова шкала Tailwind — окремих токенів не заводили, не було підстави відхилятись.
+- **Typography:** `Sora` (заголовки, числа — табличні цифри) + `Manrope` (звичайний текст), обидва з підтримкою кирилиці, підключені через Google Fonts у `index.html`.
 
 ## Component inventory
 
 | Component         | Source (`file:line` / node / URL)             | States it supports                                                         | Notes                                                                                                                                               |
 | ----------------- | ----------------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `CardShell`     | `plan/app/src/shared/ui/CardShell.tsx:17`     | front, back (перемикається пропом`isFlipped`)         | Каркас картки, що перевертається — одночасно видно лише одну сторону (T24)                |
-| `Button`        | `plan/app/src/shared/ui/Button.tsx:17`        | default, disabled                                                          | Presentation-примітив: підпис +`onClick`, без бізнес-логіки (T27/T28/T29/T36/T37 підготовка, хвиля 7) |
-| `TextField`     | `plan/app/src/shared/ui/TextField.tsx:21`     | default, error (інлайн-помилка під полем), hint (хмаринка-підказка, D-112)             | Controlled текстове поле (хвиля 7)                                                                                                 |
+| `Button`        | `plan/app/src/shared/ui/Button.tsx:17`        | default, disabled                                                          | Presentation-примітив: підпис +`onClick`, без бізнес-логіки (T27/T28/T29/T36/T37 підготовка, хвиля 7). Прозорий з рамкою й ефектом скла (`backdrop-blur`, той самий рівень, що `CardShell`) — жодної кольорової заливки, текст лише `text-ink` (оновлено, фірмовий accent-колір прибрано) |
+| `IconButton`    | `plan/app/src/shared/ui/IconButton.tsx:19`    | default, disabled                                                          | Той самий примітив, що `Button`, без видимого тексту — `label` обов'язковий (aria-label, значок сам aria-hidden). Значки — `plan/app/src/shared/ui/icons.tsx` ([D-121](DECISIONS.md#d-121)/[D-123](DECISIONS.md#d-123): вкладення/відправка/мікрофон/шеврон/шестерня). Hover — нейтральний `bg-border`/`text-ink`, без кольору |
+| `TextField`     | `plan/app/src/shared/ui/TextField.tsx:21`     | default, error (інлайн-помилка під полем), hint (хмаринка-підказка, D-112)             | Controlled текстове поле (хвиля 7). `hideLabel` ([D-121](DECISIONS.md#d-121)) — підпис лишається accessible name (`sr-only`), не показаний візуально |
 | `NumberField`   | `plan/app/src/shared/ui/NumberField.tsx:19`   | default, error (інлайн-помилка під полем), hint (хмаринка-підказка, D-112)             | Controlled числове поле;`null` = порожньо, окремо від `0` (хвиля 7)                                            |
 | `Banner`        | `plan/app/src/shared/ui/Banner.tsx:15`        | success, error, info (проп`variant`)                                 | Інлайн-повідомлення — ніколи`alert` (T24)                                                                                |
 | `Spinner`       | `plan/app/src/shared/ui/Spinner.tsx:6`        | — (без пропів, лише індикатор)                      | Індикатор завантаження (T24)                                                                                                   |
 | `EmptyState`    | `plan/app/src/shared/ui/EmptyState.tsx:13`    | — (повідомлення + підказка наступної дії) | Стандартний порожній стан, без ілюстрацій (T24)                                                                 |
 | `ConfirmDialog` | `plan/app/src/shared/ui/ConfirmDialog.tsx:20` | — (повідомлення + confirm/cancel)                             | Підтвердження дії з незворотними наслідками — ніколи`confirm()` (T24)                               |
-| `MessageList`   | `plan/app/src/agent/ui/chat/MessageList.tsx:19` | default (заповнена історія), empty-onboarding (порожній список) | Прокручуваний список `MessageBubble` у порядку надходження (SCR-01, T25) |
-| `MessageBubble` | `plan/app/src/agent/ui/chat/MessageBubble.tsx:15` | user, agent (проп `message.role`) | Одне повідомлення чату — `data-role` розрізняє відправника (SCR-01, T25) |
+| `MessageList`   | `plan/app/src/agent/ui/chat/MessageList.tsx:19` | default (заповнена історія), empty-onboarding (порожній список) | Список `MessageBubble` у порядку надходження (SCR-01, T25). Сам НЕ прокручується — частина одного зовнішнього скролу `ChatPanel` ([D-121](DECISIONS.md#d-121)) |
+| `MessageBubble` | `plan/app/src/agent/ui/chat/MessageBubble.tsx:15` | user, agent (проп `message.role`) | Одне повідомлення чату — `data-role` розрізняє відправника (SCR-01, T25). Невеликий зсув за роллю (user праворуч/`text-right`, agent ліворуч/`text-left`, ≈ ширина однієї букви, `calc(100%-0.5rem)`) — не повний iMessage-стиль (`max-w-[85%]`), той не влазив пропорційно у вузьку бічну колонку ([D-121](DECISIONS.md#d-121)) |
 | `ProposalCard`  | `plan/app/src/agent/ui/chat/ProposalCard.tsx:31` | proposal-pending — кнопки "Підтвердити"/"Уточнити" | Пропозиція запису, що чекає підтвердження (AC-01/AC-02/AC-02b/AC-10, SCR-01, T25) |
-| `Composer`      | `plan/app/src/agent/ui/chat/Composer.tsx:33` | default, disabled (сабміт заблоковано) | Текст і/або вкладення (фото/документ) — надсилання лише коли хоч одне не порожнє (AC-01/AC-10, SCR-01, T25) |
+| `Composer`      | `plan/app/src/agent/ui/chat/Composer.tsx:33` | default, disabled (сабміт заблоковано) | Текст і/або вкладення (фото/документ) — надсилання лише коли хоч одне не порожнє (AC-01/AC-10, T25). Значки (вкладення/відправка/мікрофон-заглушка), не текстові підписи — [D-121](DECISIONS.md#d-121) |
 | `HintBubble`    | `plan/app/src/agent/ui/chat/HintBubble.tsx:17` | default (показана), dismissed (закриття — рішення й дія викликача, ChatScreen) | Дисмісибл-підказка над `Composer`, статичний UI-текст, не репліка агента (AC-16/AC-16b, SCR-01, T47). Інший стиль хмаринки-підказки, ніж [D-112](DECISIONS.md#d-112) (`TextField`/`NumberField`) — окремий компонент, навмисно не об'єднаний з ним, але той самий "дисмісибл-підказка" патерн: звіряти обидва місця, якщо один стиль зміниться, щоб не розійшлись мовчки |
+| `Logo`          | `plan/app/src/shared/ui/Logo.tsx:97`          | — (без пропів, лише `className`)                                          | Лого ПЛАН ([D-120](DECISIONS.md#d-120), оновлено) — ізометричний кубик Рубика (без рук — варіант з руками відхилено, дивись коментар у файлі); клітинки кубика — good/warn/bad/surface-solid + приглушений `ink/35` для п'ятої грані (фірмового accent-кольору вже немає), координати пораховані формулою (ізометрична сітка), не намальовані на око. Екран входу (`LoginScreen.tsx`) |
 
 `screens.md` кожної фічі описує екрани цими назвами; коли `implement` напише компонент насправді, рядок оновлюється реальним `file:line` і переліком станів.
 

@@ -510,7 +510,7 @@ export async function hasAnyChatMessage(db: Db, userId: string): Promise<boolean
 /**
  * Review 2026-09-12 (AC-13 race fix): onboarding-handler.ts (T24) раніше
  * складав hasAnyChatMessage + insertChatMessage як два окремі round trip --
- * ChatScreen.tsx викликає GET /onboarding у тому самому Promise.all, що й
+ * ChatPanel.tsx викликає GET /onboarding у тому самому Promise.all, що й
  * loadHistory/loadActiveProposal на кожному монтуванні екрана (і React
  * StrictMode монтує двічі в dev), тож два одночасні виклики могли обидва
  * побачити "повідомлень ще нема" між своїми SELECT і INSERT і обидва

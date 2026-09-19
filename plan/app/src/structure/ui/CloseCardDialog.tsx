@@ -158,39 +158,54 @@ export function CloseCardDialog({
 
   if (metricBlocks.length === 0) {
     return (
-      <div>
+      <div className="flex flex-col gap-4">
         {error !== null && <Banner variant="error" text={error} />}
-        <button type="button" onClick={submit} disabled={submitting}>
-          Закрити без переносу
-        </button>
-        <button type="button" onClick={onCancel}>
-          Скасувати
-        </button>
+        <div className="flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={submit}
+            disabled={submitting}
+            className="rounded-control border border-border bg-surface px-4 py-2.5 text-sm font-bold text-ink shadow-btn backdrop-blur-xl transition-colors enabled:hover:bg-border disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+          >
+            Закрити без переносу
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-control border border-border px-4 py-2.5 text-sm font-bold text-ink transition-colors hover:bg-border"
+          >
+            Скасувати
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div>
+    <div className="flex flex-col gap-4">
       {metricBlocks.map((mb) => {
         const row = rows[mb.metricBlockId];
         return (
-          <div key={mb.metricBlockId}>
-            <label>
-              <input
-                type="checkbox"
-                aria-label="Перенести"
-                checked={row.transferring}
-                onChange={() => toggleTransfer(mb.metricBlockId)}
-              />
-            </label>
-            <span>{mb.label}</span>
+          <div key={mb.metricBlockId} className="flex flex-col gap-2 rounded-control border border-border bg-surface-solid p-3">
+            <div className="flex items-center gap-2.5">
+              <label className="inline-flex items-center">
+                <input
+                  type="checkbox"
+                  aria-label="Перенести"
+                  checked={row.transferring}
+                  onChange={() => toggleTransfer(mb.metricBlockId)}
+                  className="h-4 w-4 accent-ink"
+                />
+              </label>
+              <span className="text-sm font-medium text-ink">{mb.label}</span>
+            </div>
             {row.transferring && (
-              <div>
+              <div className="flex flex-col gap-1.5 pl-6">
                 <select
                   aria-label={`Куди перенести «${mb.label}»`}
                   value={row.targetCardId}
                   onChange={(event) => setTarget(mb.metricBlockId, event.target.value)}
+                  className="rounded-control border border-border bg-surface-solid px-3.5 py-2.5 text-sm text-ink focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
                 >
                   <option value="">--</option>
                   {targetCards.map((card) => (
@@ -200,7 +215,9 @@ export function CloseCardDialog({
                   ))}
                 </select>
                 {validationErrors[mb.metricBlockId] !== undefined && (
-                  <p role="alert">{validationErrors[mb.metricBlockId]}</p>
+                  <p role="alert" className="text-xs font-semibold text-bad">
+                    {validationErrors[mb.metricBlockId]}
+                  </p>
                 )}
                 {needsRename && (
                   <TextField
@@ -217,12 +234,23 @@ export function CloseCardDialog({
 
       {error !== null && <Banner variant="error" text={error} />}
 
-      <button type="button" onClick={submit} disabled={submitting}>
-        {needsRename ? 'Продовжити' : 'Закрити'}
-      </button>
-      <button type="button" onClick={onCancel}>
-        Скасувати
-      </button>
+      <div className="flex justify-end gap-3">
+        <button
+          type="button"
+          onClick={submit}
+          disabled={submitting}
+          className="rounded-control border border-border bg-surface px-4 py-2.5 text-sm font-bold text-ink shadow-btn backdrop-blur-xl transition-colors enabled:hover:bg-border disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+        >
+          {needsRename ? 'Продовжити' : 'Закрити'}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-control border border-border px-4 py-2.5 text-sm font-bold text-ink transition-colors hover:bg-border"
+        >
+          Скасувати
+        </button>
+      </div>
     </div>
   );
 }

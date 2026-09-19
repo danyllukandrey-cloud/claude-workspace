@@ -813,7 +813,12 @@ describe('structure T1/T2/T26 (D-103, промоучено позачергов�
     }
   });
 
-  it('T2: частковий унікальний індекс — не більше однієї АКТИВНОЇ картки в клітинці (AC-02/D-62)', async () => {
+  // D-131-наступне рішення (Андрій, чат, 2026-09-15) -- staged-міграція 08
+  // (add_position_xy) прибрала частковий UNIQUE `uq_layout_position_active_cell`
+  // разом із `cell_index`: вільне позиціювання дозволяє карткам перекриватись
+  // (AC-02/D-62 більше не застосовний). Тест, що раніше пінив колізію
+  // клітинки, тепер пінить ПРОТИЛЕЖНЕ -- саме те, що колізії більше немає.
+  it('D-131-наступне рішення: дві активні картки можуть мати ОДНАКОВІ position_x/position_y -- жодного UNIQUE, що це блокує', async () => {
     const client = new Client({ connectionString: process.env.DATABASE_URL });
     await client.connect();
     try {
@@ -831,15 +836,15 @@ describe('structure T1/T2/T26 (D-103, промоучено позачергов�
       await client.query('INSERT INTO card (id, owner_user_id, name) VALUES ($1, $2, $3)', [cardTwoId, ownerId, 'Card 2']);
       try {
         await client.query(
-          'INSERT INTO structure_layout_position (id, structure_id, card_id, cell_index) VALUES ($1, $2, $3, 0)',
+          'INSERT INTO structure_layout_position (id, structure_id, card_id, position_x, position_y) VALUES ($1, $2, $3, 0, 0)',
           [crypto.randomUUID(), structureId, cardOneId]
         );
         await expect(
           client.query(
-            'INSERT INTO structure_layout_position (id, structure_id, card_id, cell_index) VALUES ($1, $2, $3, 0)',
+            'INSERT INTO structure_layout_position (id, structure_id, card_id, position_x, position_y) VALUES ($1, $2, $3, 0, 0)',
             [crypto.randomUUID(), structureId, cardTwoId]
           )
-        ).rejects.toThrow(/duplicate key value violates unique constraint/);
+        ).resolves.toBeDefined();
       } finally {
         await client.query('DELETE FROM app_user WHERE id = $1', [ownerId]); // каскадно прибирає все нижче
       }
@@ -864,7 +869,7 @@ describe('structure T1/T2/T26 (D-103, промоучено позачергов�
       await client.query('INSERT INTO structure (id, owner_user_id) VALUES ($1, $2)', [structureId, ownerId]);
       await client.query('INSERT INTO card (id, owner_user_id, name) VALUES ($1, $2, $3)', [cardId, ownerId, 'Card']);
       await client.query(
-        'INSERT INTO structure_layout_position (id, structure_id, card_id, cell_index) VALUES ($1, $2, $3, 0)',
+        'INSERT INTO structure_layout_position (id, structure_id, card_id, position_x, position_y) VALUES ($1, $2, $3, 0, 0)',
         [positionId, structureId, cardId]
       );
 
@@ -902,36 +907,51 @@ describe('structure T1/T2/T26 (D-103, промоучено позачергов�
   });
 });
 
-describe('migration 04_add_logic_variant (T27, AC-16, D-83/ISS-7) — проти реальної Neon', () => {
-  it('structure.logic_variant приймає balance/focus/cause_effect і NULL, але не інше значення (CHECK)', async () => {
+// Migration 04_add_logic_variant (T27, AC-16, D-83/ISS-7) додала окрему
+// колонку logic_variant. Migration 07_flatten_layout_mode (вимоги 14/15,
+// Андрій, чат) її ПОВНІСТЮ прибрала — підвиди стали топ-рівневими
+// значеннями layout_mode, 'single' скасований, з'явився 'staging'. Тест на
+// 04 нижче замінений тестом на 07: перевіряти окрему logic_variant більше
+// нема сенсу (колонки не існує), а 5-значний layout_mode покриває той самий
+// клас гарантії (CHECK на рівні БД, не лише в UI/use-case).
+describe('migration 07_flatten_layout_mode (вимоги 14/15) — проти реальної Neon', () => {
+  it('structure.layout_mode приймає лише 5 плоских значень і NULL; logic_variant більше не існує', async () => {
     const client = new Client({ connectionString: process.env.DATABASE_URL });
     await client.connect();
     try {
       const ownerId = crypto.randomUUID();
       await client.query('INSERT INTO app_user (id, google_sub, email) VALUES ($1, $2, $3)', [
         ownerId,
-        `test-structure-t27-${ownerId}`,
-        'structure-t27@example.test',
+        `test-structure-t07flat-${ownerId}`,
+        'structure-t07flat@example.test',
       ]);
       try {
         const structureId = crypto.randomUUID();
         await client.query('INSERT INTO structure (id, owner_user_id) VALUES ($1, $2)', [structureId, ownerId]);
 
-        // NULL -- дозволено (D-83: "ще не обрано", той самий принцип, що і layout_mode).
-        const { rows: nullRow } = await client.query('SELECT logic_variant FROM structure WHERE id = $1', [structureId]);
-        expect(nullRow[0].logic_variant).toBeNull();
+        // NULL -- дозволено ("ще не обрано", той самий принцип, що й раніше).
+        const { rows: nullRow } = await client.query('SELECT layout_mode FROM structure WHERE id = $1', [structureId]);
+        expect(nullRow[0].layout_mode).toBeNull();
 
-        // Кожне з трьох дозволених значень реально приймається на рівні БД.
-        for (const variant of ['balance', 'focus', 'cause_effect']) {
-          await client.query('UPDATE structure SET logic_variant = $1 WHERE id = $2', [variant, structureId]);
-          const { rows } = await client.query('SELECT logic_variant FROM structure WHERE id = $1', [structureId]);
-          expect(rows[0].logic_variant).toBe(variant);
+        // Кожне з 5 дозволених значень реально приймається на рівні БД.
+        for (const mode of ['balance', 'focus', 'cause_effect', 'free', 'staging']) {
+          await client.query('UPDATE structure SET layout_mode = $1 WHERE id = $2', [mode, structureId]);
+          const { rows } = await client.query('SELECT layout_mode FROM structure WHERE id = $1', [structureId]);
+          expect(rows[0].layout_mode).toBe(mode);
         }
 
-        // Будь-яке інше значення -- CHECK відхиляє на рівні БД.
+        // 'single' скасований (вимога 14) -- CHECK відхиляє на рівні БД, як і будь-яке вигадане значення.
         await expect(
-          client.query("UPDATE structure SET logic_variant = 'not_a_real_variant' WHERE id = $1", [structureId])
+          client.query("UPDATE structure SET layout_mode = 'single' WHERE id = $1", [structureId])
         ).rejects.toThrow(/violates check constraint/);
+        await expect(
+          client.query("UPDATE structure SET layout_mode = 'logic' WHERE id = $1", [structureId])
+        ).rejects.toThrow(/violates check constraint/);
+
+        // logic_variant більше не існує як колонка взагалі.
+        await expect(
+          client.query('SELECT logic_variant FROM structure WHERE id = $1', [structureId])
+        ).rejects.toThrow(/column "logic_variant" does not exist/);
       } finally {
         await client.query('DELETE FROM app_user WHERE id = $1', [ownerId]); // каскадно прибирає structure
       }
@@ -941,13 +961,16 @@ describe('migration 04_add_logic_variant (T27, AC-16, D-83/ISS-7) — проти
   });
 });
 
-// Рев'ю 2026-09-11 (MUST-FIX 3): поки cell_index був NOT NULL, стан «картка без
-// клітинки» не існував фізично — AC-11b/AC-16b (reset після зміни режиму/підвиду)
-// і AC-17 (відновлена з архіву картка) були неспостережувані, а app-шар писав
-// замість «немає клітинки» реальний номер. Зелене ЛИШЕ після `npm run migrate`
-// (міграція 1789151324598_make-cell-index-nullable).
-describe('migration 06_make_cell_index_nullable (AC-11b/AC-16b/AC-17) — проти реальної Neon', () => {
-  it('cell_index приймає NULL, і кілька активних позицій без клітинки в одній Структурі співіснують', async () => {
+// Рев'ю 2026-09-11 (MUST-FIX 3, історично про cell_index): поки cell_index був
+// NOT NULL, стан «картка без клітинки» не існував фізично. D-131-наступне
+// рішення (Андрій, чат, 2026-09-15) замінило cell_index на x/y (staged-
+// міграція 08_add_position_xy) — той самий принцип "NULL = без позиції"
+// переносить сюди: position_x/position_y ЗАВЖДИ NULL ОБИДВА разом ("купка
+// нерозкладених"), і кілька таких активних позицій в одній Структурі
+// співіснують. Зелене ЛИШЕ після `npm run migrate` (з міграцією
+// add-position-xy застосованою).
+describe('migration 08_add_position_xy (D-131-наступне рішення, AC-11b/AC-17) — проти реальної Neon', () => {
+  it('position_x/position_y приймають NULL, і кілька активних позицій без позиції в одній Структурі співіснують', async () => {
     const client = new Client({ connectionString: process.env.DATABASE_URL });
     await client.connect();
     try {
@@ -957,38 +980,37 @@ describe('migration 06_make_cell_index_nullable (AC-11b/AC-16b/AC-17) — про
       const cardTwoId = crypto.randomUUID();
       await client.query('INSERT INTO app_user (id, google_sub, email) VALUES ($1, $2, $3)', [
         ownerId,
-        `test-structure-06-${ownerId}`,
-        'structure-06@example.test',
+        `test-structure-08-${ownerId}`,
+        'structure-08@example.test',
       ]);
       try {
         await client.query('INSERT INTO structure (id, owner_user_id) VALUES ($1, $2)', [structureId, ownerId]);
-        await client.query('INSERT INTO card (id, owner_user_id, name) VALUES ($1, $2, $3)', [cardOneId, ownerId, '06 card one']);
-        await client.query('INSERT INTO card (id, owner_user_id, name) VALUES ($1, $2, $3)', [cardTwoId, ownerId, '06 card two']);
+        await client.query('INSERT INTO card (id, owner_user_id, name) VALUES ($1, $2, $3)', [cardOneId, ownerId, '08 card one']);
+        await client.query('INSERT INTO card (id, owner_user_id, name) VALUES ($1, $2, $3)', [cardTwoId, ownerId, '08 card two']);
 
-        // Обидві позиції активні й БЕЗ клітинки: частковий UNIQUE
-        // uq_layout_position_active_cell це дозволяє, бо в Postgres два NULL не
-        // вважаються рівними (на відміну від двох нулів — той самий INSERT з
-        // cell_index = 0 двічі падає, це перевіряє тест «T2: частковий
-        // унікальний індекс» вище).
+        // Обидві позиції активні й БЕЗ x/y: жодного UNIQUE, що це блокує
+        // (частковий UNIQUE на cell_index прибраний разом з колонкою на up
+        // цієї ж міграції).
         await client.query(
-          'INSERT INTO structure_layout_position (id, structure_id, card_id, cell_index) VALUES ($1, $2, $3, NULL)',
+          'INSERT INTO structure_layout_position (id, structure_id, card_id, position_x, position_y) VALUES ($1, $2, $3, NULL, NULL)',
           [crypto.randomUUID(), structureId, cardOneId]
         );
         await client.query(
-          'INSERT INTO structure_layout_position (id, structure_id, card_id, cell_index) VALUES ($1, $2, $3, NULL)',
+          'INSERT INTO structure_layout_position (id, structure_id, card_id, position_x, position_y) VALUES ($1, $2, $3, NULL, NULL)',
           [crypto.randomUUID(), structureId, cardTwoId]
         );
 
-        const { rows } = await client.query<{ cell_index: number | null }>(
-          "SELECT cell_index FROM structure_layout_position WHERE structure_id = $1 AND status = 'active'",
+        const { rows } = await client.query<{ position_x: number | null; position_y: number | null }>(
+          "SELECT position_x, position_y FROM structure_layout_position WHERE structure_id = $1 AND status = 'active'",
           [structureId]
         );
         expect(rows).toHaveLength(2);
-        expect(rows.map((row) => row.cell_index)).toEqual([null, null]);
+        expect(rows.map((row) => row.position_x)).toEqual([null, null]);
+        expect(rows.map((row) => row.position_y)).toEqual([null, null]);
 
-        // І NULL справді читається як NULL, а не як 0 (0 — перша РЕАЛЬНА клітинка).
+        // І NULL справді читається як NULL, а не як 0 (0 -- реальна крайня ліва позиція).
         const { rows: placed } = await client.query<{ count: string }>(
-          'SELECT count(*)::text AS count FROM structure_layout_position WHERE structure_id = $1 AND cell_index IS NOT NULL',
+          'SELECT count(*)::text AS count FROM structure_layout_position WHERE structure_id = $1 AND position_x IS NOT NULL',
           [structureId]
         );
         expect(placed[0].count).toBe('0');
@@ -1132,7 +1154,7 @@ describe('D-69/D-103 (закриває ISS-26) — archiveCard реально з
         const positionId = crypto.randomUUID();
         await client.query('INSERT INTO structure (id, owner_user_id) VALUES ($1, $2)', [structureId, ownerId]);
         await client.query(
-          'INSERT INTO structure_layout_position (id, structure_id, card_id, cell_index) VALUES ($1, $2, $3, 0)',
+          'INSERT INTO structure_layout_position (id, structure_id, card_id, position_x, position_y) VALUES ($1, $2, $3, 0, 0)',
           [positionId, structureId, card.id]
         );
 

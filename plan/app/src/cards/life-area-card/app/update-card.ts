@@ -48,6 +48,9 @@ export interface UpdateCardInput {
 /** Сигнатура збігається з structure/infra/history-repo.ts recordCardRenameEvent. */
 export type RecordCardRenameEvent = (db: Db, ownerUserId: string, cardId: string, newName: string) => Promise<void>;
 
+/** Лог дій -- сигнатура збігається з agent/app/record-action.ts's `recordAction` (create-card.ts докладніше). */
+export type RecordAction = (db: Db, input: { ownerUserId: string; action: string }) => Promise<void>;
+
 /**
  * Часткове оновлення картки: name/description незалежно одне від одного,
  * і опційний перехід у "filled" (AC-03).
@@ -60,7 +63,8 @@ export type RecordCardRenameEvent = (db: Db, ownerUserId: string, cardId: string
 export async function updateCard(
   db: Db,
   input: UpdateCardInput,
-  recordRenameEvent?: RecordCardRenameEvent
+  recordRenameEvent?: RecordCardRenameEvent,
+  recordAction?: RecordAction
 ): Promise<CardRecord> {
   const current = await findCardById(db, input.ownerUserId, input.cardId);
   if (!current) {
@@ -102,14 +106,27 @@ export async function updateCard(
 
   if (input.markFilled) {
     await insertLifecycleEvent(db, { id: crypto.randomUUID(), cardId: input.cardId, transition: 'filled' });
+    // Лог дій (кінець-сесії ревю виявив): без цієї перевірки повторний
+    // markFilled:true на вже заповненій картці (UI дозволяє знову відкрити
+    // опис і ще раз натиснути "заповнено") писав би оманливий повторний
+    // рядок "Заповнено опис картки" -- реального переходу тут не було,
+    // current.description вже був непорожнім ДО цього виклику.
+    if (recordAction && !current.description) {
+      await recordAction(db, { ownerUserId: input.ownerUserId, action: `Заповнено опис картки «${updated.name}»` });
+    }
   }
 
   // AC-15/D-115: лише СПРАВЖНЄ перейменування (нова назва відрізняється від
   // поточної) пише подію в Літопис Структури -- виклик з тим самим іменем чи
   // без поля `name` взагалі (наприклад, markFilled-лише виклик) не рахується
   // перейменуванням.
-  if (input.name !== undefined && input.name !== current.name && recordRenameEvent) {
-    await recordRenameEvent(db, input.ownerUserId, input.cardId, input.name);
+  if (input.name !== undefined && input.name !== current.name) {
+    if (recordRenameEvent) {
+      await recordRenameEvent(db, input.ownerUserId, input.cardId, input.name);
+    }
+    if (recordAction) {
+      await recordAction(db, { ownerUserId: input.ownerUserId, action: `Перейменовано картку «${current.name}» на «${input.name}»` });
+    }
   }
 
   return updated;

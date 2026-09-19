@@ -14,6 +14,9 @@ import { assertJwtSigningKeyStrength } from './jwt-config';
 // but a distinct factory/shape (app.ts's AppDeps.askClaude docblock explains why).
 import { createClaudeClient } from '../src/agent/infra/claude-client';
 import type { EmailTransport } from '../src/agent/infra/email-client';
+// "Лог дій" -- реальна реалізація, підключена тут один раз для всіх
+// use-case-ів трьох фіч (server/app.ts's AppDeps.recordAction докладніше).
+import { recordAction } from '../src/agent/app/record-action';
 
 const PORT = Number(process.env.PORT ?? 3000);
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -130,6 +133,7 @@ const app = createApp({
   askClaude,
   emailTransport,
   developerEmail,
+  recordAction,
 });
 
 app.listen(PORT, () => {

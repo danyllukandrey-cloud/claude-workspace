@@ -14,12 +14,13 @@
 import { useEffect, useState } from 'react';
 import { AppError } from '../../../shared/errors';
 import { Banner, Button, EmptyState, Spinner } from '../../../shared/ui';
+import { DeckFrontCard } from './DeckFrontCard';
 import { DeckGrid } from './DeckGrid';
 import type { DeckGridItem } from './DeckGrid';
+import type { MetricBlockFormValues } from './MetricBlockForm';
+import type { CardBackData, CardFaceData } from './types';
 
-const CREATE_CARD_LABEL = '+ Створити картку';
-const OPEN_ARCHIVE_LABEL = 'Архів';
-const LOGOUT_LABEL = 'Вийти';
+const CREATE_CARD_LABEL = 'Створити картку';
 
 export interface DeckScreenProps {
   /**
@@ -32,14 +33,8 @@ export interface DeckScreenProps {
    * функція (нова лямбда щорендера) спричинить цикл повторних запитів.
    */
   loadCards: () => Promise<DeckGridItem[]>;
-  /** Викликається з id картки при відкритті тайла колоди. */
-  onOpenCard: (cardId: string) => void;
-  /** Викликається при кліку на кнопку "+ Створити картку" (ISS-55). */
+  /** Викликається при кліку на кнопку "Створити картку" (ISS-55). */
   onCreateCard: () => void;
-  /** Викликається при кліку на кнопку "Архів" (ISS-55, stage 3). */
-  onOpenArchive: () => void;
-  /** Викликається при кліку на кнопку "Вийти" (ISS-58). */
-  onLogout: () => void;
   /**
    * Review 2026-09-07 C14 (AC-04): loadCards відхилено з AppError, чий
    * httpStatus === 401 (сесія протермінована/невалідна, main.tsx) --
@@ -47,6 +42,19 @@ export interface DeckScreenProps {
    * в глухий кут (App.tsx поверне LoginScreen, той самий шлях, що onLogout).
    */
   onSessionExpired: () => void;
+
+  // --- Передня картка (D-121, живе тестування: "картка в колоді має одразу
+  // бути готова так ніби вона відкрита") -- ті самі проп-контракти, якими
+  // App.tsx раніше живив окремий CardDetailScreen, тепер прокидаються сюди й
+  // далі в DeckFrontCard (DeckGrid.tsx renderFront) без змін. -----------
+  loadCard: (cardId: string) => Promise<CardFaceData>;
+  loadBack: (cardId: string) => Promise<CardBackData>;
+  onRename: (cardId: string, name: string) => Promise<void>;
+  onArchive: (cardId: string) => Promise<void>;
+  onUpdateDescription?: (cardId: string, input: { description: string; markFilled: boolean }) => Promise<void>;
+  onFlagEntry?: (cardId: string, entryId: string) => Promise<CardBackData>;
+  onCreateMetricBlock?: (cardId: string, values: MetricBlockFormValues) => Promise<void>;
+  onArchiveMetricBlock?: (cardId: string, metricBlockId: string) => Promise<void>;
 }
 
 type LoadState =
@@ -58,19 +66,27 @@ const DEFAULT_ERROR_MESSAGE = 'Не вдалося завантажити кол
 
 export function DeckScreen({
   loadCards,
-  onOpenCard,
   onCreateCard,
-  onOpenArchive,
-  onLogout,
   onSessionExpired,
+  loadCard,
+  loadBack,
+  onRename,
+  onArchive,
+  onUpdateDescription,
+  onFlagEntry,
+  onCreateMetricBlock,
+  onArchiveMetricBlock,
 }: DeckScreenProps): JSX.Element {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   // C14: "Спробувати ще раз" не може просто повторно викликати loadCards()
   // напряму (ефект нижче має лишитись єдиним місцем, що читає/пише state) --
   // інкремент цього лічильника в deps ефекту тригерить той самий цикл
-  // loading -> loaded/error заново, той самий підхід, що onBack у
+  // loading -> loaded/error заново. D-121: той самий лічильник тепер служить
+  // і сигналу "картку заархівовано" (DeckFrontCard.onArchived) -- перезапит
+  // колоди без архівної картки, той самий підхід, що onBack мав у прибраному
   // CardDetailScreen (ремаунт через зміну ключа стану, не прямий виклик).
   const [retryToken, setRetryToken] = useState(0);
+  const reload = (): void => setRetryToken((token) => token + 1);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,36 +116,85 @@ export function DeckScreen({
     };
   }, [loadCards, retryToken, onSessionExpired]);
 
+  // D-120: примітиви (Spinner/Banner/EmptyState/Button) уже самі стилізовані
+  // й не приймають className -- тут стилізуються лише обгорткові контейнери
+  // (тло сторінки, відступи, групування дій).
+  //
+  // D-124 (живе тестування): "Архів" переїхав на Літопис-Аналітику
+  // (structure/ui/AnalyticsScreen.tsx), "Вийти" -- у верхній бар (App.tsx,
+  // поруч із шестернею) -- обидва прибрано звідси. Лишається лише "Створити
+  // картку" (без "+", наступний прохід живого тестування прибрав), центрована
+  // й АВТОШИРИНИ -- `flex justify-center` замість колишнього `flex-col` (у
+  // колонці Button стретчився на всю ширину за замовчуванням flex-стиснення,
+  // не через власний CSS).
+  //
+  // D-125 (живе тестування): "усе пропорційно" -- відступ кнопки від нижньої
+  // панелі має дорівнювати власному відступу самої панелі (py-3, App.tsx's
+  // <nav>) зверху від її кнопок. Раніше тут стояли ВЛАСНІ px-4/py-6/gap-6 --
+  // ЗАЙВІ поверх px-4/py-3, які контентна зона (App.tsx) вже додає навколо
+  // будь-якого напрямку -- подвійний відступ (16+24=40px знизу) не мав
+  // нічого спільного з py-3 (12px) нав-меню. Прибрано власні px-4/py-6
+  // повністю (контентна зона App.tsx вже дає симетричний відступ на всіх
+  // чотирьох станах нижче), gap-6 -> gap-3 (та сама відстань, що від кнопки
+  // до низу) -- і колода, і стрілки ‹/›, і кнопка тепер на ОДНІЙ спільній
+  // одиниці відступу. Картка сама виросла пропорційно (DeckGrid's
+  // `flex-1 min-h-0`, D-122) -- звільнене місце дісталось саме їй.
+  //
+  // D-121 фікс: `h-full` (не `min-h-screen`) на всіх станах -- той самий
+  // фікс, що App.tsx вже отримав (`h-dvh`/`min-h-0`): DeckScreen тепер живе
+  // ВСЕРЕДИНІ вже висотно-обмеженої контентної зони app-shell, `min-h-screen`
+  // тут або нічого не додає, або (гірше) продавлює контентну зону вище за її
+  // бюджет висоти.
   if (state.status === 'loading') {
-    return <Spinner />;
+    return (
+      <div className="flex h-full items-center justify-center bg-bg px-4">
+        <Spinner />
+      </div>
+    );
   }
 
   if (state.status === 'error') {
     return (
-      <div>
+      <div className="flex h-full flex-col justify-center gap-4 bg-bg px-4 py-8">
         <Banner variant="error" text={state.message} />
-        <Button label="Спробувати ще раз" onClick={() => setRetryToken((token) => token + 1)} />
+        <Button label="Спробувати ще раз" onClick={reload} />
       </div>
     );
   }
 
   if (state.items.length === 0) {
     return (
-      <div>
+      <div className="flex h-full flex-col gap-3 bg-bg">
         <EmptyState message="Тут ще немає жодної картки" actionHint="Створіть першу картку, щоб почати" />
-        <Button label={CREATE_CARD_LABEL} onClick={onCreateCard} />
-        <Button label={OPEN_ARCHIVE_LABEL} onClick={onOpenArchive} />
-        <Button label={LOGOUT_LABEL} onClick={onLogout} />
+        <div className="mt-auto flex justify-center">
+          <Button label={CREATE_CARD_LABEL} onClick={onCreateCard} />
+        </div>
       </div>
     );
   }
 
   return (
-    <div>
-      <DeckGrid items={state.items} onOpen={onOpenCard} />
-      <Button label={CREATE_CARD_LABEL} onClick={onCreateCard} />
-      <Button label={OPEN_ARCHIVE_LABEL} onClick={onOpenArchive} />
-      <Button label={LOGOUT_LABEL} onClick={onLogout} />
+    <div className="flex h-full flex-col gap-3 bg-bg">
+      <DeckGrid
+        items={state.items}
+        renderFront={(item) => (
+          <DeckFrontCard
+            cardId={item.id}
+            loadCard={loadCard}
+            loadBack={loadBack}
+            onRename={onRename}
+            onArchive={onArchive}
+            onArchived={reload}
+            onUpdateDescription={onUpdateDescription}
+            onFlagEntry={onFlagEntry}
+            onCreateMetricBlock={onCreateMetricBlock}
+            onArchiveMetricBlock={onArchiveMetricBlock}
+          />
+        )}
+      />
+      <div className="mt-auto flex justify-center">
+        <Button label={CREATE_CARD_LABEL} onClick={onCreateCard} />
+      </div>
     </div>
   );
 }

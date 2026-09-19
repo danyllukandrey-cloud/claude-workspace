@@ -13,6 +13,7 @@ export type {
   LayoutBoardProps,
   LayoutBoardState,
   LayoutBoardCard,
+  LayoutBoardConnection,
   LayoutBoardCloseCardOptions,
 } from './ui/LayoutBoard';
 
@@ -32,8 +33,9 @@ export { AnalyticsScreen } from './ui/AnalyticsScreen';
 export type { AnalyticsScreenProps, AnalyticsScreenState, AnalyticsScreenCard, AnalyticsTrend } from './ui/AnalyticsScreen';
 
 // App-shell (App.tsx) типізує свій DI-проп onSaveDeclaration (PATCH /structure)
-// цими самими доменними типами -- одна назва поняття, не власна копія enum'ів.
-export type { LayoutMode, LogicVariant } from './domain/layout';
+// цим самим доменним типом -- одна назва поняття, не власна копія enum'у.
+// Вимоги 14/15: LogicVariant прибраний, layoutMode -- ОДНЕ плоске поле.
+export type { LayoutMode } from './domain/layout';
 
 // main.tsx (loadAnalytics, ADR-0001 "ніколи не кешувати агрегат") -- та сама
 // формула, що бекендний use-case get-analytics.ts, а не власна копія (D-19).

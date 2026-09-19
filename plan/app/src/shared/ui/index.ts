@@ -23,8 +23,17 @@ export type { ConfirmDialogProps } from './ConfirmDialog';
 export { Button } from './Button';
 export type { ButtonProps } from './Button';
 
+export { IconButton } from './IconButton';
+export type { IconButtonProps } from './IconButton';
+
+export { AttachIcon, ChevronIcon, GearIcon, MicIcon, SendIcon } from './icons';
+export type { IconProps } from './icons';
+
 export { TextField } from './TextField';
 export type { TextFieldProps } from './TextField';
 
 export { NumberField } from './NumberField';
 export type { NumberFieldProps } from './NumberField';
+
+export { Logo } from './Logo';
+export type { LogoProps } from './Logo';

@@ -2,7 +2,7 @@
 status: Draft
 owner: "Андрій Данилюк"
 reviewers: []
-updated_at: "2026-08-24"
+updated_at: "2026-09-15"
 feature_size: "M"
 ---
 
@@ -18,7 +18,7 @@ feature_size: "M"
 
 Тригер зараз — `life-area-card` (перша частина плану деталізації, D-56) пройшла `specify → design → data-model` повністю; Структура — природний наступний крок, і більшість її дизайну вже ухвалена рішеннями D-29/D-38/D-39/D-42/D-44 розкидано по реєстру — саме її й бракує звести в один документ.
 
-Обраний підхід: один об'єкт на користувача — Структура — тримає (а) власну декларацію «картина світу, навіщо, пріоритет», окрему від Опису кожної картки; (б) розкладку карток одна відносно одної за одним із трьох варіантів групування (D-29); (в) екран зведеної аналітики — середній прогрес карток, що мають обчислюваний відсоток, порівну (D-38, [D-60](../../DECISIONS.md#d-60), [D-61](../../DECISIONS.md#d-61) — картки без відсотка виключені, їх кількість показана окремо) і чесний розрив між заявленим і фактичним, без вердикту (D-42, D-44, [D-60](../../DECISIONS.md#d-60), [D-61](../../DECISIONS.md#d-61)). Зміни картини світу (перейменовано / змінено місце в розкладці «за логікою» / закрито напрямок) записуються Структурою з першого дня; момент заведення картки вже записаний самою карткою (`life-area-card`) — Структура на нього посилається, не дублює. Екран перегляду цієї історії — поза цією версією (D-39, узгоджено з Андрієм 2026-08-23).
+Обраний підхід: один об'єкт на користувача — Структура — тримає (а) власну декларацію «картина світу, навіщо, пріоритет», окрему від Опису кожної картки; (б) розкладку карток одна відносно одної за одним із п'яти рівноправних способів групування (D-29, уточнено вимогами 14/15 — плоский список замінив дворівневу структуру «три варіанти, всередині одного з них ще три підвиди»); (в) екран зведеної аналітики — середній прогрес карток, що мають обчислюваний відсоток, порівну (D-38, [D-60](../../DECISIONS.md#d-60), [D-61](../../DECISIONS.md#d-61) — картки без відсотка виключені, їх кількість показана окремо) і чесний розрив між заявленим і фактичним, без вердикту (D-42, D-44, [D-60](../../DECISIONS.md#d-60), [D-61](../../DECISIONS.md#d-61)). Зміни картини світу (перейменовано / змінено місце в розкладці «за логікою» / закрито напрямок) записуються Структурою з першого дня; момент заведення картки вже записаний самою карткою (`life-area-card`) — Структура на нього посилається, не дублює. Екран перегляду цієї історії — поза цією версією (D-39, узгоджено з Андрієм 2026-08-23).
 
 Ця специфікація описує лише Структуру — не поля самої картки (`life-area-card`) і не поведінку агента (`agent`, D-56). Аналітика **отримує прогрес кожної картки через уже наявний розрахунок картки** (`life-area-card` ADR-0001 — спільна доменна логіка клієнт+бекенд, **не збережене число**) — Структура не реалізує власну формулу підрахунку прогресу картки, лише зводить отримані значення.
 
@@ -50,7 +50,7 @@ feature_size: "M"
 ### US-02: Обрати спосіб розкладки
 
 **As a** user
-**I want** обрати один із трьох варіантів групування карток (одна картка / вільно без порядку / за логікою — сама «за логікою» далі ділиться на три підвиди, US-12)
+**I want** обрати один із п'яти рівноправних способів групування карток — баланс навколо ядра / фокус і спостереження / причина і наслідок / вільна розкладка / готово до розкладання (вимоги 14/15 — плоский список, без вкладеного вибору всередині вибору; «одна картка» скасована повністю, «готово до розкладання» додано)
 **So that** розкладка відповідає тому, як я реально бачу свої пріоритети
 
 ### US-03: Перекласти картки будь-коли
@@ -101,11 +101,9 @@ feature_size: "M"
 **I want**, щоб перейменування картки й зміна її місця в розкладці «за логікою» записувались автоматично, як і закриття
 **So that** коли з'явиться екран історії, у нього буде що показати — включно з тим, як мінявся заявлений пріоритет, не лише сам факт існування картки
 
-### US-12: Обрати підвид розкладки «за логікою»
+### US-12 (скасовано, злито в US-02 — вимоги 14/15)
 
-**As a** user
-**I want**, обравши варіант групування «за логікою», вибрати один із трьох підвидів — баланс навколо ядра / фокус і спостереження / причина і наслідок
-**So that** розкладка виражає саме той тип зв'язку між картками, який відповідає моїй ситуації, а не змушує мене підлаштовуватись під одну готову схему
+Раніше: «обравши варіант групування «за логікою», вибрати один із трьох підвидів». Дворівневого вибору («спершу «за логікою», потім підвид») більше немає — баланс навколо ядра / фокус і спостереження / причина і наслідок тепер три з п'яти рівноправних пунктів US-02, обираються напряму. AC-16/AC-16b, що описували цей US, злиті в AC-11/AC-11b нижче.
 
 ## 5. Acceptance criteria
 
@@ -115,11 +113,9 @@ feature_size: "M"
 **When** the user opens the aggregated analytics screen
 **Then** the system shows the average progress across all their cards that have a computable percentage
 
-### AC-02 (US-03) — error
+### AC-02 (скасовано — [D-132](../../DECISIONS.md#d-132), вільне полотно не має клітинок)
 
-**Given** a user has chosen the logic-based layout, where each cell holds exactly one card
-**When** the user drags a card onto a cell already occupied by another card
-**Then** the system blocks the placement and explains the cell is taken, letting the user pick a free one
+Раніше: розкладка «за логікою» тримала фіксовану сітку клітинок, і кожна клітинка вміщувала рівно одну картку — переміщення на зайняту клітинку блокувалось. D-132 (Андрій, чат, 2026-09-15: «Пропоную прибрати повністю оті клітинки») замінив сітку вільним полотном (`position_x`/`position_y`, 0-100% канви) — картки можуть перекриватись, інваріанту «клітинка зайнята» більше не існує. [D-62](../../DECISIONS.md#d-62), яке ввело цей інваріант, позначене скасованим тим самим рішенням.
 
 ### AC-03 (US-09) — authorization
 
@@ -141,13 +137,13 @@ feature_size: "M"
 
 ### AC-06 (US-05) — logic-based layout
 
-**Given** a user has arranged their cards in the logic-based layout (an explicit priority scheme by position)
+**Given** a user has chosen one of the three priority-scheme layout modes with an explicit priority scheme by position — баланс навколо ядра / фокус і спостереження / причина і наслідок (вимоги 14/15 — these were nested "за логікою" subvariants, now three of the five flat top-level modes, US-02)
 **When** the user opens the analytics screen
 **Then** the system shows, per card, the gap between its position-derived priority rank and its actual progress — honestly, with no "good/bad" verdict attached
 
 ### AC-06b (US-05) — layouts without a priority scheme
 
-**Given** a user has arranged their cards in a layout with no priority scheme (single card or free arrangement)
+**Given** a user has arranged their cards in a layout with no priority scheme (free arrangement, staging, or no mode chosen yet)
 **When** the user opens the analytics screen
 **Then** the system shows no rank-based gap — instead it flags any card that was created (declared important enough to track) but shows no real tracking activity, as the signal "card declared important, not maintained"
 
@@ -165,9 +161,9 @@ feature_size: "M"
 
 ### AC-09 (US-07)
 
-**Given** a user has not chosen a layout mode yet
-**When** the user adds a new card
-**Then** the system places it using the default layout, without forcing a mode choice first
+**Given** a user adds a new card, regardless of whether a layout mode is chosen yet
+**When** the card is created
+**Then** the system does not force a mode choice first, and does not auto-place the card either — it appears with no position, in the tray of unplaced cards at the bottom of the Схема screen (`defaultPositionForNewCard`, D-132) — the user drags it onto the canvas themself, or re-runs "Конфігурація" (AC-11b) to fold it into the current mode's auto-layout along with every other card
 
 ### AC-10 (US-01) — domain invariant
 
@@ -177,15 +173,15 @@ feature_size: "M"
 
 ### AC-11 (US-02)
 
-**Given** a user picks one of the three layout modes
+**Given** a user picks one of the five flat layout modes (вимоги 14/15 — баланс навколо ядра / фокус і спостереження / причина і наслідок / вільна розкладка / готово до розкладання)
 **When** they confirm the choice
 **Then** the system applies it to how their cards are arranged from that point on
 
-### AC-11b (US-02) — зміна способу розкладки з уже розкладеними картками
+### AC-11b (US-02) — зміна способу розкладки
 
-**Given** a user has cards already arranged under one layout mode
-**When** the user switches to a different layout mode
-**Then** the system moves every card to the bottom of the screen in a fixed base order, shows the new mode's grid of allowed cells, and the user re-arranges each card into it by dragging
+**Given** a user has one or more active cards in their Structure — placed on the canvas, unplaced in the tray, or both
+**When** the user switches to a different layout mode via "Конфігурація" — including directly between two of the three priority-scheme modes (former "за логікою" subvariants — this is the same single mechanism, there is no separate "subvariant switch" case any more, вимоги 14/15, colишні AC-16/AC-16b)
+**Then** the system immediately computes that mode's own coordinate-based auto-layout (`domain/layout.ts computeAutoLayout`) for every active card — placed and unplaced alike — and writes it as one atomic action with a single timestamp, replacing prior positions and replacing the Structure's connections with whatever the new mode's formula produces (balance/focus: undirected lines to the core; cause_effect: directed arrows down a left-to-right binary tree; free: none) — D-132 (Андрій, чат: "Кожен з варіантів конфігурації потрібно просто розташувати за логікою"). The user is not required to place anything manually; they can still drag any card afterward to fine-tune. Switching TO "staging" is the one exception — nothing is recomputed, every card stays exactly where it already was (see AC-18)
 
 ### AC-12 (US-08)
 
@@ -205,23 +201,29 @@ feature_size: "M"
 **When** the action completes
 **Then** the system records it as a Structure-history event with a timestamp, the same way closure is already recorded (AC-12) — regardless of whether a viewing screen exists yet. A card's creation moment is not recorded twice: it is already captured by the card's own history (`life-area-card`); Structure references it rather than duplicating it
 
-### AC-16 (US-12) — happy path
+### AC-16 (US-02) — priority-scheme mode happy path
 
-**Given** a user has chosen the "за логікою" layout mode
-**When** the user selects one of the three subvariants — баланс навколо ядра / фокус і спостереження / причина і наслідок ([D-83](../../DECISIONS.md#d-83))
-**Then** the system applies that subvariant's grid of cells and marks one card as the root/main card per the subvariant's own rule, exactly as described for each subvariant in the questionnaire (`PRODUCT-BOOK_OWNER-QUESTIONNAIRE.md` Крок 5)
+> Раніше US-12 "happy path"; злито в US-02 плоскою моделлю (вимоги 14/15) — колишній "вибір підвиду ПІСЛЯ вибору «за логікою»" замінено на пряме обрання одного з трьох priority-scheme режимів нарівні з двома іншими. Термін "grid-based" (клітинкова сітка) скасований разом з клітинками ([D-132](../../DECISIONS.md#d-132)) — ці три моди й далі об'єднує НЕ спільна сітка, а спільна наявність пріоритетної схеми/кореня, на відміну від free/staging.
 
-### AC-16b (US-12) — switching subvariant
+**Given** a user picks one of the three priority-scheme layout modes directly — баланс навколо ядра / фокус і спостереження / причина і наслідок ([D-83](../../DECISIONS.md#d-83))
+**When** they confirm the choice
+**Then** the system computes and applies that mode's own coordinate-based auto-layout (`domain/layout.ts computeAutoLayout`, D-132) and marks the earliest-created card as the root/core/center per that mode's own rule — balance: центр із лівою колонкою й правим розгалуженням; focus: центр кола, решта рівновіддалені навколо; cause_effect: корінь бінарного дерева зліва, гілки праворуч, з'єднані напрямленими стрілками — the concrete visual scheme for each is described in the questionnaire (`PRODUCT-BOOK_OWNER-QUESTIONNAIRE.md` Крок 5) and was validated against Андрій's real cards in a [design mockup](https://claude.ai/artifact/GgqBRvfgpb9prGX839BNvi) before implementation
 
-**Given** a user has already arranged cards under one "за логікою" subvariant
-**When** the user switches to a different subvariant within "за логікою" (not just between the three top-level modes of US-02)
-**Then** the system treats the switch the same way as AC-11b — every active position moves to a fixed base order under the new subvariant's grid, and the user re-arranges each card into it by dragging
+### AC-16b (скасовано, злито в AC-11b — вимоги 14/15)
 
-### AC-17 (US-03) — restored card has no cell
+Раніше: перемикання ПІДВИДУ всередині «за логікою» описувалось окремим AC із власним інваріантом (перемикати можна лише поки `layoutMode = 'logic'`). Плоска модель прибрала й вкладеність, і цей інваріант — перемикання між будь-якими двома з 5 режимів, зокрема між колишніми підвидами напряму, це тепер один-єдиний випадок AC-11b.
+
+### AC-17 (US-03) — restored card has no position
 
 **Given** a card is restored from `life-area-card`'s archive (`life-area-card/spec.md` AC-17, D-104) — its old position was closed at archival time and is never reopened
 **When** the restore completes
-**Then** the card appears at the bottom of the layout screen without an assigned cell, the same way a card without a position appears after a mode switch (AC-11b) — the user drags it onto a free cell themself, no automatic placement
+**Then** the card appears in the tray of unplaced cards at the bottom of the Схема screen, the same way a card without a position appears after AC-09 — the user drags it onto the canvas themself, or folds it into the current mode's auto-layout via "Конфігурація" (AC-11b) — no automatic placement
+
+### AC-18 (US-02) — "Готово до розкладання" leaves cards in the tray, never auto-places them
+
+**Given** a user's Structure is currently in the "staging" layout mode (вимога 15 — "Готово до розкладання")
+**When** a new card is added, or the user switches INTO this mode with cards already placed
+**Then** the card (on add) keeps no position, same as AC-09 everywhere — and switching into "staging" is a deliberate no-op (`computeStagingLayout`/`applyLayoutMode` early-return, D-132): unlike every other mode's AC-11b auto-layout, nothing is recomputed and no card is moved, cards placed under the previous mode simply stay where they are; only a card that already had no position stays in the tray until the user drags it onto the canvas themself
 
 ## 6. Non-functional requirements
 

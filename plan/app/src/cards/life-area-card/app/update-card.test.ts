@@ -119,6 +119,41 @@ describe('updateCard', () => {
     expect(calls.some(([text]) => text.startsWith('INSERT INTO card_lifecycle_event'))).toBe(true);
   });
 
+  // Лог дій (кінець-сесії ревю виявив): справжній перехід "порожньо -> заповнено"
+  // пише рядок у Лог дій.
+  it('records a "Заповнено опис" action log entry on a genuine empty-to-filled transition', async () => {
+    const db = fakeDb({
+      current: cardRow({ description: null }),
+      updated: cardRow({ description: 'Хочу бути активнішим' }),
+    });
+    const recordAction = vi.fn().mockResolvedValue(undefined);
+
+    await updateCard(
+      db,
+      { ownerUserId: OWNER, cardId: CARD_ID, description: 'Хочу бути активнішим', markFilled: true },
+      undefined,
+      recordAction
+    );
+
+    expect(recordAction).toHaveBeenCalledTimes(1);
+    expect(recordAction).toHaveBeenCalledWith(db, { ownerUserId: OWNER, action: 'Заповнено опис картки «Здоровʼя»' });
+  });
+
+  // Той самий фікс: повторний markFilled:true на вже заповненій картці (UI
+  // дозволяє знову відкрити опис і ще раз натиснути "заповнено") НЕ мав би
+  // писати другий, оманливий рядок у Лог дій -- реального переходу не було.
+  it('does not record an action log entry when markFilled is repeated on an already-filled card', async () => {
+    const db = fakeDb({
+      current: cardRow({ description: 'Хочу бути активнішим' }),
+      updated: cardRow({ description: 'Хочу бути активнішим' }),
+    });
+    const recordAction = vi.fn().mockResolvedValue(undefined);
+
+    await updateCard(db, { ownerUserId: OWNER, cardId: CARD_ID, markFilled: true }, undefined, recordAction);
+
+    expect(recordAction).not.toHaveBeenCalled();
+  });
+
   // Non-disclosure (AC-04): чужа й неіснуюча картка виглядають однаково --
   // AppError('card.not_found', 404), без жодного UPDATE.
   it('rejects a foreign or missing card as card.not_found, without attempting an UPDATE', async () => {

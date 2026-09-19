@@ -1,8 +1,17 @@
 # Derived — never hand-edit without re-running /sdd:api structure --reconcile after upstream changes.
-#   fields + constraints  ← data-model.md (structure, structure_layout_position)
+#   fields + constraints  ← data-model.md (structure, structure_layout_position, structure_connection)
 #   error responses       ← sad.md §6 sequence alt-branches
 #   endpoint list + shape ← spec.md §4 user stories / §5 acceptance criteria
 # prose-only touch-up 2026-09-11 for D-113, re-run --reconcile for a full regenerate later
+#
+# D-131-наступне рішення (Андрій, чат, 2026-09-15) -- ще одна hand-edit, поза
+# нормальним /sdd:api-проходом (great task instructions explicitly accept
+# this for an internal-narrow change): cellIndex/AC-02 прибрані повністю,
+# LayoutPosition тепер несе {x, y} (відсоток канви 0-100) замість номера
+# клітинки, і додано новий тег Connections (structure_connection) --
+# інструмент "Зв'язати" на Схемі. Чесний коментар, а не мовчазний дрейф:
+# наступний /sdd:api --reconcile має звірити ЦЕЙ файл з оновленим
+# data-model.md, а не навпаки.
 openapi: 3.1.0
 
 info:
@@ -34,7 +43,9 @@ tags:
   - name: Structure
     description: Singleton-декларація та спосіб розкладки
   - name: Layout
-    description: Позиції карток у розкладці
+    description: Позиції карток на вільному полотні розкладки
+  - name: Connections
+    description: Лінії/стрілки між картками на Схемі (інструмент "Зв'язати")
 
 paths:
   /api/v1/structure:
@@ -59,21 +70,28 @@ paths:
       tags: [Structure]
       summary: Оновити декларацію та/або спосіб розкладки
       description: |
-        Частковий запис — можна передати `declaration`, `layoutMode`, `logicVariant`, чи будь-яку
-        комбінацію (AC-10, AC-11, AC-16). `logicVariant` має сенс лише коли (збережений або цим-таки
-        запитом установлений) `layoutMode = 'logic'` — той самий інваріант, що в `data-model.md`,
-        перевіряється тут, у app-шарі, не на рівні БД. Конфлікт офлайн-синхронізації (два пристрої
-        редагували одночасно) вирішується last-write-wins за `updatedAt` клієнта проти збереженого
-        значення (ADR-0002) — сервер мовчки приймає останній за часом запис, явного прапорця
-        конфлікту немає.
+        Частковий запис — можна передати `declaration`, `layoutMode`, чи обидва (AC-10, AC-11).
 
-        **Побічна дія (AC-11b, AC-16b):** якщо `layoutMode` змінюється на ЗНАЧЕННЯ, ВІДМІННЕ від
-        збереженого, АБО якщо `logicVariant` змінюється на нове значення за незмінного
-        `layoutMode = 'logic'` (D-83) — сервер автоматично переміщує
-        кожну активну позицію розкладки в базовий (фіксований) порядок під нову схему клітинок —
-        без окремого виклику клієнта. Клієнт після відповіді читає `GET /structure/layout` і показує
-        користувачу нову схему для повторного розкладання перетягуванням. Той самий запис, що не
-        змінює жодного з двох полів, скидання не запускає.
+        **Вимоги 14/15 (Андрій, чат) — плоска модель.** Раніше `layoutMode` (3 значення) і
+        `logicVariant` (3 значення, мав сенс лише при `layoutMode = 'logic'`) були ДВОМА окремими
+        полями. Тепер — ОДНЕ поле `layoutMode`, 5 рівноправних значень: `balance`/`focus`/
+        `cause_effect` (колишні підвиди "за логікою", тепер топ-рівневі), `free` (вільна розкладка),
+        `staging` (готово до розкладання — новий). `single` ("одна картка") скасований повністю.
+        `logicVariant` більше не існує ні як поле запиту, ні як поле відповіді.
+
+        Конфлікт офлайн-синхронізації (два пристрої редагували одночасно) вирішується
+        last-write-wins за `updatedAt` клієнта проти збереженого значення (ADR-0002) — сервер
+        мовчки приймає останній за часом запис, явного прапорця конфлікту немає.
+
+        **Побічна дія (AC-11b, D-131-наступне рішення):** якщо `layoutMode` змінюється на
+        ЗНАЧЕННЯ, ВІДМІННЕ від збереженого, сервер автоматично рахує й записує АВТО-РОЗКЛАД
+        нового режиму — реальні координати `x`/`y` для кожної картки власника (і вже розкладеної,
+        і з купки нерозкладених), а для `balance`/`focus`/`cause_effect` ще й зв'язки між ними
+        (`POST/GET /structure/connections` нижче). Це НЕ скидання в трей — кожен режим сам
+        визначає, де саме опиняється кожна картка (docs/features/structure/data-model.md формули).
+        Виняток — `staging`: жодного запису, картки лишаються де є. Клієнт після відповіді читає
+        `GET /structure/layout` (+ `GET /structure/connections`), щоб показати новий розклад.
+        Запис, що не змінює `layoutMode`, авто-розкладу не запускає.
       operationId: updateMyStructure
       requestBody:
         required: true
@@ -82,8 +100,7 @@ paths:
             schema: { $ref: "#/components/schemas/StructureUpdate" }
             example:
               declaration: "Навчання й здоров'я зараз важливіші за кар'єру."
-              layoutMode: "logic"
-              logicVariant: "focus"
+              layoutMode: "focus"
       responses:
         "200":
           description: OK
@@ -94,23 +111,20 @@ paths:
           $ref: "#/components/responses/Error"
         "422":
           description: |
-            невалідне значення поля. Три окремі випадки, той самий статус і той самий envelope:
-            - `structure.invalid_layout_mode` — `layoutMode` не одне з `single`/`free`/`logic`/`null`
-            - `structure.invalid_logic_variant` — `logicVariant` не одне з `balance`/`focus`/`cause_effect`/`null`
-            - `structure.logic_variant_requires_logic_mode` — `logicVariant` задано (не `null`), а
-              результуючий `layoutMode` (збережений або цим запитом) не `logic` (AC-16)
+            - `structure.invalid_layout_mode` — `layoutMode` не одне з `balance`/`focus`/
+              `cause_effect`/`free`/`staging`/`null`
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
               example:
                 code: "structure.invalid_layout_mode"
-                message: "layoutMode must be one of: single, free, logic"
+                message: "layoutMode must be one of: balance, focus, cause_effect, free, staging"
 
   /api/v1/structure/layout:
     get:
       tags: [Layout]
       summary: Прочитати активні позиції розкладки (екран Схема)
-      description: "Список позицій (`cardId` + `cellIndex`) для екрана Схема — лише активні (`status: active`)."
+      description: "Список позицій (`cardId` + `x`/`y`, відсоток канви 0-100) для екрана Схема — лише активні (`status: active`). `x`/`y` обидва `null` — картка в купці нерозкладених знизу екрана."
       operationId: listLayoutPositions
       parameters:
         - in: query
@@ -165,12 +179,13 @@ paths:
   /api/v1/structure/layout/{cardId}:
     put:
       tags: [Layout]
-      summary: Перемістити картку на нову позицію (перетягування, AC-08)
+      summary: Перемістити картку на нову позицію (перетягування мишею чи дотиком, AC-08)
       description: |
-        Ставить картку `cardId` на клітинку `cellIndex` у Структурі поточного користувача.
-        Одна активна картка на клітинку в розкладці "за логікою" — гарантовано на рівні БД
-        (частковий унікальний індекс, `data-model.md`), не лише перевіркою тут (AC-02).
-        Конфлікт офлайн-синхронізації — last-write-wins за `positionUpdatedAt` (ADR-0002, Потік 2).
+        Ставить картку `cardId` на позицію `x`/`y` (відсоток канви 0-100) у Структурі поточного
+        користувача. D-131-наступне рішення: жодної колізії немає — вільне позиціювання дозволяє
+        карткам перекриватись (AC-02 прибрана повністю разом із фіксованою сіткою). `x`/`y`
+        клемпляться в межі 0..100 на сервері. Конфлікт офлайн-синхронізації — last-write-wins за
+        `positionUpdatedAt` (ADR-0002, Потік 2).
       operationId: moveCard
       parameters:
         - in: path
@@ -183,7 +198,8 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/LayoutPositionMoveRequest" }
             example:
-              cellIndex: 12
+              x: 62.5
+              y: 40
               positionUpdatedAt: "2026-08-24T10:15:00Z"
       responses:
         "200":
@@ -203,14 +219,6 @@ paths:
               example:
                 code: "structure.card_not_found"
                 message: "Card not found in your Structure"
-        "409":
-          description: клітинка вже зайнята активною карткою в розкладці "за логікою" (AC-02)
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Error" }
-              example:
-                code: "structure.cell_occupied"
-                message: "This cell is already taken — pick a free one"
 
     post:
       tags: [Layout]
@@ -272,6 +280,97 @@ paths:
                 code: "metric_block.name_collision"
                 message: "У картці-призначенні вже є блок із такою назвою й одиницею"
 
+  /api/v1/structure/connections:
+    get:
+      tags: [Connections]
+      summary: Прочитати всі зв'язки Структури (екран Схема)
+      description: |
+        Список ліній/стрілок між картками поточного власника — той самий owner-scoped доступ, що
+        `/structure/layout` (AC-03). Без пагінації: зв'язків на одну Структуру завжди мало (той
+        самий MVP-обсяг, що sad.md §11 уже приймає для позицій).
+      operationId: listConnections
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Connection" }
+        "401":
+          $ref: "#/components/responses/Error"
+
+    post:
+      tags: [Connections]
+      summary: Створити зв'язок між двома картками (інструмент "Зв'язати", вимоги 4/5)
+      description: |
+        Створює лінію (`directed: false`) чи стрілку (`directed: true`, `cardIdA -> cardIdB`) між
+        двома картками поточного власника. Обидві картки мусять мати активну позицію в Структурі
+        власника — інакше `structure.card_not_found` (AC-03 non-disclosure, той самий код, що
+        `moveCard`/`closeCard`).
+      operationId: createConnection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConnectionCreateRequest" }
+            example:
+              cardIdA: "8f14e45f-ceea-4d6a-9c3a-77b3f2a55e11"
+              cardIdB: "2f9d3e4a-1b2c-4d5e-8f6a-9b0c1d2e3f4a"
+              directed: true
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Connection" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          description: одна з карток не знайдена в розкладці поточного користувача (AC-03)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "structure.card_not_found"
+                message: "Card not found in your Structure"
+        "422":
+          description: cardIdA і cardIdB — та сама картка
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "structure.connection_requires_two_cards"
+                message: "Не можна з'єднати картку саму із собою"
+
+  /api/v1/structure/connections/{connectionId}:
+    delete:
+      tags: [Connections]
+      summary: Розірвати зв'язок (тап по наявній лінії/стрілці, вимога 4)
+      description: |
+        Видаляє зв'язок фізично (на відміну від `structure_layout_position`, зв'язок не має
+        історії/переносу метрик, що варто було б зберегти — легша дія, ніж архівація картки).
+        Owner-scoped non-disclosure (AC-03): чужий/неіснуючий зв'язок — той самий 404.
+      operationId: deleteConnection
+      parameters:
+        - in: path
+          name: connectionId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204":
+          description: No Content
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          description: зв'язок не знайдено в Структурі поточного користувача
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "structure.connection_not_found"
+                message: "Connection not found in your Structure"
+
 components:
   securitySchemes:
     BearerAuth:
@@ -312,15 +411,13 @@ components:
           description: картина світу / навіщо / пріоритет — окремо від Опису картки (AC-10)
         layoutMode:
           type: [string, "null"]
-          enum: [single, free, logic, null]
-          description: "null = ще не обрано (AC-09) — три варіанти групування, D-29"
-        logicVariant:
-          type: [string, "null"]
-          enum: [balance, focus, cause_effect, null]
+          enum: [balance, focus, cause_effect, free, staging, null]
           description: |
-            підвид розкладки "за логікою" (US-12, AC-16, D-83) — balance = баланс навколо ядра,
-            focus = фокус і спостереження, cause_effect = причина і наслідок. Має сенс лише коли
-            layoutMode = 'logic'; null і при інших layoutMode, і поки підвид ще не обрано
+            "null = ще не обрано (AC-09). Плоска модель, 5 рівноправних значень (вимоги 14/15,
+            D-29/D-83): balance = баланс навколо ядра, focus = фокус і спостереження,
+            cause_effect = причина і наслідок (колишні підвиди "за логікою", тепер топ-рівневі),
+            free = вільна розкладка, staging = готово до розкладання (нова картка не отримує
+            клітинку автоматично, AC-18). Колишнє 'single' ("одна картка") скасоване повністю.
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
@@ -329,22 +426,28 @@ components:
       additionalProperties: false
       properties:
         declaration: { type: [string, "null"] }
-        layoutMode: { type: [string, "null"], enum: [single, free, logic, null] }
-        logicVariant: { type: [string, "null"], enum: [balance, focus, cause_effect, null] }
+        layoutMode: { type: [string, "null"], enum: [balance, focus, cause_effect, free, staging, null] }
 
     LayoutPosition:
       type: object
-      required: [cardId, cellIndex, status, positionUpdatedAt]
+      required: [cardId, x, y, status, positionUpdatedAt]
       additionalProperties: false
       properties:
         cardId: { type: string, format: uuid }
-        cellIndex:
-          type: [integer, "null"]
+        x:
+          type: [number, "null"]
           minimum: 0
+          maximum: 100
           description: |
-            номер клітинки у фіксованій нумерованій схемі (sad.md §5.2, "запас вільних клітинок").
-            `null` — картка ще нікуди не розкладена ("трей нерозкладених", міграція 06,
-            data-model.md — AC-11b/AC-16b/AC-17). `minimum` стосується лише не-null значення.
+            Відсоток ширини канви (0-100), D-131-наступне рішення (вільне полотно замість
+            фіксованої сітки клітинок). `x`/`y` завжди приходять разом: `null` — картка ще нікуди
+            не розкладена ("купка нерозкладених знизу екрана" — AC-11b/AC-17). `minimum`/`maximum`
+            стосуються лише не-null значення.
+        y:
+          type: [number, "null"]
+          minimum: 0
+          maximum: 100
+          description: Відсоток висоти канви (0-100) — той самий принцип null, що `x`.
         status:
           type: string
           enum: [active, closed]
@@ -356,14 +459,37 @@ components:
 
     LayoutPositionMoveRequest:
       type: object
-      required: [cellIndex, positionUpdatedAt]
+      required: [x, y, positionUpdatedAt]
       additionalProperties: false
       properties:
-        cellIndex: { type: integer, minimum: 0 }
+        x: { type: number, minimum: 0, maximum: 100 }
+        y: { type: number, minimum: 0, maximum: 100 }
         positionUpdatedAt:
           type: string
           format: date-time
           description: часова мітка клієнта — визначає переможця при конфлікті (ADR-0002)
+
+    Connection:
+      type: object
+      required: [id, cardIdA, cardIdB, directed, createdAt]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        cardIdA: { type: string, format: uuid }
+        cardIdB: { type: string, format: uuid }
+        directed:
+          type: boolean
+          description: "true — стрілка cardIdA -> cardIdB; false — звичайна лінія (порядок a/b не несе сенсу)"
+        createdAt: { type: string, format: date-time }
+
+    ConnectionCreateRequest:
+      type: object
+      required: [cardIdA, cardIdB, directed]
+      additionalProperties: false
+      properties:
+        cardIdA: { type: string, format: uuid }
+        cardIdB: { type: string, format: uuid }
+        directed: { type: boolean }
 
     CloseCardRequest:
       type: object

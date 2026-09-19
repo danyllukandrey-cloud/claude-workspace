@@ -45,6 +45,8 @@ export interface CardRecord {
   updatedAt: Date;
 }
 
+export type MetricBlockStatusRow = 'active' | 'archived';
+
 export interface MetricBlockRecord {
   id: string;
   cardId: string;
@@ -56,6 +58,8 @@ export interface MetricBlockRecord {
   targetDate: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  /** D-127 -- мʼяка архівація окремого блоку-метрики (US-17/AC-20), той самий підхід, що card.status. */
+  status: MetricBlockStatusRow;
 }
 
 export type EntryStatusRow = 'pending' | 'confirmed' | 'rejected';
@@ -235,6 +239,7 @@ interface RawMetricBlockRow extends QueryResultRow {
   target_date: Date | null;
   created_at: Date;
   updated_at: Date;
+  status: MetricBlockStatusRow;
 }
 
 function toMetricBlockRecord(row: RawMetricBlockRow): MetricBlockRecord {
@@ -249,10 +254,12 @@ function toMetricBlockRecord(row: RawMetricBlockRow): MetricBlockRecord {
     targetDate: row.target_date,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    status: row.status,
   };
 }
 
-const METRIC_BLOCK_COLUMNS = 'id, card_id, label, unit, frequency, target_count, is_ongoing, target_date, created_at, updated_at';
+const METRIC_BLOCK_COLUMNS =
+  'id, card_id, label, unit, frequency, target_count, is_ongoing, target_date, created_at, updated_at, status';
 
 export async function insertMetricBlock(
   db: Db,
@@ -294,12 +301,15 @@ export async function listMetricBlocksByCard(db: Db, cardId: string): Promise<Me
 
 /**
  * Часткове оновлення блоку-метрики (T17 -- переносить на іншу картку через
- * cardId, і/або перейменовує через label при колізії, AC-15). Той самий
- * підхід, що й card.updateCard: лише передані поля міняються.
+ * cardId, і/або перейменовує через label при колізії, AC-15; D-127 -- також
+ * status для мʼякої архівації, US-17/AC-20). Той самий підхід, що й
+ * card.updateCard: лише передані поля міняються, включно з тим, як updateCard
+ * встановлює status.
  *
  * Non-disclosure тут НЕ репозиторію відповідальність -- metric_block не має
- * власного owner_user_id (лише через card), тому перевірку власності обох
- * карток (джерела й призначення) робить use-case (T17) через findCardById
+ * власного owner_user_id (лише через card), тому перевірку власності
+ * (джерела й призначення при трансфері, чи єдиної картки при архівації)
+ * робить use-case (T17, app/archive-metric-block.ts) через findCardById
  * ДО виклику цієї функції.
  */
 export async function updateMetricBlock(
@@ -313,6 +323,7 @@ export async function updateMetricBlock(
     targetCount?: number | null;
     isOngoing?: boolean;
     targetDate?: string | null;
+    status?: MetricBlockStatusRow;
   }
 ): Promise<MetricBlockRecord | null> {
   const sets: string[] = [];
@@ -330,6 +341,7 @@ export async function updateMetricBlock(
   if (patch.targetCount !== undefined) assign('target_count', patch.targetCount);
   if (patch.isOngoing !== undefined) assign('is_ongoing', patch.isOngoing);
   if (patch.targetDate !== undefined) assign('target_date', patch.targetDate);
+  if (patch.status !== undefined) assign('status', patch.status);
 
   if (sets.length === 0) {
     const { rows } = await db.query<RawMetricBlockRow>(
@@ -355,6 +367,8 @@ export async function updateMetricBlock(
  * саме так і задумано з самого початку, api-sync-report.md). Без власного
  * owner_user_id (лише через card, як і решта функцій цього блоку) -- перевірку
  * власності над карткою-джерелом (record.cardId) робить use-case, ПІСЛЯ цього виклику.
+ * Той самий підхід повторює app/archive-metric-block.ts (D-127, US-17/AC-20) --
+ * не довіряє client cardId зі шляху DELETE .../cards/{cardId}/metric-blocks/{metricBlockId}.
  */
 export async function findMetricBlockById(db: Db, metricBlockId: string): Promise<MetricBlockRecord | null> {
   const rows = await selectRowsOrEmptyOnInvalidUuid<RawMetricBlockRow>(

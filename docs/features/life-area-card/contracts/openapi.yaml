@@ -360,6 +360,45 @@ paths:
         "413":
           $ref: "#/components/responses/InvalidBodyTooLarge"
 
+  /api/v1/cards/{cardId}/metric-blocks/{metricBlockId}:
+    delete:
+      tags: [MetricBlocks]
+      summary: Видалити (архівувати) окремий блок-метрику (AC-20 US-17)
+      description: |
+        М'яка архівація — `status: archived`, ніколи фізичне видалення (той самий підхід, що
+        `archiveCard`/`entry.status`). Блок зникає зі звичайного списку блоків картки
+        (`GET .../metric-blocks` більше його не повертає), лишається технічно читомим і
+        відновлюваним напряму в базі, як і решта м'яких архівацій цього контракту.
+      operationId: archiveMetricBlock
+      parameters:
+        - in: path
+          name: cardId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: path
+          name: metricBlockId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MetricBlock" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          description: |
+            блок-метрика не знайдена, не належить користувачу, або `cardId` зі шляху не
+            відповідає справжній картці блоку — той самий код, що ISS-30 уже встановив для
+            `.../metric-blocks/transfer` (non-disclosure AC-04, жодна з причин не розрізняється)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "card.not_found"
+                message: "Card not found"
+
   /api/v1/cards/{cardId}/entries:
     get:
       tags: [Entries]
@@ -604,7 +643,7 @@ components:
 
     MetricBlock:
       type: object
-      required: [id, cardId, label, unit, isOngoing, createdAt, updatedAt]
+      required: [id, cardId, label, unit, isOngoing, createdAt, updatedAt, status]
       additionalProperties: false
       properties:
         id: { type: string, format: uuid }
@@ -625,6 +664,10 @@ components:
           description: сума понад ціль, показана окремо при перевищенні (AC-09b)
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+        status:
+          type: string
+          enum: [active, archived]
+          description: "D-127 — archived: мʼяка архівація окремого блоку-метрики (US-17/AC-20), ніколи фізичне видалення; той самий підхід, що Card.status"
 
     MetricBlockCreate:
       type: object

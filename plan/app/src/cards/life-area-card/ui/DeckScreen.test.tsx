@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { DeckScreen } from './DeckScreen';
 import { AppError } from '../../../shared/errors';
+import type { CardBackData, CardFaceData } from './types';
 
 // AC-04 (T25 DoD, п.1): усі 4 стани зі screens.md SCR-01 (default / empty /
 // loading / error) рендеряться за відповідним триггером -- не лише
@@ -9,180 +10,129 @@ import { AppError } from '../../../shared/errors';
 // проходженням Promise: pending -> "loading", resolve([...]) -> "default",
 // resolve([]) -> "empty", reject(...) -> "error".
 //
-// ISS-55 (RED, stage 1/3): новий проп onCreateCard -- кнопка "+ Створити
-// картку" має бути видима і в "default" (поряд з DeckGrid), і в "empty"
-// (поряд з EmptyState) -- DeckScreen сама її рендерить, обгортаючи внутрішній
-// стан, а не змінює контракти EmptyState/DeckGrid (ISS-55 явно каже: ці два
-// компоненти лишаються текст-only/тайл-only за задумом).
+// D-121 (живе тестування): "картка в колоді має одразу бути готова так ніби
+// вона відкрита" -- onOpenCard прибрано, DeckScreen отримав натомість ті
+// самі cardId-параметризовані пропи, що раніше йшли лише в окремий
+// CardDetailScreen (прибраний) -- loadCard/loadBack/onRename/onArchive
+// (+опційні onUpdateDescription/onFlagEntry/onCreateMetricBlock). baseProps()
+// нижче -- єдине місце, що їх задає, щоб не повторювати в кожному тесті.
 
-// ISS-55 stage 3/3: DeckScreen отримує ще один required проп -- onOpenArchive
-// (той самий стиль DI, що onCreateCard, ISS-55 stage 1). Усі наявні тести
-// нижче оновлені додаванням onOpenArchive={vi.fn()} до render(), той самий
-// підхід, що застосували stage 1 для onCreateCard.
-//
-// ISS-58: ще один required проп -- onLogout (кнопка "Вийти"). Той самий
-// підхід -- усі наявні тести оновлені додаванням onLogout={vi.fn()}.
+const FACE_DATA: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null };
+const BACK_DATA: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
+
+function baseProps(overrides: Partial<Parameters<typeof DeckScreen>[0]> = {}) {
+  return {
+    loadCards: vi.fn().mockResolvedValue([]),
+    onCreateCard: vi.fn(),
+    onSessionExpired: vi.fn(),
+    loadCard: vi.fn().mockResolvedValue(FACE_DATA),
+    loadBack: vi.fn().mockResolvedValue(BACK_DATA),
+    onRename: vi.fn().mockResolvedValue(undefined),
+    onArchive: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
 
 test('loading: показує Spinner одразу після монтування, поки loadCards ще не резолвнувся', () => {
   // Promise навмисно ніколи не резолвиться в цьому тесті -- перевіряємо лише
   // стан "loading" одразу після початкового GET /cards (screens.md SCR-01).
   const pending = new Promise<never>(() => {});
-  const loadCards = vi.fn().mockReturnValue(pending);
+  const props = baseProps({ loadCards: vi.fn().mockReturnValue(pending) });
 
-  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={vi.fn()}
-      onLogout={vi.fn()} onSessionExpired={vi.fn()} />);
+  render(<DeckScreen {...props} />);
 
   expect(screen.getByRole('status')).toBeTruthy();
-  expect(loadCards).toHaveBeenCalledTimes(1);
+  expect(props.loadCards).toHaveBeenCalledTimes(1);
 });
 
-test('default: після резолву loadCards із картками рендерить DeckGrid і відкриває картку по кліку', async () => {
+test('default: після резолву loadCards передня картка одразу показує повний вміст (CardFace) -- жодного окремого кроку "відкрити"', async () => {
   const items = [
     { id: 'card-1', name: 'Спорт' },
     { id: 'card-2', name: 'Навчання' },
   ];
-  const loadCards = vi.fn().mockResolvedValue(items);
-  const onOpenCard = vi.fn();
+  const props = baseProps({ loadCards: vi.fn().mockResolvedValue(items) });
 
-  render(
-    <DeckScreen loadCards={loadCards} onOpenCard={onOpenCard} onCreateCard={vi.fn()} onOpenArchive={vi.fn()}
-      onLogout={vi.fn()} onSessionExpired={vi.fn()} />,
-  );
+  render(<DeckScreen {...props} />);
 
-  const tile = await screen.findByText('Спорт');
+  // D-121: передня картка -- одразу CardFace (заголовок = назва, з loadCard),
+  // не тайл-кнопка. Задня картка й далі показує лише підпис-назву.
+  expect(await screen.findByRole('heading', { name: 'Спорт' })).toBeTruthy();
+  expect(props.loadCard).toHaveBeenCalledWith('card-1');
   expect(screen.getByText('Навчання')).toBeTruthy();
-
-  fireEvent.click(tile);
-
-  expect(onOpenCard).toHaveBeenCalledWith('card-1');
 });
 
 test('empty: після резолву loadCards із порожнім масивом рендерить EmptyState', async () => {
-  const loadCards = vi.fn().mockResolvedValue([]);
+  const props = baseProps({ loadCards: vi.fn().mockResolvedValue([]) });
 
-  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={vi.fn()}
-      onLogout={vi.fn()} onSessionExpired={vi.fn()} />);
+  render(<DeckScreen {...props} />);
 
   expect(await screen.findByText('Тут ще немає жодної картки')).toBeTruthy();
 });
 
 test('error: після реджекту loadCards рендерить Banner із текстом помилки', async () => {
-  const loadCards = vi.fn().mockRejectedValue(new Error('Мережа недоступна'));
+  const props = baseProps({ loadCards: vi.fn().mockRejectedValue(new Error('Мережа недоступна')) });
 
-  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={vi.fn()}
-      onLogout={vi.fn()} onSessionExpired={vi.fn()} />);
+  render(<DeckScreen {...props} />);
 
   expect(await screen.findByText('Мережа недоступна')).toBeTruthy();
 });
 
 test('error: реджект без Error-повідомлення падає назад на дефолтний текст', async () => {
-  const loadCards = vi.fn().mockRejectedValue('щось пішло не так');
+  const props = baseProps({ loadCards: vi.fn().mockRejectedValue('щось пішло не так') });
 
-  render(<DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={vi.fn()}
-      onLogout={vi.fn()} onSessionExpired={vi.fn()} />);
+  render(<DeckScreen {...props} />);
 
   expect(await screen.findByText('Не вдалося завантажити колоду карток')).toBeTruthy();
 });
 
-test('ISS-55: empty-стан показує кнопку "+ Створити картку", клік викликає onCreateCard', async () => {
-  const loadCards = vi.fn().mockResolvedValue([]);
+test('ISS-55: empty-стан показує кнопку "Створити картку", клік викликає onCreateCard', async () => {
   const onCreateCard = vi.fn();
+  const props = baseProps({ loadCards: vi.fn().mockResolvedValue([]), onCreateCard });
 
-  render(
-    <DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={onCreateCard} onOpenArchive={vi.fn()}
-      onLogout={vi.fn()} onSessionExpired={vi.fn()} />,
-  );
+  render(<DeckScreen {...props} />);
 
   await screen.findByText('Тут ще немає жодної картки');
-  const button = screen.getByRole('button', { name: '+ Створити картку' });
-
-  fireEvent.click(button);
+  fireEvent.click(screen.getByRole('button', { name: 'Створити картку' }));
 
   expect(onCreateCard).toHaveBeenCalledTimes(1);
 });
 
-test('ISS-55: default-стан (DeckGrid з картками) показує кнопку "+ Створити картку" поряд з тайлами', async () => {
+test('ISS-55: default-стан (DeckGrid з картками) показує кнопку "Створити картку" поряд з переднью карткою', async () => {
   const items = [{ id: 'card-1', name: 'Спорт' }];
-  const loadCards = vi.fn().mockResolvedValue(items);
   const onCreateCard = vi.fn();
+  const props = baseProps({ loadCards: vi.fn().mockResolvedValue(items), onCreateCard });
 
-  render(
-    <DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={onCreateCard} onOpenArchive={vi.fn()}
-      onLogout={vi.fn()} onSessionExpired={vi.fn()} />,
-  );
+  render(<DeckScreen {...props} />);
 
-  await screen.findByText('Спорт');
-  const button = screen.getByRole('button', { name: '+ Створити картку' });
-
-  fireEvent.click(button);
+  await screen.findByRole('heading', { name: 'Спорт' });
+  fireEvent.click(screen.getByRole('button', { name: 'Створити картку' }));
 
   expect(onCreateCard).toHaveBeenCalledTimes(1);
 });
 
-// ISS-55 stage 3/3 (RED): нова кнопка "Архів" -- в ОБОХ станах (empty і
-// default), той самий патерн розміщення, що onCreateCard (stage 1).
+// D-124 (живе тестування): "Архів" переїхав на Літопис-Аналітику
+// (AnalyticsScreen.test.tsx покриває його там), "Вийти" -- у верхній бар
+// (App.test.tsx). Колишні ISS-55 stage 3 / ISS-58 тести тут прибрано --
+// DeckScreen більше не рендерить ці кнопки взагалі.
 
-test('ISS-55 stage 3: empty-стан показує кнопку "Архів", клік викликає onOpenArchive', async () => {
-  const loadCards = vi.fn().mockResolvedValue([]);
-  const onOpenArchive = vi.fn();
-
-  render(
-    <DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={onOpenArchive} onLogout={vi.fn()} onSessionExpired={vi.fn()} />,
-  );
-
-  await screen.findByText('Тут ще немає жодної картки');
-  const button = screen.getByRole('button', { name: 'Архів' });
-
-  fireEvent.click(button);
-
-  expect(onOpenArchive).toHaveBeenCalledTimes(1);
-});
-
-test('ISS-55 stage 3: default-стан (DeckGrid з картками) показує кнопку "Архів" поряд з тайлами', async () => {
+test('D-124: єдина кнопка внизу ("Створити картку") -- автоширини, не на всю сторінку', async () => {
   const items = [{ id: 'card-1', name: 'Спорт' }];
-  const loadCards = vi.fn().mockResolvedValue(items);
-  const onOpenArchive = vi.fn();
+  const props = baseProps({ loadCards: vi.fn().mockResolvedValue(items) });
 
-  render(
-    <DeckScreen loadCards={loadCards} onOpenCard={vi.fn()} onCreateCard={vi.fn()} onOpenArchive={onOpenArchive} onLogout={vi.fn()} onSessionExpired={vi.fn()} />,
-  );
+  render(<DeckScreen {...props} />);
 
-  await screen.findByText('Спорт');
-  const button = screen.getByRole('button', { name: 'Архів' });
+  await screen.findByRole('heading', { name: 'Спорт' });
+  const button = screen.getByRole('button', { name: 'Створити картку' });
 
-  fireEvent.click(button);
-
-  expect(onOpenArchive).toHaveBeenCalledTimes(1);
+  // Автоширини -- обгортка `flex justify-center`, НЕ `flex-col` (де flex
+  // за замовчуванням стретчив би дитину на всю ширину колонки). Пінимо сам
+  // контракт (клас батька), не виміряний піксельний розмір -- jsdom не
+  // рахує реальний layout.
+  expect(button.parentElement?.className).toContain('justify-center');
+  expect(button.parentElement?.className).not.toContain('flex-col');
 });
 
-// ISS-58: кнопка "Вийти" -- та сама відсутність, що знайшов Андрій живим
-// тестуванням ("а як мені вийти з акаунту?"). Той самий патерн розміщення,
-// що onCreateCard/onOpenArchive.
-
-test('ISS-58: empty-стан показує кнопку "Вийти", клік викликає onLogout', async () => {
-  const loadCards = vi.fn().mockResolvedValue([]);
-  const onLogout = vi.fn();
-
-  render(
-    <DeckScreen
-      loadCards={loadCards}
-      onOpenCard={vi.fn()}
-      onCreateCard={vi.fn()}
-      onOpenArchive={vi.fn()}
-      onLogout={onLogout}
-      onSessionExpired={vi.fn()}
-    />,
-  );
-
-  await screen.findByText('Тут ще немає жодної картки');
-  const button = screen.getByRole('button', { name: 'Вийти' });
-
-  fireEvent.click(button);
-
-  expect(onLogout).toHaveBeenCalledTimes(1);
-});
-
-// Review 2026-09-07 C14 (RED, docs/features/life-area-card/_review/review-2026-09-07.md):
+// Review 2026-09-07 C14 (docs/features/life-area-card/_review/review-2026-09-07.md):
 // раніше 401 (сесія протермінована/невалідна) падав у той самий Banner, що
 // будь-яка інша мережева помилка -- глухий кут, користувач не міг нічого
 // зробити. Тепер loadCards (main.tsx) кидає AppError('...', ..., 401) саме
@@ -190,42 +140,29 @@ test('ISS-58: empty-стан показує кнопку "Вийти", клік 
 // показу банера (App.tsx поверне LoginScreen, той самий шлях, що onLogout).
 
 test('C14/AC-04: AppError з httpStatus 401 викликає onSessionExpired замість Banner', async () => {
-  const loadCards = vi.fn().mockRejectedValue(new AppError('auth.invalid_token', 'Сесія протермінована', 401));
   const onSessionExpired = vi.fn();
+  const props = baseProps({
+    loadCards: vi.fn().mockRejectedValue(new AppError('auth.invalid_token', 'Сесія протермінована', 401)),
+    onSessionExpired,
+  });
 
-  render(
-    <DeckScreen
-      loadCards={loadCards}
-      onOpenCard={vi.fn()}
-      onCreateCard={vi.fn()}
-      onOpenArchive={vi.fn()}
-      onLogout={vi.fn()}
-      onSessionExpired={onSessionExpired}
-    />,
-  );
+  render(<DeckScreen {...props} />);
 
   await vi.waitFor(() => expect(onSessionExpired).toHaveBeenCalledTimes(1));
   // Не звичайний банер помилки -- глухого кута більше нема.
   expect(screen.queryByText('Сесія протермінована')).toBeNull();
 });
 
-// Review 2026-09-07 C14 (RED): стан помилки (мережева, не 401) отримує кнопку
+// Review 2026-09-07 C14: стан помилки (мережева, не 401) отримує кнопку
 // "Спробувати ще раз" -- раніше не було ЖОДНОГО способу відновитись без
-// перезавантаження всієї сторінки.
+// перезавантаження всієї сторінки. D-121: той самий "reload" тепер служить і
+// сигналу "картку заархівовано" (DeckFrontCard.test.tsx покриває це окремо).
 
 test('C14: стан помилки показує кнопку "Спробувати ще раз", клік повторно викликає loadCards', async () => {
   const loadCards = vi.fn().mockRejectedValueOnce(new Error('Мережа недоступна')).mockResolvedValueOnce([]);
+  const props = baseProps({ loadCards });
 
-  render(
-    <DeckScreen
-      loadCards={loadCards}
-      onOpenCard={vi.fn()}
-      onCreateCard={vi.fn()}
-      onOpenArchive={vi.fn()}
-      onLogout={vi.fn()}
-      onSessionExpired={vi.fn()}
-    />,
-  );
+  render(<DeckScreen {...props} />);
 
   await screen.findByText('Мережа недоступна');
   fireEvent.click(screen.getByRole('button', { name: 'Спробувати ще раз' }));

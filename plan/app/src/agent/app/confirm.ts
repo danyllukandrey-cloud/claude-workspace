@@ -66,7 +66,17 @@ export interface ConfirmProposalInput {
   proposalId: string;
 }
 
-export async function confirmProposal(db: Db, input: ConfirmProposalInput): Promise<ProposalRecord> {
+/**
+ * Лог дій (Андрій: "тупо пишемо кожну дію -- час, дія, все.") -- сигнатура
+ * збігається з ./record-action.ts's `recordAction`. НЕ прокидається в
+ * createEntry нижче (life-area-card/app/create-entry.ts) -- інакше
+ * підтвердження пропозиції лишило б у Лозі два рядки на одну дію
+ * користувача (запис у картку + підтвердження); цей файл логує одним
+ * рядком за обидва кроки.
+ */
+export type RecordAction = (db: Db, input: { ownerUserId: string; action: string }) => Promise<void>;
+
+export async function confirmProposal(db: Db, input: ConfirmProposalInput, recordAction?: RecordAction): Promise<ProposalRecord> {
   // Порожній патч -- узгоджений спосіб "прочитати за id" у updateProposal
   // (postgres-repo.ts), скоуплений на user_id у самому SQL -- non-disclosure.
   const current = await updateProposal(db, input.userId, input.proposalId, {});
@@ -145,6 +155,10 @@ export async function confirmProposal(db: Db, input: ConfirmProposalInput): Prom
     sourceDeviceId: null,
     recordedAt: Date.now(),
   });
+
+  if (recordAction) {
+    await recordAction(db, { ownerUserId: input.userId, action: `Підтверджено запис +${current.proposedAmount} (${current.proposedSummary})` });
+  }
 
   return confirmed;
 }

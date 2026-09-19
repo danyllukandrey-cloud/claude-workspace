@@ -52,6 +52,15 @@ import { findCardById, listMetricBlocksByCard, listEntriesByMetricBlock, insertE
 import type { EntryRecord, Db } from '../infra/postgres-repo';
 import { AppError } from '../../../shared/errors';
 
+/**
+ * Лог дій -- сигнатура збігається з agent/app/record-action.ts's `recordAction`
+ * (create-card.ts докладніше). НЕ підключений з agent/app/confirm.ts's власного
+ * виклику createEntry (той файл сам логує "Підтверджено запис ..." -- інакше
+ * підтвердження пропозиції лишало б у Лозі два рядки на одну дію користувача);
+ * підключений лише з ports/entry-handlers.ts для прямого POST-виклику.
+ */
+export type RecordAction = (db: Db, input: { ownerUserId: string; action: string }) => Promise<void>;
+
 /** Дефолт-заглушка, не узгоджене з Андрієм число -- див. коментар вище щодо windowMs. */
 const DEFAULT_CONFLICT_WINDOW_MS = 60_000;
 
@@ -69,7 +78,7 @@ export interface CreateEntryInput {
   windowMs?: number;
 }
 
-export async function createEntry(db: Db, input: CreateEntryInput): Promise<EntryRecord> {
+export async function createEntry(db: Db, input: CreateEntryInput, recordAction?: RecordAction): Promise<EntryRecord> {
   // Non-disclosure (AC-04): чужа й неіснуюча картка -- однаковий null, той
   // самий контрактний код 404, що й для чужого/неіснуючого блоку нижче.
   const card = await findCardById(db, input.ownerUserId, input.cardId);
@@ -129,6 +138,10 @@ export async function createEntry(db: Db, input: CreateEntryInput): Promise<Entr
   // записів мовчки продовжував би рахуватись у прогрес.
   if (conflicting && conflicting.status === 'confirmed') {
     await updateEntryStatus(db, conflicting.id, 'pending');
+  }
+
+  if (recordAction) {
+    await recordAction(db, { ownerUserId: input.ownerUserId, action: `Додано запис ${input.amount} до блоку «${metricBlock.label}»` });
   }
 
   return inserted;

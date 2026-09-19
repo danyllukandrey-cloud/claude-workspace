@@ -21,6 +21,12 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp, type AppDeps } from './app';
 import type { Db } from '../src/cards/life-area-card/infra/postgres-repo';
+// "Лог дій" -- та сама реальна реалізація, що server/index.ts підставляє в
+// AppDeps.recordAction (не мок) -- тест нижче пінить реальний ланцюг
+// composition root -> ports -> use-case -> insertActionLogEntry -> db.query,
+// той самий "пінить реальний SQL, не лише передачу функції" підхід, що
+// cardAndStructureDb вище (AC-09, review 2026-09-11 MUST-FIX 6).
+import { recordAction } from '../src/agent/app/record-action';
 
 const ERROR_SHAPE = {
   code: expect.stringMatching(/^[a-z_]+\.[a-z_]+$/),
@@ -294,18 +300,18 @@ const STRUCTURE_ROW = {
   id: 'structure-1',
   owner_user_id: 'user-42',
   declaration: 'Навчання й здоров’я зараз важливіші за кар’єру.',
-  layout_mode: 'logic',
-  logic_variant: 'focus',
+  layout_mode: 'focus',
   created_at: new Date('2026-01-01T00:00:00Z'),
   updated_at: new Date('2026-01-02T00:00:00Z'),
 };
 
-function layoutPositionRow(cardId: string, cellIndex: number, positionUpdatedAt = '2026-01-02T00:00:00Z') {
+function layoutPositionRow(cardId: string, x: number | null, y: number | null = x, positionUpdatedAt = '2026-01-02T00:00:00Z') {
   return {
     id: `position-${cardId}`,
     structure_id: STRUCTURE_ROW.id,
     card_id: cardId,
-    cell_index: cellIndex,
+    position_x: x,
+    position_y: y,
     status: 'active',
     position_updated_at: new Date(positionUpdatedAt),
     created_at: new Date('2026-01-01T00:00:00Z'),
@@ -329,12 +335,27 @@ function historyEventRow(cardId: string, detail: string | null, occurredAt: stri
  * `db.query`: infra/postgres-repo.ts, infra/history-repo.ts, use-case'и й
  * порти виконуються справжні.
  */
+function connectionRow(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: 'connection-1',
+    structure_id: STRUCTURE_ROW.id,
+    card_id_a: 'card-a',
+    card_id_b: 'card-b',
+    directed: false,
+    created_at: new Date('2026-01-01T00:00:00Z'),
+    ...overrides,
+  };
+}
+
 function structureDb(
   opts: {
     structure?: typeof STRUCTURE_ROW | null;
     positions?: ReturnType<typeof layoutPositionRow>[];
     moved?: ReturnType<typeof layoutPositionRow> | null;
     history?: ReturnType<typeof historyEventRow>[];
+    connections?: ReturnType<typeof connectionRow>[];
+    /** DELETE /connections/{id} -- rows returned when the connection exists and belongs to this owner. */
+    deletableConnection?: boolean;
   } = {}
 ) {
   return vi.fn(async (text: string) => {
@@ -346,12 +367,21 @@ function structureDb(
       }
       return { rows: opts.history ?? [] };
     }
+    if (text.includes('structure_connection')) {
+      if (sql.startsWith('INSERT')) {
+        return { rows: [connectionRow()] };
+      }
+      if (sql.startsWith('DELETE')) {
+        return { rows: opts.deletableConnection ? [{ id: 'connection-1' }] : [] };
+      }
+      return { rows: opts.connections ?? [] };
+    }
     if (text.includes('structure_layout_position')) {
       if (sql.startsWith('UPDATE')) {
         return { rows: opts.moved ? [opts.moved] : [] };
       }
       if (sql.startsWith('INSERT')) {
-        return { rows: [layoutPositionRow('inserted', 0)] };
+        return { rows: [layoutPositionRow('inserted', null, null)] };
       }
       return { rows: opts.positions ?? [] };
     }
@@ -387,7 +417,7 @@ describe('composition root -- маршрути Структури змонтов
       const body = await res.json();
 
       expect(res.status).toBe(200);
-      expect(body).toMatchObject({ id: 'structure-1', layoutMode: 'logic', logicVariant: 'focus' });
+      expect(body).toMatchObject({ id: 'structure-1', layoutMode: 'focus' });
       // Токен власника мусить дійти до SQL-параметрів (AC-03 non-disclosure).
       expect(query.mock.calls[0][1]).toEqual(expect.arrayContaining(['user-42']));
     } finally {
@@ -455,7 +485,7 @@ describe('composition root -- маршрути Структури змонтов
   it('GET /api/v1/structure/layout/history reconstructs the past layout from the history log (200)', async () => {
     const query = structureDb({
       // Той самий формат `detail`, що пише src/structure/app/move-card.ts.
-      history: [historyEventRow('card-a', 'cell_index -> 4, from_cell_index -> 1', '2026-01-03T00:00:00Z')],
+      history: [historyEventRow('card-a', 'pos_x -> 44, pos_y -> 12, prev_x -> 10, prev_y -> 10', '2026-01-03T00:00:00Z')],
     });
     const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
     const { server, baseUrl } = await startServer(noopDeps({ query } as unknown as Db, verifyJwt));
@@ -468,7 +498,7 @@ describe('composition root -- маршрути Структури змонтов
 
       expect(res.status).toBe(200);
       expect(body.items).toEqual([
-        expect.objectContaining({ cardId: 'card-a', cellIndex: 4, status: 'active' }),
+        expect.objectContaining({ cardId: 'card-a', x: 44, y: 12, status: 'active' }),
       ]);
     } finally {
       server.close();
@@ -494,7 +524,7 @@ describe('composition root -- маршрути Структури змонтов
   it('PUT /api/v1/structure/layout/{cardId} moves the card (200), in a transaction, recording a readable history detail', async () => {
     const query = structureDb({
       positions: [layoutPositionRow('card-a', 3)],
-      moved: layoutPositionRow('card-a', 7, '2026-01-05T00:00:00Z'),
+      moved: layoutPositionRow('card-a', 65, 80, '2026-01-05T00:00:00Z'),
     });
     const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
     const { deps, transactions } = countedTransactionDeps({ query } as unknown as Db, verifyJwt);
@@ -504,27 +534,30 @@ describe('composition root -- маршрути Структури змонтов
       const res = await fetch(`${baseUrl}/api/v1/structure/layout/card-a`, {
         method: 'PUT',
         headers: AUTHED_JSON,
-        body: JSON.stringify({ cellIndex: 7, positionUpdatedAt: '2026-01-05T00:00:00.000Z' }),
+        body: JSON.stringify({ x: 65, y: 80, positionUpdatedAt: '2026-01-05T00:00:00.000Z' }),
       });
       const body = await res.json();
 
       expect(res.status).toBe(200);
-      expect(body).toMatchObject({ cardId: 'card-a', cellIndex: 7, status: 'active' });
+      expect(body).toMatchObject({ cardId: 'card-a', x: 65, y: 80, status: 'active' });
       expect(transactions).toHaveLength(1); // UPDATE позиції + INSERT події -- разом або ніяк
       // Подія 'moved' мусить нести detail, який читає GET /layout/history вище.
       const historyInsert = query.mock.calls.find(
         ([text]: [string]) => text.includes('structure_history_event') && text.trim().toUpperCase().startsWith('INSERT')
       ) as [string, unknown[]];
       expect(historyInsert).toBeDefined();
-      expect(String(historyInsert[1][4])).toMatch(/cell_index\s*->\s*7/);
+      expect(String(historyInsert[1][4])).toMatch(/pos_x\s*->\s*65/);
     } finally {
       server.close();
     }
   });
 
-  it('PUT /api/v1/structure/layout/{cardId} onto an occupied cell is the contract 409 (AC-02)', async () => {
+  // D-131-наступне рішення: AC-02 (колізія клітинки, 409 structure.cell_occupied)
+  // прибрана повністю -- вільне позиціювання дозволяє картки, що перекриваються.
+  it('PUT /api/v1/structure/layout/{cardId} onto the same x/y another active card already holds is still 200 -- no collision left to reject', async () => {
     const query = structureDb({
       positions: [layoutPositionRow('card-a', 3), layoutPositionRow('card-b', 7)],
+      moved: layoutPositionRow('card-a', 7, 7, '2026-01-05T00:00:00Z'),
     });
     const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
     const { server, baseUrl } = await startServer(noopDeps({ query } as unknown as Db, verifyJwt));
@@ -533,11 +566,11 @@ describe('composition root -- маршрути Структури змонтов
       const res = await fetch(`${baseUrl}/api/v1/structure/layout/card-a`, {
         method: 'PUT',
         headers: AUTHED_JSON,
-        body: JSON.stringify({ cellIndex: 7, positionUpdatedAt: '2026-01-05T00:00:00.000Z' }),
+        body: JSON.stringify({ x: 7, y: 7, positionUpdatedAt: '2026-01-05T00:00:00.000Z' }),
       });
 
-      expect(res.status).toBe(409);
-      expect(await res.json()).toMatchObject({ code: 'structure.cell_occupied' });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ cardId: 'card-a', x: 7, y: 7 });
     } finally {
       server.close();
     }
@@ -584,15 +617,10 @@ describe('composition root -- маршрути Структури змонтов
     }
   });
 
-  // Review 2026-09-11, Частина 2 [major]: domain/layout.ts кидає
-  // LayoutValidationError (окремий клас -- домен навмисно не знає про HTTP,
-  // як і CardValidationError вище), і error-middleware цього класу не знав,
-  // тож будь-яка доменна помилка розкладки падала в generic 500 замість
-  // контрактного 422.
-  it('maps a thrown LayoutValidationError to the contract 422, not a generic 500', async () => {
-    // Структура вже у режимі 'free' із збереженим logic_variant 'focus';
-    // PATCH {logicVariant: null} змінює підвид, а змінювати підвид можна лише
-    // в режимі 'logic' -- app/update-structure.ts -> domain switchLogicVariant.
+  // Вимоги 14/15 (плоска модель): 'single' скасований, невідоме значення
+  // layoutMode лишається контрактним 422, перевіреним ДО будь-якого запису
+  // (ports/structure-handlers.ts) -- не generic 500.
+  it('maps an invalid layoutMode value to the contract 422, not a generic 500', async () => {
     const query = structureDb({ structure: { ...STRUCTURE_ROW, layout_mode: 'free' } });
     const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
     const { server, baseUrl } = await startServer(noopDeps({ query } as unknown as Db, verifyJwt));
@@ -601,32 +629,131 @@ describe('composition root -- маршрути Структури змонтов
       const res = await fetch(`${baseUrl}/api/v1/structure`, {
         method: 'PATCH',
         headers: AUTHED_JSON,
-        body: JSON.stringify({ logicVariant: null }),
+        body: JSON.stringify({ layoutMode: 'single' }),
       });
       const body = await res.json();
 
       expect(res.status).toBe(422);
       expect(body).toMatchObject(ERROR_SHAPE);
-      expect(body.code).toBe('structure.logic_variant_requires_logic_mode');
+      expect(body.code).toBe('structure.invalid_layout_mode');
     } finally {
       server.close();
     }
   });
 });
 
-// --- AC-09: нова картка одразу отримує клітинку за замовчуванням ------------
+// --- Зв'язки Структури (вимоги 4/5, чат 2026-09-15) -------------------------
 //
-// Review 2026-09-11 (MUST-FIX 6): `defaultPositionForNewCard` (domain) і
-// `insertLayoutPosition` (infra) були написані й покриті юніт-тестами, але
-// ЖОДЕН рядок production-коду їх не викликав -- нова картка не отримувала
-// клітинки ніколи, тож AC-09 ("система ставить картку за замовчуванням, не
-// змушуючи спершу обирати режим") у живому застосунку не виконувався.
+// Той самий "пінячий" урок, що MUST-FIX 1 вище (маршрути Структури):
+// написані й покриті юніт-тестами порти лишаються 404, якщо composition root
+// (server/app.ts) їх не монтує -- ці тести пінять реальний HTTP через
+// справжній auth-middleware до межі db.query, не лише "функцію передано".
+
+describe('composition root -- маршрути зв\'язків Структури змонтовані (вимоги 4/5)', () => {
+  it('GET /api/v1/structure/connections returns every connection (200)', async () => {
+    const query = structureDb({ connections: [connectionRow()] });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query } as unknown as Db, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/structure/connections`, { headers: AUTHED });
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(body).toEqual([
+        expect.objectContaining({ id: 'connection-1', cardIdA: 'card-a', cardIdB: 'card-b', directed: false }),
+      ]);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('POST /api/v1/structure/connections creates a connection (201) between two owned cards', async () => {
+    const query = structureDb({
+      positions: [layoutPositionRow('card-a', 10), layoutPositionRow('card-b', 20)],
+    });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query } as unknown as Db, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/structure/connections`, {
+        method: 'POST',
+        headers: AUTHED_JSON,
+        body: JSON.stringify({ cardIdA: 'card-a', cardIdB: 'card-b', directed: true }),
+      });
+      const body = await res.json();
+
+      expect(res.status).toBe(201);
+      expect(body).toMatchObject({ cardIdA: 'card-a', cardIdB: 'card-b', directed: false }); // fake db завжди повертає той самий connectionRow()
+    } finally {
+      server.close();
+    }
+  });
+
+  it('POST /api/v1/structure/connections for a card outside this owner is the contract 404 (AC-03)', async () => {
+    const query = structureDb({ positions: [layoutPositionRow('card-a', 10)] }); // card-b відсутня
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query } as unknown as Db, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/structure/connections`, {
+        method: 'POST',
+        headers: AUTHED_JSON,
+        body: JSON.stringify({ cardIdA: 'card-a', cardIdB: 'card-b', directed: false }),
+      });
+
+      expect(res.status).toBe(404);
+      expect(await res.json()).toMatchObject({ code: 'structure.card_not_found' });
+    } finally {
+      server.close();
+    }
+  });
+
+  it('DELETE /api/v1/structure/connections/{connectionId} removes an owned connection (204)', async () => {
+    const query = structureDb({ deletableConnection: true });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query } as unknown as Db, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/structure/connections/connection-1`, {
+        method: 'DELETE',
+        headers: AUTHED,
+      });
+
+      expect(res.status).toBe(204);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('DELETE /api/v1/structure/connections/{connectionId} for a missing/not-owned connection is the contract 404', async () => {
+    const query = structureDb({ deletableConnection: false });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query } as unknown as Db, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/structure/connections/someone-elses`, {
+        method: 'DELETE',
+        headers: AUTHED,
+      });
+
+      expect(res.status).toBe(404);
+      expect(await res.json()).toMatchObject({ code: 'structure.connection_not_found' });
+    } finally {
+      server.close();
+    }
+  });
+});
+
+// --- AC-09: нова картка одразу отримує позицію за замовчуванням -------------
 //
-// Колаборатор живе в composition root -- ЄДИНОМУ місці, де life-area-card і
-// structure зустрічаються (ADR-0004), рівно як closeActiveLayoutPositionForCard
-// для DELETE /cards/{id}. Тести нижче пінять не "функція передана", а реальний
-// SQL, що доходить до межі db.query: номер клітинки, той самий `db` (тобто та
-// сама транзакція) і тишу, коли Структури ще немає.
+// D-131-наступне рішення (Андрій, чат, 2026-09-15): вільне полотно прибрало
+// "наступну вільну клітинку" -- `defaultPositionForNewCard` тепер ЗАВЖДИ
+// {x: null, y: null} (домен/layout.test.ts), незалежно від уже наявних
+// позицій чи обраного layoutMode. Тести нижче звужені до того, що з цим
+// фактом реально лишилось спостерігати на композиційному рівні: сам INSERT
+// доходить до БД, у тій самій транзакції, і тихо не пишеться, коли Структури
+// ще немає.
 
 /**
  * Підроблена база для POST /cards разом зі Структурою -- маршрутизація за
@@ -646,9 +773,9 @@ function cardAndStructureDb(
     if (text.includes('structure_layout_position')) {
       if (sql.startsWith('INSERT')) {
         if (opts.layoutInsertFails) {
-          throw new Error('duplicate key value violates unique constraint uq_layout_position_active_cell');
+          throw new Error('duplicate key value violates unique constraint on structure_layout_position');
         }
-        return { rows: [layoutPositionRow('inserted', 0)] };
+        return { rows: [layoutPositionRow('inserted', null, null)] };
       }
       return { rows: opts.positions ?? [] };
     }
@@ -673,12 +800,10 @@ function layoutInserts(query: ReturnType<typeof cardAndStructureDb>): [string, u
   ) as unknown as [string, unknown[]][];
 }
 
-describe('composition root -- POST /api/v1/cards дає новій картці клітинку (AC-09, review 2026-09-11 MUST-FIX 6)', () => {
-  it('вставляє позицію в НАСТУПНУ вільну клітинку сітки, у тій самій транзакції', async () => {
-    // Зайняті клітинки 0 і 3 -> defaultPositionForNewCard дає 4 (максимум + 1),
-    // не 2 ("перша дірка") і не 0.
+describe('composition root -- POST /api/v1/cards дає новій картці позицію за замовчуванням (AC-09)', () => {
+  it('вставляє позицію {x: null, y: null} (купка нерозкладених), у тій самій транзакції, незалежно від уже наявних позицій', async () => {
     const query = cardAndStructureDb({
-      positions: [layoutPositionRow('card-a', 0), layoutPositionRow('card-b', 3)],
+      positions: [layoutPositionRow('card-a', 20), layoutPositionRow('card-b', 80)],
     });
     const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
     const { deps, transactions } = countedTransactionDeps({ query } as unknown as Db, verifyJwt);
@@ -695,10 +820,11 @@ describe('composition root -- POST /api/v1/cards дає новій картці 
 
       const inserts = layoutInserts(query);
       expect(inserts).toHaveLength(1);
-      // params: [id, structureId, cardId, cellIndex]
+      // params: [id, structureId, cardId, x, y, positionUpdatedAt]
       expect(inserts[0][1][1]).toBe(STRUCTURE_ROW.id);
       expect(inserts[0][1][2]).toBe(CARD_ROW.id);
-      expect(inserts[0][1][3]).toBe(4);
+      expect(inserts[0][1][3]).toBeNull();
+      expect(inserts[0][1][4]).toBeNull();
       // Один `withTransaction` на весь запит -- INSERT card + подія життєвого
       // циклу + INSERT позиції разом або ніяк.
       expect(transactions).toHaveLength(1);
@@ -707,7 +833,7 @@ describe('composition root -- POST /api/v1/cards дає новій картці 
     }
   });
 
-  it('перша картка власника отримує клітинку 0', async () => {
+  it('перша картка власника теж іде в купку нерозкладених -- жодного спеціального випадку для "першої"', async () => {
     const query = cardAndStructureDb({ positions: [] });
     const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
     const { server, baseUrl } = await startServer(noopDeps({ query } as unknown as Db, verifyJwt));
@@ -720,32 +846,7 @@ describe('composition root -- POST /api/v1/cards дає новій картці 
       });
 
       expect(res.status).toBe(201);
-      expect(layoutInserts(query)[0][1][3]).toBe(0);
-    } finally {
-      server.close();
-    }
-  });
-
-  it('картки в треї (cell_index NULL) не зсувають наступну вільну клітинку', async () => {
-    // Міграція 06: активна позиція без клітинки -- норма (AC-11b/AC-16b/AC-17).
-    // Вона НЕ займає жодної клітинки, тож нова картка має піти в 1 (після
-    // єдиної зайнятої клітинки 0), а не в 2.
-    const tray = { ...layoutPositionRow('card-tray', 0), cell_index: null };
-    const query = cardAndStructureDb({
-      positions: [layoutPositionRow('card-a', 0), tray as unknown as ReturnType<typeof layoutPositionRow>],
-    });
-    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
-    const { server, baseUrl } = await startServer(noopDeps({ query } as unknown as Db, verifyJwt));
-
-    try {
-      const res = await fetch(`${baseUrl}/api/v1/cards`, {
-        method: 'POST',
-        headers: AUTHED_JSON,
-        body: JSON.stringify({ name: 'Здоровʼя' }),
-      });
-
-      expect(res.status).toBe(201);
-      expect(layoutInserts(query)[0][1][3]).toBe(1);
+      expect(layoutInserts(query)[0][1][3]).toBeNull();
     } finally {
       server.close();
     }
@@ -849,6 +950,13 @@ const REPORT_ROW = {
   generated_at: new Date('2026-01-08T00:00:00Z'),
 };
 
+const ACTION_LOG_ROW = {
+  id: 'log-1',
+  owner_user_id: 'user-42',
+  action: 'Створено картку «Спорт»',
+  occurred_at: new Date('2026-01-01T00:00:00Z'),
+};
+
 const SYNC_RESOURCE_ROW = {
   id: 'resource-1',
   user_id: 'user-42',
@@ -878,6 +986,7 @@ function agentDb(
     activeProposal?: typeof PROPOSAL_ROW | null;
     rules?: (typeof RULE_ROW)[];
     reports?: (typeof REPORT_ROW)[];
+    actionLog?: (typeof ACTION_LOG_ROW)[];
     syncResources?: (typeof SYNC_RESOURCE_ROW)[];
     hasAnyChatMessage?: boolean;
     activeCards?: unknown[];
@@ -908,6 +1017,10 @@ function agentDb(
     }
     if (text.includes('activity_report')) {
       return { rows: opts.reports ?? [] };
+    }
+    if (text.includes('action_log')) {
+      if (sql.startsWith('INSERT')) return { rows: [ACTION_LOG_ROW] };
+      return { rows: opts.actionLog ?? [] };
     }
     if (text.includes('sync_resource')) {
       if (sql.startsWith('INSERT')) return { rows: [SYNC_RESOURCE_ROW] };
@@ -1026,6 +1139,22 @@ describe('composition root -- маршрути агента змонтовані
 
       expect(res.status).toBe(200);
       expect(body.items).toEqual([expect.objectContaining({ id: 'report-1', periodType: 'weekly' })]);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('GET /api/v1/action-log returns the owner’s Лог дій, newest first (заміна GET /reports у UI, D-123)', async () => {
+    const query = agentDb({ actionLog: [ACTION_LOG_ROW] });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/action-log`, { headers: AUTHED });
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(body.items).toEqual([{ id: 'log-1', action: 'Створено картку «Спорт»', occurredAt: '2026-01-01T00:00:00.000Z' }]);
     } finally {
       server.close();
     }
@@ -1327,6 +1456,75 @@ describe('AC-20: generic error-middleware branch best-effort files an agent-dete
       expect(res.status).toBe(500);
       expect(body).toEqual({ code: 'internal.error', message: 'Internal server error' });
       expect(query.mock.calls.some(([sql]: [string]) => sql.includes('INSERT INTO developer_report'))).toBe(false);
+    } finally {
+      server.close();
+    }
+  });
+});
+
+// --- "Лог дій" -- deps.recordAction реально прокинутий у маршрути ----------
+//
+// Той самий урок, що AC-09/MUST-FIX 6 і MUST-FIX 1 вище: у цьому проєкті вже
+// траплялось, що use-case приймав опційний DI-колаборатор, а composition
+// root його НІКОЛИ не передавав -- тож можливість лишалась недосяжною в
+// production, попри зелені юніт-тести нижчого рівня. Тест нижче пінить
+// РЕАЛЬНИЙ SQL (INSERT INTO action_log), що доходить до межі db.query, коли
+// deps.recordAction реально задано -- не лише сам факт виклику мокнутої функції.
+
+describe('composition root -- "Лог дій" (deps.recordAction) реально прокинутий у маршрути', () => {
+  it('POST /api/v1/cards записує рядок у action_log, коли deps.recordAction задано', async () => {
+    const query = vi.fn(async (text: string) => {
+      const sql = text.trim().toUpperCase();
+      if (text.includes('action_log')) return { rows: [ACTION_LOG_ROW] };
+      if (text.includes('card_lifecycle_event')) {
+        return { rows: [{ id: 'lifecycle-1', card_id: CARD_ROW.id, transition: 'created', occurred_at: new Date() }] };
+      }
+      if (text.includes('structure')) return { rows: [] }; // Структури ще нема -- assignDefaultLayoutPosition no-op
+      if (sql.startsWith('INSERT INTO CARD')) return { rows: [CARD_ROW] };
+      throw new Error(`Непередбачений запит у тесті (recordAction wiring): ${text}`);
+    });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer({ ...noopDeps({ query }, verifyJwt), recordAction });
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/cards`, {
+        method: 'POST',
+        headers: AUTHED_JSON,
+        body: JSON.stringify({ name: CARD_ROW.name }),
+      });
+
+      expect(res.status).toBe(201);
+      const actionLogInsert = query.mock.calls.find(([text]: [string]) => text.includes('INSERT INTO action_log'));
+      expect(actionLogInsert).toBeTruthy();
+      const [, params] = actionLogInsert as unknown as [string, unknown[]];
+      expect(params).toEqual([expect.any(String), 'user-42', `Створено картку «${CARD_ROW.name}»`]);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('POST /api/v1/cards не пише в action_log, коли deps.recordAction не задано (наявна поведінка без регресії)', async () => {
+    const query = vi.fn(async (text: string) => {
+      const sql = text.trim().toUpperCase();
+      if (text.includes('card_lifecycle_event')) {
+        return { rows: [{ id: 'lifecycle-1', card_id: CARD_ROW.id, transition: 'created', occurred_at: new Date() }] };
+      }
+      if (text.includes('structure')) return { rows: [] };
+      if (sql.startsWith('INSERT INTO CARD')) return { rows: [CARD_ROW] };
+      throw new Error(`Непередбачений запит у тесті (recordAction wiring): ${text}`);
+    });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/cards`, {
+        method: 'POST',
+        headers: AUTHED_JSON,
+        body: JSON.stringify({ name: CARD_ROW.name }),
+      });
+
+      expect(res.status).toBe(201);
+      expect(query.mock.calls.some(([text]: [string]) => text.includes('action_log'))).toBe(false);
     } finally {
       server.close();
     }

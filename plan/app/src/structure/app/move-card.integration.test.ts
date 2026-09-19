@@ -1,6 +1,10 @@
-// T12 -- App: moveCard use-case, integration level (test-plan.md: AC-02/AC-08
-// -- "integration"; AC-15's history-event write goes through the same real
+// T12 -- App: moveCard use-case, integration level (test-plan.md: AC-08 --
+// "integration"; AC-15's history-event write goes through the same real
 // dependency here too, since it is part of moveCard's observable outcome).
+//
+// D-131-наступне рішення (Андрій, чат, 2026-09-15): "Пропоную прибрати
+// повністю оті клітинки." -- AC-02 (колізія клітинки, D-62) прибрана
+// повністю. Позиція -- {x, y} відсотки канви (0-100).
 //
 // Проти РЕАЛЬНОЇ Neon (server/db.ts createDb(), ADR-0006) -- та сама
 // конвенція, що вже використовує ./update-structure.integration.test.ts.
@@ -10,8 +14,7 @@
 // поруч (./move-card.test.ts) лишається джерелом TDD-циклу локально.
 //
 // DoD (tracker.md T12): move succeeds and records a moved history event;
-// collision in logic layout rejected; conflicting timestamp resolves
-// last-write-wins.
+// conflicting timestamp resolves last-write-wins.
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { moveCard } from './move-card';
@@ -26,7 +29,7 @@ beforeAll(() => {
   }
 });
 
-describe('moveCard (integration) -- AC-02/AC-08/AC-15 проти реальної Neon', () => {
+describe('moveCard (integration) -- AC-08/AC-15 проти реальної Neon', () => {
   let db: DbWithTransaction;
   let ownerId: string;
   let structureId: string;
@@ -44,8 +47,10 @@ describe('moveCard (integration) -- AC-02/AC-08/AC-15 проти реально�
     ]);
 
     structureId = crypto.randomUUID();
+    // 'logic' скасований разом із logic_variant (вимоги 14/15, плоска
+    // модель) -- 'balance' є одним з 5 нових значень, той самий грід-режим.
     await db.query(
-      "INSERT INTO structure (id, owner_user_id, layout_mode) VALUES ($1, $2, 'logic')",
+      "INSERT INTO structure (id, owner_user_id, layout_mode) VALUES ($1, $2, 'balance')",
       [structureId, ownerId]
     );
 
@@ -57,13 +62,13 @@ describe('moveCard (integration) -- AC-02/AC-08/AC-15 проти реально�
     // cardOne: insertLayoutPosition (не голий SQL) -- пише сентинел-час
     // (D-117), не дефолт колонки now(). ISS-114: раніше тут був прямий INSERT
     // без position_updated_at, тож щойно створена позиція мала час "зараз" --
-    // перший move нижче (тест "moves a card to a free cell") теж рухається з
-    // positionUpdatedAt "зараз", і залежно від розбіжності годинників
-    // клієнт/Neon (resolvePositionConflict -- `>=`, при рівності перемагає
-    // СТАРА позиція) рух міг тихо програти. Той самий клас бага, що D-117 вже
-    // виправив у production-коді -- цей тест просто обходив фікс власним
-    // прямим INSERT.
-    await insertLayoutPosition(db, { id: crypto.randomUUID(), structureId, cardId: cardOneId, cellIndex: 1 });
+    // перший move нижче (тест "moves a card to a free position") теж
+    // рухається з positionUpdatedAt "зараз", і залежно від розбіжності
+    // годинників клієнт/Neon (resolvePositionConflict -- `>=`, при рівності
+    // перемагає СТАРА позиція) рух міг тихо програти. Той самий клас бага,
+    // що D-117 вже виправив у production-коді -- цей тест просто обходив
+    // фікс власним прямим INSERT.
+    await insertLayoutPosition(db, { id: crypto.randomUUID(), structureId, cardId: cardOneId, x: 10, y: 10 });
     // cardTwo: лишається голим INSERT (дефолт now()) -- НАВМИСНО, не той самий
     // фікс. Тест "stale positionUpdatedAt" нижче звіряється з датою 2000 рік,
     // яка мусить бути СТАРІШОЮ за поточну позицію -- сентинел-час (1970) був
@@ -71,7 +76,7 @@ describe('moveCard (integration) -- AC-02/AC-08/AC-15 проти реально�
     // виглядав би новішим за вже збережену позицію). "now()" тут завжди
     // новіший за рік 2000 незалежно від будь-якої розбіжності годинників.
     await db.query(
-      'INSERT INTO structure_layout_position (id, structure_id, card_id, cell_index) VALUES ($1, $2, $3, 2)',
+      'INSERT INTO structure_layout_position (id, structure_id, card_id, position_x, position_y) VALUES ($1, $2, $3, 20, 20)',
       [crypto.randomUUID(), structureId, cardTwoId]
     );
   });
@@ -81,23 +86,26 @@ describe('moveCard (integration) -- AC-02/AC-08/AC-15 проти реально�
     await db.end();
   });
 
-  it('moves a card to a free cell, persists it, and records a "moved" history event (AC-08, AC-15)', async () => {
+  it('moves a card to a new position, persists it, and records a "moved" history event (AC-08, AC-15)', async () => {
     const positionUpdatedAt = new Date().toISOString();
 
     const result = await moveCard(db, {
       ownerUserId: ownerId,
       cardId: cardOneId,
-      cellIndex: 9,
+      x: 90,
+      y: 95,
       positionUpdatedAt,
     });
 
-    expect(result.cellIndex).toBe(9);
+    expect(result.x).toBe(90);
+    expect(result.y).toBe(95);
 
-    const { rows: positionRows } = await db.query<{ cell_index: number }>(
-      "SELECT cell_index FROM structure_layout_position WHERE card_id = $1 AND status = 'active'",
+    const { rows: positionRows } = await db.query<{ position_x: number; position_y: number }>(
+      "SELECT position_x, position_y FROM structure_layout_position WHERE card_id = $1 AND status = 'active'",
       [cardOneId]
     );
-    expect(positionRows[0]?.cell_index).toBe(9);
+    expect(positionRows[0]?.position_x).toBe(90);
+    expect(positionRows[0]?.position_y).toBe(95);
 
     const { rows: historyRows } = await db.query<{ event_type: string; card_id: string }>(
       "SELECT event_type, card_id FROM structure_history_event WHERE structure_id = $1 AND card_id = $2 AND event_type = 'moved'",
@@ -106,17 +114,20 @@ describe('moveCard (integration) -- AC-02/AC-08/AC-15 проти реально�
     expect(historyRows).toHaveLength(1);
   });
 
-  it('rejects moving a card onto a cell already occupied by a different active card (AC-02, D-62)', async () => {
+  // D-131-наступне рішення: дві картки на дуже близьких (навіть однакових)
+  // координатах -- НЕ помилка, вільне позиціювання дозволяє перекриття
+  // (AC-02/D-62 прибрана повністю).
+  it('allows moving a card onto the same x/y another active card already holds -- no collision left to reject', async () => {
     await expect(
-      moveCard(db, { ownerUserId: ownerId, cardId: cardOneId, cellIndex: 2, positionUpdatedAt: new Date().toISOString() })
-    ).rejects.toMatchObject({ code: 'structure.cell_occupied' });
+      moveCard(db, { ownerUserId: ownerId, cardId: cardOneId, x: 20, y: 20, positionUpdatedAt: new Date().toISOString() })
+    ).resolves.toMatchObject({ x: 20, y: 20 });
 
-    const { rows } = await db.query<{ cell_index: number }>(
-      "SELECT cell_index FROM structure_layout_position WHERE card_id = $1 AND status = 'active'",
+    const { rows } = await db.query<{ position_x: number }>(
+      "SELECT position_x FROM structure_layout_position WHERE card_id = $1 AND status = 'active'",
       [cardTwoId]
     );
-    // card-two's position -- незмінена, колізія відхилена до будь-якого запису.
-    expect(rows[0]?.cell_index).toBe(2);
+    // card-two's позиція -- незмінена цим рухом card-one.
+    expect(rows[0]?.position_x).toBe(20);
   });
 
   it('a stale positionUpdatedAt (earlier than what is already stored) is superseded silently -- last-write-wins', async () => {
@@ -125,19 +136,20 @@ describe('moveCard (integration) -- AC-02/AC-08/AC-15 проти реально�
     const result = await moveCard(db, {
       ownerUserId: ownerId,
       cardId: cardTwoId,
-      cellIndex: 15,
+      x: 55,
+      y: 60,
       positionUpdatedAt: staleTimestamp,
     });
 
-    // Переможець лишається вже збереженою позицією (cellIndex 2) -- запит,
+    // Переможець лишається вже збереженою позицією (x=20) -- запит,
     // датований раніше за неї, тихо відкидається, без помилки.
-    expect(result.cellIndex).toBe(2);
+    expect(result.x).toBe(20);
 
-    const { rows } = await db.query<{ cell_index: number }>(
-      "SELECT cell_index FROM structure_layout_position WHERE card_id = $1 AND status = 'active'",
+    const { rows } = await db.query<{ position_x: number }>(
+      "SELECT position_x FROM structure_layout_position WHERE card_id = $1 AND status = 'active'",
       [cardTwoId]
     );
-    expect(rows[0]?.cell_index).toBe(2);
+    expect(rows[0]?.position_x).toBe(20);
   });
 
   // D-117 (postgres-repo.ts NEVER_MOVED_SENTINEL comment references THIS file
@@ -150,21 +162,23 @@ describe('moveCard (integration) -- AC-02/AC-08/AC-15 проти реально�
     await db.query('INSERT INTO card (id, owner_user_id, name) VALUES ($1, $2, $3)', [freshCardId, ownerId, 'T12 fresh card (D-117)']);
     // insertLayoutPosition -- the real function D-117 fixed, not a raw SQL
     // INSERT with an unspecified position_updated_at default.
-    await insertLayoutPosition(db, { id: crypto.randomUUID(), structureId, cardId: freshCardId, cellIndex: 20 });
+    await insertLayoutPosition(db, { id: crypto.randomUUID(), structureId, cardId: freshCardId, x: 30, y: 30 });
 
     const result = await moveCard(db, {
       ownerUserId: ownerId,
       cardId: freshCardId,
-      cellIndex: 21,
+      x: 31,
+      y: 31,
       positionUpdatedAt: new Date().toISOString(), // "now", same as the real client would send
     });
 
-    expect(result.cellIndex).toBe(21);
+    expect(result.x).toBe(31);
+    expect(result.y).toBe(31);
 
-    const { rows } = await db.query<{ cell_index: number }>(
-      "SELECT cell_index FROM structure_layout_position WHERE card_id = $1 AND status = 'active'",
+    const { rows } = await db.query<{ position_x: number }>(
+      "SELECT position_x FROM structure_layout_position WHERE card_id = $1 AND status = 'active'",
       [freshCardId]
     );
-    expect(rows[0]?.cell_index).toBe(21);
+    expect(rows[0]?.position_x).toBe(31);
   });
 });

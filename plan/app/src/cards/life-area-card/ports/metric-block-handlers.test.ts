@@ -9,7 +9,7 @@
 // картка-джерело; (3) AppError use-case шару проходить нагору без змін.
 
 import { describe, it, expect, vi } from 'vitest';
-import { createMetricBlock, transferMetricBlock, listMetricBlocks } from './metric-block-handlers';
+import { createMetricBlock, transferMetricBlock, listMetricBlocks, archiveMetricBlock } from './metric-block-handlers';
 import { AppError } from '../../../shared/errors';
 import type { Db } from '../infra/postgres-repo';
 
@@ -38,6 +38,7 @@ const CREATED_METRIC_BLOCK_ROW = {
   target_date: new Date(2026, 2, 15),
   created_at: new Date('2026-01-02T00:00:00.000Z'),
   updated_at: new Date('2026-01-02T00:00:00.000Z'),
+  status: 'active',
 };
 
 const TARGET_CARD_ROW = {
@@ -71,6 +72,7 @@ const SOURCE_METRIC_BLOCK_ROW = {
   target_date: null,
   created_at: new Date('2026-01-01T00:00:00.000Z'),
   updated_at: new Date('2026-01-02T00:00:00.000Z'),
+  status: 'active',
 };
 
 const OTHER_METRIC_BLOCK_ROW = { ...SOURCE_METRIC_BLOCK_ROW, id: 'block-other', label: 'Плавання' };
@@ -106,8 +108,9 @@ describe('listMetricBlocks port', () => {
         targetDate: '2026-03-15',
         createdAt: '2026-01-02T00:00:00.000Z',
         updatedAt: '2026-01-02T00:00:00.000Z',
+        status: 'active',
       },
-      expect.objectContaining({ id: 'block-2', label: 'Фільми' }),
+      expect.objectContaining({ id: 'block-2', label: 'Фільми', status: 'active' }),
     ]);
     // additionalProperties: false в контракті -- жодного progress/overGoalAmount, як і create/transfer.
     result.forEach((block) => {
@@ -124,6 +127,22 @@ describe('listMetricBlocks port', () => {
     const result = await listMetricBlocks(db, 'user-1', 'card-1');
 
     expect(result).toEqual([]);
+  });
+
+  // D-127 (US-17/AC-20): архівований блок зникає зі звичайного списку -- той
+  // самий підхід, що listActiveCardsByOwner для архівованих карток колоди.
+  it('excludes archived metric blocks from the list (D-127)', async () => {
+    const archivedBlockRow = { ...CREATED_METRIC_BLOCK_ROW, id: 'block-archived', status: 'archived' };
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [OWNED_CARD_ROW] }) // findCardById
+      .mockResolvedValueOnce({ rows: [CREATED_METRIC_BLOCK_ROW, archivedBlockRow] }); // listMetricBlocksByCard
+    const db: Db = { query };
+
+    const result = await listMetricBlocks(db, 'user-1', 'card-1');
+
+    expect(result.map((block) => block.id)).toEqual(['block-1']);
+    expect(result.every((block) => block.status === 'active')).toBe(true);
   });
 
   // 404 card.not_found -- та сама форма для "не існує" й "чуже" (AC-04),
@@ -173,10 +192,11 @@ describe('createMetricBlock port', () => {
       targetDate: '2026-03-15',
       createdAt: '2026-01-02T00:00:00.000Z',
       updatedAt: '2026-01-02T00:00:00.000Z',
+      status: 'active',
     });
     // additionalProperties: false в контракті -- жодного зайвого поля (ownerUserId, progress, overGoalAmount).
     expect(Object.keys(result).sort()).toEqual(
-      ['id', 'cardId', 'label', 'unit', 'frequency', 'targetCount', 'isOngoing', 'targetDate', 'createdAt', 'updatedAt'].sort()
+      ['id', 'cardId', 'label', 'unit', 'frequency', 'targetCount', 'isOngoing', 'targetDate', 'createdAt', 'updatedAt', 'status'].sort()
     );
   });
 
@@ -227,6 +247,7 @@ describe('transferMetricBlock port', () => {
       targetDate: null,
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-02T00:00:00.000Z',
+      status: 'active',
     });
 
     // findCardById(target) звертається саме до 'card-target' -- шляховий cardId,
@@ -268,5 +289,52 @@ describe('transferMetricBlock port', () => {
     await expect(
       transferMetricBlock(db, 'user-1', 'card-target', { sourceMetricBlockId: 'does-not-exist' })
     ).rejects.toMatchObject({ code: 'card.not_found', httpStatus: 404 });
+  });
+});
+
+// --- archiveMetricBlock (US-17/AC-20, D-127) --------------------------------
+
+describe('archiveMetricBlock port', () => {
+  // DoD + мапінг: cardId/metricBlockId зі шляху доходять до use-case як є,
+  // відповідь -- точно форма MetricBlock контракту, зі status: 'archived'.
+  it('returns the archived MetricBlock shaped exactly per the contract schema', async () => {
+    const archivedRow = { ...SOURCE_METRIC_BLOCK_ROW, status: 'archived' };
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [SOURCE_METRIC_BLOCK_ROW] }) // findMetricBlockById
+      .mockResolvedValueOnce({ rows: [SOURCE_CARD_ROW] }) // findCardById(ownerUserId, block.cardId)
+      .mockResolvedValueOnce({ rows: [archivedRow] }); // updateMetricBlock({status:'archived'})
+    const db: Db = { query };
+
+    const result = await archiveMetricBlock(db, 'user-1', 'card-source', 'block-1');
+
+    expect(result).toEqual({
+      id: 'block-1',
+      cardId: 'card-source',
+      label: 'Пробіжка',
+      unit: 'км',
+      frequency: 'weekly',
+      targetCount: 5,
+      isOngoing: false,
+      targetDate: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+      status: 'archived',
+    });
+  });
+
+  // Non-disclosure (ISS-30-стиль): неіснуючий/чужий/неспівпадаючий cardId --
+  // той самий card.not_found, порт пропускає AppError use-case шару як є.
+  it('propagates card.not_found from the use-case unchanged', async () => {
+    const query = vi.fn().mockResolvedValueOnce({ rows: [] }); // findMetricBlockById -- not found
+    const db: Db = { query };
+
+    await expect(archiveMetricBlock(db, 'user-1', 'card-1', 'does-not-exist')).rejects.toMatchObject({
+      code: 'card.not_found',
+      httpStatus: 404,
+    });
+    await expect(
+      archiveMetricBlock({ query: vi.fn().mockResolvedValueOnce({ rows: [] }) }, 'user-1', 'card-1', 'does-not-exist')
+    ).rejects.toBeInstanceOf(AppError);
   });
 });

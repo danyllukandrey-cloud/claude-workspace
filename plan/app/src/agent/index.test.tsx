@@ -7,11 +7,11 @@
 // через публічні двері модуля), не лише факт, що символ експортується.
 
 import { render, screen, waitFor } from '@testing-library/react';
-import { ChatScreen, RuleSettingsScreen, ReportsScreen, AccountScreen } from './index';
+import { ChatPanel, RuleSettingsScreen, LogScreen, AccountScreen } from './index';
 
-test('публічний вхід агента віддає робочий ChatScreen (SCR-01)', async () => {
+test('публічний вхід агента віддає робочий ChatPanel (D-121, колишній SCR-01)', async () => {
   render(
-    <ChatScreen
+    <ChatPanel
       loadHistory={vi.fn().mockResolvedValue([])}
       loadOnboarding={vi.fn().mockResolvedValue({ welcomeShown: true, message: null })}
       loadActiveProposal={vi.fn().mockResolvedValue(null)}
@@ -20,7 +20,11 @@ test('публічний вхід агента віддає робочий ChatS
     />,
   );
 
-  expect(await screen.findByRole('heading', { name: 'Чат' })).toBeTruthy();
+  // D-121: ChatPanel більше не має власного заголовка-сторінки (вся
+  // переписка -- всередині рамки, не над нею) -- досяжність перевіряємо
+  // через сам композер, єдине, що завжди видно незалежно від
+  // розгорнута/згорнута.
+  expect(await screen.findByLabelText('Повідомлення')).toBeTruthy();
 });
 
 test('публічний вхід агента віддає робочий RuleSettingsScreen (SCR-02)', async () => {
@@ -35,10 +39,10 @@ test('публічний вхід агента віддає робочий RuleS
   expect(await screen.findByRole('heading', { name: 'Налаштування правил' })).toBeTruthy();
 });
 
-test('публічний вхід агента віддає робочий ReportsScreen (SCR-03)', async () => {
-  render(<ReportsScreen loadReports={vi.fn().mockResolvedValue([])} />);
+test('публічний вхід агента віддає робочий LogScreen (заміна SCR-03, D-123)', async () => {
+  render(<LogScreen loadActionLog={vi.fn().mockResolvedValue([])} />);
 
-  await waitFor(() => expect(screen.getByRole('heading', { name: 'Звіти активності' })).toBeTruthy());
+  await waitFor(() => expect(screen.getByRole('heading', { name: 'Лог дій' })).toBeTruthy());
 });
 
 test('публічний вхід агента віддає робочий AccountScreen (SCR-04)', async () => {

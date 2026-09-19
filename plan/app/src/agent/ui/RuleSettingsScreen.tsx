@@ -154,7 +154,11 @@ export function RuleSettingsScreen({ targetCards, loadRules, onSave }: RuleSetti
   }, [scopeCardId]);
 
   if (loading) {
-    return <Spinner />;
+    return (
+      <div className="mx-auto flex w-full max-w-md justify-center px-4 py-10">
+        <Spinner />
+      </div>
+    );
   }
 
   // Той самий підхід, що ReportsScreen.tsx: провал початкового завантаження
@@ -162,8 +166,10 @@ export function RuleSettingsScreen({ targetCards, loadRules, onSave }: RuleSetti
   // (без .catch промайс, що відхилився, лишав loading=true назавжди).
   if (loadError !== null) {
     return (
-      <div>
-        <h1>{isCardScope ? 'Налаштування правил — для картки' : 'Налаштування правил'}</h1>
+      <div className="mx-auto flex w-full max-w-md flex-col gap-4 px-4 py-6">
+        <h1 className="font-display text-xl font-bold leading-relaxed text-ink">
+          {isCardScope ? 'Налаштування правил — для картки' : 'Налаштування правил'}
+        </h1>
         <Banner variant="error" text={loadError} />
       </div>
     );
@@ -304,23 +310,37 @@ export function RuleSettingsScreen({ targetCards, loadRules, onSave }: RuleSetti
   };
 
   return (
-    <div>
-      <h1>{isCardScope ? 'Налаштування правил — для картки' : 'Налаштування правил'}</h1>
+    <div className="mx-auto flex w-full max-w-md flex-col gap-6 px-4 py-6">
+      <h1 className="font-display text-xl font-bold leading-relaxed text-ink">
+        {isCardScope ? 'Налаштування правил — для картки' : 'Налаштування правил'}
+      </h1>
 
-      <label>
-        <input type="checkbox" checked={isCardScope} onChange={handleToggleCardScope} />
-        Перевизначити для конкретної картки
-      </label>
+      <div className="flex flex-col gap-3">
+        <label className="flex items-center gap-2 text-sm font-medium text-ink">
+          <input
+            type="checkbox"
+            checked={isCardScope}
+            onChange={handleToggleCardScope}
+            className="h-4 w-4 accent-ink"
+          />
+          Перевизначити для конкретної картки
+        </label>
 
-      {isCardScope && (
-        <select aria-label="Картка" value={scopeCardId ?? ''} onChange={(event) => handleCardChange(event.target.value)}>
-          {targetCards.map((card) => (
-            <option key={card.cardId} value={card.cardId}>
-              {card.cardTitle}
-            </option>
-          ))}
-        </select>
-      )}
+        {isCardScope && (
+          <select
+            aria-label="Картка"
+            value={scopeCardId ?? ''}
+            onChange={(event) => handleCardChange(event.target.value)}
+            className="rounded-control border border-border bg-surface-solid px-3.5 py-2.5 text-sm font-medium text-ink focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
+          >
+            {targetCards.map((card) => (
+              <option key={card.cardId} value={card.cardId}>
+                {card.cardTitle}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
 
       {rules.length === 0 && (
         <EmptyState
@@ -329,17 +349,21 @@ export function RuleSettingsScreen({ targetCards, loadRules, onSave }: RuleSetti
         />
       )}
 
-      <fieldset>
-        <legend>Готові категорії</legend>
+      <fieldset className="flex flex-col gap-2.5 rounded-card border border-border bg-surface p-4 shadow-soft backdrop-blur-xl">
+        <legend className="px-1 text-sm font-bold text-ink">Готові категорії</legend>
         {CATEGORY_OPTIONS.map((option) => {
           const isActive = existingCategories.has(option.value);
           return (
-            <label key={option.value}>
+            <label
+              key={option.value}
+              className={`flex items-center gap-2 text-sm ${isActive ? 'text-ink-muted' : 'text-ink'}`}
+            >
               <input
                 type="checkbox"
                 checked={isActive || selectedCategories.has(option.value)}
                 disabled={isActive}
                 onChange={() => toggleCategory(option.value)}
+                className="h-4 w-4 accent-ink disabled:cursor-not-allowed"
               />
               {option.label}
             </label>
@@ -357,7 +381,9 @@ export function RuleSettingsScreen({ targetCards, loadRules, onSave }: RuleSetti
 
       <Button label="Зберегти" onClick={handleSave} disabled={saving} />
 
-      {isCardScope && <p>Діє лише на цій картці, глобальне лишається чинним для решти</p>}
+      {isCardScope && (
+        <p className="text-xs italic text-ink-muted">Діє лише на цій картці, глобальне лишається чинним для решти</p>
+      )}
 
       {banner !== null && <Banner variant={banner.variant} text={banner.text} />}
     </div>

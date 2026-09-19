@@ -34,7 +34,6 @@ import {
   closeActiveLayoutPositionForCard,
   findStructureByOwner,
   insertLayoutPosition,
-  listActiveLayoutPositionsByOwner,
 } from '../src/structure/infra/postgres-repo';
 import { recordCardRenameEvent } from '../src/structure/infra/history-repo';
 import { defaultPositionForNewCard } from '../src/structure/domain/layout';
@@ -44,7 +43,7 @@ import { defaultPositionForNewCard } from '../src/structure/domain/layout';
 // застосунку. Той самий клас дефекту, що A2/B5 вище.
 import * as structureHandlers from '../src/structure/ports/structure-handlers';
 import * as layoutHandlers from '../src/structure/ports/layout-handlers';
-import { LayoutValidationError } from '../src/structure/domain/layout';
+import * as connectionHandlers from '../src/structure/ports/connection-handlers';
 // T29 -- порти фічі `agent` (contracts/openapi.yaml). Той самий урок, що
 // MUST-FIX 1 вище: написані й покриті тестами порти лишаються 404, якщо їх
 // тут ніхто не монтує -- server/app.test.ts нижче пінить КОЖЕН із 9 шляхів.
@@ -55,6 +54,12 @@ import * as reportsHandlers from '../src/agent/ports/reports-handler';
 import * as onboardingHandlers from '../src/agent/ports/onboarding-handler';
 import * as accountHandlers from '../src/agent/ports/account-handler';
 import * as syncResourceHandlers from '../src/agent/ports/sync-resource-handler';
+// "Лог дій" (заміна UI "Звіти активності", Андрій: "тупо пишемо кожну дію --
+// час, дія, все.") -- action-log-handler.ts (GET), record-action.ts (запис,
+// injected DI-параметр в use-case-и трьох фіч нижче, той самий стиль, що
+// closeActiveLayoutPositionForCard/recordCardRenameEvent вище).
+import * as actionLogHandlers from '../src/agent/ports/action-log-handler';
+import type { RecordAction } from '../src/agent/app/record-action';
 import type { AskClaude } from '../src/agent/infra/claude-client';
 import type { EmailTransport } from '../src/agent/infra/email-client';
 // AC-20 wiring (review finding, docs/features/agent/spec.md AC-20): the
@@ -149,6 +154,14 @@ export interface AppDeps {
    * `chatHandlers.createMessage` call below (AC-20b, chat-initiated).
    */
   developerEmail?: string;
+  /**
+   * "Лог дій" -- опційний, той самий optional-DI підхід, що всі колаборатори
+   * вище (closeStructurePosition/callClaude/askClaude/emailTransport):
+   * server/index.ts підставляє реальну ../src/agent/app/record-action.ts's
+   * `recordAction` один раз тут; юніт-тести цього файлу (noopDeps) її не
+   * задають, тож жоден наявний тест не отримує зайвого запиту до `db.query`.
+   */
+  recordAction?: RecordAction;
 }
 
 /** req розширюється ownerUserId (з JWT sub) -- кладе authMiddleware, читають хендлери-обгортки нижче. */
@@ -166,10 +179,9 @@ function asyncHandler(
 }
 
 /**
- * AC-09 -- нова картка одразу отримує клітинку за замовчуванням (review
- * 2026-09-11, MUST-FIX 6: `defaultPositionForNewCard` і `insertLayoutPosition`
- * існували й були покриті тестами, але жоден рядок production-коду їх не
- * викликав, тож нова картка не отримувала клітинки НІКОЛИ).
+ * AC-09 -- нова картка одразу отримує позицію (у купці нерозкладених,
+ * D-131-наступне рішення: вільне полотно прибрало "наступну вільну
+ * клітинку" -- defaultPositionForNewCard тепер завжди {x: null, y: null}).
  *
  * Живе тут, у composition root -- ЄДИНОМУ місці, де life-area-card і structure
  * зустрічаються (ADR-0004: life-area-card нічого не імпортує з structure/
@@ -178,12 +190,12 @@ function asyncHandler(
  * `db` приходить параметром і це ТОЙ САМИЙ db, у якому щойно вставилась сама
  * картка -- тобто та сама транзакція (deps.withTransaction у маршруті нижче):
  * збій тут відкочує й INSERT картки, інакше AC-09 виконано наполовину (картка
- * є, клітинки немає). Помилка навмисно НЕ глушиться.
+ * є, позиції немає). Помилка навмисно НЕ глушиться.
  *
  * Структури ще немає (перший вхід -- вона провісниться лениво на першому
  * GET /structure, ports/structure-handlers.ts) -- тихо нічого не робимо: це не
- * помилка, картка просто чекатиме в треї нерозкладених, щойно Структура
- * з'явиться (AC-17 описує рівно такий стан "картка без клітинки").
+ * помилка, картка просто чекатиме в купці нерозкладених, щойно Структура
+ * з'явиться (AC-17 описує рівно такий стан "картка без позиції").
  */
 async function assignDefaultLayoutPosition(db: Db, ownerUserId: string, cardId: string): Promise<void> {
   const structure = await findStructureByOwner(db, ownerUserId);
@@ -191,14 +203,14 @@ async function assignDefaultLayoutPosition(db: Db, ownerUserId: string, cardId: 
     return;
   }
 
-  const existing = await listActiveLayoutPositionsByOwner(db, ownerUserId);
-  const { cellIndex } = defaultPositionForNewCard(existing, structure.layoutMode);
+  const { x, y } = defaultPositionForNewCard();
 
   await insertLayoutPosition(db, {
     id: crypto.randomUUID(),
     structureId: structure.id,
     cardId,
-    cellIndex,
+    x,
+    y,
   });
 }
 
@@ -318,7 +330,7 @@ export function createApp(deps: AppDeps): express.Express {
       // ЩОЙНО порт отримає параметр -- виклик має переїхати туди, а цей рядок
       // зникнути: два місця одночасно присвоять клітинку ДВІЧІ.
       const card = await deps.withTransaction(async (txDb) => {
-        const created = await cardHandlers.createCard(txDb, ownerUserId(req), req.body);
+        const created = await cardHandlers.createCard(txDb, ownerUserId(req), req.body, deps.recordAction);
         await assignDefaultLayoutPosition(txDb, ownerUserId(req), created.id);
         return created;
       });
@@ -346,7 +358,7 @@ export function createApp(deps: AppDeps): express.Express {
       // ЄДИНЕ місце, де life-area-card і structure зустрічаються (ADR-0004),
       // той самий приклад, що closeActiveLayoutPositionForCard для DELETE.
       const card = await deps.withTransaction((txDb) =>
-        cardHandlers.updateCard(txDb, ownerUserId(req), param(req, 'cardId'), req.body, recordCardRenameEvent)
+        cardHandlers.updateCard(txDb, ownerUserId(req), param(req, 'cardId'), req.body, recordCardRenameEvent, deps.recordAction)
       );
       res.status(200).json(card);
     })
@@ -360,7 +372,7 @@ export function createApp(deps: AppDeps): express.Express {
       // ОДНІЙ транзакції через txDb, і closeStructurePosition реально
       // переданий (раніше -- ніколи, тому D-69/D-103 не діяв у production).
       const card = await deps.withTransaction((txDb) =>
-        cardHandlers.archiveCard(txDb, ownerUserId(req), param(req, 'cardId'), closeActiveLayoutPositionForCard)
+        cardHandlers.archiveCard(txDb, ownerUserId(req), param(req, 'cardId'), closeActiveLayoutPositionForCard, deps.recordAction)
       );
       res.status(200).json(card);
     })
@@ -372,7 +384,9 @@ export function createApp(deps: AppDeps): express.Express {
       // Review 2026-09-07, post-ship follow-up review (B5 remainder): дзеркало
       // archiveCard -- updateCard(status:'active') + insertLifecycleEvent
       // ('restored') в одній транзакції, той самий ризик "напівзробленого стану".
-      const card = await deps.withTransaction((txDb) => cardHandlers.restoreCard(txDb, ownerUserId(req), param(req, 'cardId')));
+      const card = await deps.withTransaction((txDb) =>
+        cardHandlers.restoreCard(txDb, ownerUserId(req), param(req, 'cardId'), deps.recordAction)
+      );
       res.status(200).json(card);
     })
   );
@@ -390,7 +404,13 @@ export function createApp(deps: AppDeps): express.Express {
   app.post(
     '/api/v1/cards/:cardId/metric-blocks',
     asyncHandler(async (req, res) => {
-      const block = await metricBlockHandlers.createMetricBlock(deps.db, ownerUserId(req), param(req, 'cardId'), req.body);
+      const block = await metricBlockHandlers.createMetricBlock(
+        deps.db,
+        ownerUserId(req),
+        param(req, 'cardId'),
+        req.body,
+        deps.recordAction
+      );
       res.status(201).json(block);
     })
   );
@@ -404,7 +424,26 @@ export function createApp(deps: AppDeps): express.Express {
       // без транзакції відмова другого запису лишила б блок на новій картці,
       // а його записи -- на старій.
       const block = await deps.withTransaction((txDb) =>
-        metricBlockHandlers.transferMetricBlock(txDb, ownerUserId(req), param(req, 'cardId'), req.body)
+        metricBlockHandlers.transferMetricBlock(txDb, ownerUserId(req), param(req, 'cardId'), req.body, deps.recordAction)
+      );
+      res.status(200).json(block);
+    })
+  );
+
+  app.delete(
+    '/api/v1/cards/:cardId/metric-blocks/:metricBlockId',
+    asyncHandler(async (req, res) => {
+      // US-17/AC-20 (D-127): мʼяка архівація ОДНОГО блоку-метрики -- один
+      // UPDATE, без другого запису (на відміну від archiveCard, яка в тій
+      // самій транзакції ще й пише card_lifecycle_event і закриває позицію
+      // Структури) -- жодного cross-feature side-effect тут немає, тож
+      // withTransaction не потрібен.
+      const block = await metricBlockHandlers.archiveMetricBlock(
+        deps.db,
+        ownerUserId(req),
+        param(req, 'cardId'),
+        param(req, 'metricBlockId'),
+        deps.recordAction
       );
       res.status(200).json(block);
     })
@@ -421,7 +460,14 @@ export function createApp(deps: AppDeps): express.Express {
       // конфліктну -- досі 'confirmed', тобто AC-06 (обидва pending) мовчки
       // порушено.
       const entry = await deps.withTransaction((txDb) =>
-        entryHandlers.createEntry(txDb, ownerUserId(req), param(req, 'cardId'), param(req, 'metricBlockId'), req.body)
+        entryHandlers.createEntry(
+          txDb,
+          ownerUserId(req),
+          param(req, 'cardId'),
+          param(req, 'metricBlockId'),
+          req.body,
+          deps.recordAction
+        )
       );
       res.status(201).json(entry);
     })
@@ -430,7 +476,7 @@ export function createApp(deps: AppDeps): express.Express {
   app.patch(
     '/api/v1/entries/:entryId',
     asyncHandler(async (req, res) => {
-      const entry = await entryHandlers.resolveEntry(deps.db, ownerUserId(req), param(req, 'entryId'), req.body);
+      const entry = await entryHandlers.resolveEntry(deps.db, ownerUserId(req), param(req, 'entryId'), req.body, deps.recordAction);
       res.status(200).json(entry);
     })
   );
@@ -474,7 +520,7 @@ export function createApp(deps: AppDeps): express.Express {
       // лишив би режим уже новим, а частину карток -- у старих клітинках: той
       // самий клас бага, що createCard/archiveCard вище вже закрили.
       const structure = await deps.withTransaction((txDb) =>
-        structureHandlers.updateStructure(txDb, ownerUserId(req), req.body)
+        structureHandlers.updateStructure(txDb, ownerUserId(req), req.body, deps.recordAction)
       );
       res.status(200).json(structure);
     })
@@ -512,7 +558,7 @@ export function createApp(deps: AppDeps): express.Express {
       // переїхала, а історія про це не знає (і тренд AC-07 рахується по
       // неповному логу).
       const position = await deps.withTransaction((txDb) =>
-        layoutHandlers.moveCardPosition(txDb, ownerUserId(req), param(req, 'cardId'), req.body)
+        layoutHandlers.moveCardPosition(txDb, ownerUserId(req), param(req, 'cardId'), req.body, deps.recordAction)
       );
       res.status(200).json(position);
     })
@@ -525,9 +571,39 @@ export function createApp(deps: AppDeps): express.Express {
       // метрик на інші картки (AC-12) -- усе в одній транзакції, той самий
       // ризик "напівзакритого напрямку", що DELETE /cards/{id} вище.
       const position = await deps.withTransaction((txDb) =>
-        layoutHandlers.closeCardPosition(txDb, ownerUserId(req), param(req, 'cardId'), req.body)
+        layoutHandlers.closeCardPosition(txDb, ownerUserId(req), param(req, 'cardId'), req.body, deps.recordAction)
       );
       res.status(200).json(position);
+    })
+  );
+
+  // --- Structure connections (вимоги 4/5, чат 2026-09-15) -------------------
+  //
+  // Інструмент "Зв'язати" на Схемі -- звичайна лінія чи стрілка між двома
+  // картками власника. Той самий транспортний шаблон, що секції Cards/
+  // Structure вище.
+
+  app.get(
+    '/api/v1/structure/connections',
+    asyncHandler(async (req, res) => {
+      const items = await connectionHandlers.listConnections(deps.db, ownerUserId(req));
+      res.status(200).json(items);
+    })
+  );
+
+  app.post(
+    '/api/v1/structure/connections',
+    asyncHandler(async (req, res) => {
+      const created = await connectionHandlers.createConnection(deps.db, ownerUserId(req), req.body, deps.recordAction);
+      res.status(201).json(created);
+    })
+  );
+
+  app.delete(
+    '/api/v1/structure/connections/:connectionId',
+    asyncHandler(async (req, res) => {
+      await connectionHandlers.deleteConnection(deps.db, ownerUserId(req), param(req, 'connectionId'), deps.recordAction);
+      res.status(204).end();
     })
   );
 
@@ -582,6 +658,7 @@ export function createApp(deps: AppDeps): express.Express {
       const turn = await chatHandlers.createMessage(deps.db, deps.askClaude, ownerUserId(req), req.body, {
         transport: deps.emailTransport,
         developerEmail: deps.developerEmail,
+        recordAction: deps.recordAction,
       });
       res.status(201).json(turn);
     })
@@ -610,7 +687,7 @@ export function createApp(deps: AppDeps): express.Express {
       // передається далі, симетрично life-area-card's entry-handlers.ts
       // createEntry.
       const proposal = await deps.withTransaction((txDb) =>
-        proposalHandlers.confirmProposal(txDb, ownerUserId(req), param(req, 'proposalId'))
+        proposalHandlers.confirmProposal(txDb, ownerUserId(req), param(req, 'proposalId'), deps.recordAction)
       );
       res.status(200).json(proposal);
     })
@@ -647,6 +724,23 @@ export function createApp(deps: AppDeps): express.Express {
       };
       const page = await reportsHandlers.listReports(deps.db, ownerUserId(req), {
         periodType,
+        after,
+        limit: limit !== undefined ? Number(limit) : undefined,
+      });
+      res.status(200).json(page);
+    })
+  );
+
+  // "Лог дій" -- заміна UI "Звіти активності" (Андрій: "тупо пишемо кожну
+  // дію -- час, дія, все."). GET /reports (agent-worker's періодичні звіти)
+  // лишається окремим, незачепленим ендпоінтом вище -- backend-механізм
+  // лишається, лише більше не показаний через UI (LogScreen.tsx замінив
+  // ReportsScreen.tsx у навігації, той самий слот меню шестерні, D-123).
+  app.get(
+    '/api/v1/action-log',
+    asyncHandler(async (req, res) => {
+      const { after, limit } = req.query as { after?: string; limit?: string };
+      const page = await actionLogHandlers.listActionLog(deps.db, ownerUserId(req), {
         after,
         limit: limit !== undefined ? Number(limit) : undefined,
       });
@@ -728,25 +822,15 @@ export function createApp(deps: AppDeps): express.Express {
       res.status(422).json({ code: err.code, message: err.message });
       return;
     }
-    // Review 2026-09-11 (Частина 2): те саме для домену Структури --
-    // LayoutValidationError (src/structure/domain/layout.ts) теж навмисно НЕ
-    // AppError. До цього фіксу будь-яка доменна помилка розкладки падала в
-    // generic 500 нижче: зокрема PATCH /structure зі зміною підвиду "за
-    // логікою" на структурі, що вже не в режимі 'logic' (switchLogicVariant),
-    // хоча контракт документує тут 422.
-    //
-    // На відміну від card-домену, LayoutValidationError поки не несе власного
-    // `code` (його додання -- зміна domain/layout.ts, поза скоупом цього
-    // фіксу), а єдина така помилка, що реально доходить до транспорту, -- саме
-    // інваріант AC-16 "підвид лише в режимі logic": колізію клітинки
-    // (assertCellAvailable) app/move-card.ts уже перегортає в AppError 409 до
-    // того, як вона сюди дійде. Тому код нижче -- контрактний
-    // structure.logic_variant_requires_logic_mode; щойно домен почне нести
-    // власний `code`, ця гілка мусить пропускати його, як робить гілка вище.
-    if (err instanceof LayoutValidationError) {
-      res.status(422).json({ code: 'structure.logic_variant_requires_logic_mode', message: err.message });
-      return;
-    }
+    // Review 2026-09-11 (Частина 2), знято вимогами 14/15 (плоска модель
+    // layoutMode, logicVariant прибраний), і знову D-131-наступним рішенням
+    // (2026-09-15, вільне полотно): domain/layout.ts більше не кидає жодної
+    // власної помилки взагалі (LayoutValidationError і assertCellAvailable,
+    // разом із колізією клітинки AC-02, прибрані повністю -- вільне
+    // позиціювання не має інваріанту, який варто було б перевіряти тут).
+    // Якщо колись знову з'явиться доменна помилка розкладки -- гілка
+    // повертається як AppError-обгортка в самому use-case (той самий підхід,
+    // що app/move-card.ts застосовує для інших кодів), а не тут генерично.
     // Review 2026-09-07, post-ship follow-up review ("Express 5 req.body ->
     // 500"): T50 handled req.body===undefined, але зіпсований JSON
     // (entity.parse.failed) чи завеликий (entity.too.large) -- окрема

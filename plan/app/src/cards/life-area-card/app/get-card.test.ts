@@ -37,6 +37,7 @@ function metricBlockRow(
     target_count: overrides.targetCount === undefined ? '12' : overrides.targetCount === null ? null : String(overrides.targetCount),
     is_ongoing: overrides.isOngoing ?? false,
     target_date: null,
+    status: 'active',
     created_at: new Date('2026-01-01T00:00:00Z'),
     updated_at: new Date('2026-01-01T00:00:00Z'),
   };

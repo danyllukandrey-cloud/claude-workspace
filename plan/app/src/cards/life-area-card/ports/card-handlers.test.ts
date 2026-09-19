@@ -209,6 +209,7 @@ function metricBlockRow(overrides: Partial<{ id: string; targetCount: number | n
     target_count: overrides.targetCount === undefined ? '10' : overrides.targetCount === null ? null : String(overrides.targetCount),
     is_ongoing: false,
     target_date: null,
+    status: 'active',
     created_at: new Date('2026-01-01T00:00:00Z'),
     updated_at: new Date('2026-01-01T00:00:00Z'),
   };

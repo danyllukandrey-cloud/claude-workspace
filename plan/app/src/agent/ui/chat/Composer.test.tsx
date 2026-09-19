@@ -49,6 +49,21 @@ test('Composer не дозволяє надіслати порожнє пові�
   expect(onSend).not.toHaveBeenCalled();
 });
 
+test('Composer надсилає повідомлення при сабміті форми (D-121, живе тестування -- Enter у реальному браузері) -- не лише при кліку', () => {
+  const onSend = vi.fn();
+  render(<Composer onSend={onSend} />);
+
+  const input = screen.getByLabelText('Повідомлення');
+  fireEvent.change(input, { target: { value: 'пробіг 5 км' } });
+  // jsdom не реалізує неявний сабміт форми по Enter (браузерна дефолтна
+  // поведінка) -- перевіряємо сам механізм, на якому вона тримається: рядок
+  // значків -- справжній <form>, submit має викликати onSend так само, як клік.
+  fireEvent.submit(input.closest('form')!);
+
+  expect(onSend).toHaveBeenCalledTimes(1);
+  expect(onSend).toHaveBeenCalledWith({ content: 'пробіг 5 км', attachment: null });
+});
+
 test('Composer очищує поля після успішного надсилання', () => {
   const onSend = vi.fn();
   render(<Composer onSend={onSend} />);

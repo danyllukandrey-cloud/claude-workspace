@@ -21,15 +21,17 @@ updated_at: "2026-08-27"
 
 ### SCR-01 — Чат
 
+> ⚠️ **Каркас застарів 2026-09-14 ([D-121](../../DECISIONS.md#d-121)).** Чат більше НЕ окремий повноекранний напрямок — постійна панель, прикріплена внизу застосунку на всіх напрямках одночасно. Каркас/розташування — [`docs/app-shell.md`](../../app-shell.md) (правило єдиного джерела, не дублюється тут). Таблиця станів нижче лишається чинною — це внутрішні стани самого чату (default/loading/proposal-pending/…), не змінені D-121, лише контейнер навколо них. Wireframe-и нижче — історичний запис "чат як повноекранний напрямок", не поточна верстка (поточна — `docs/app-shell.md` §"Чат-панель"; композер тепер значки, не текстові підписи).
+
 | State | Trigger / condition | Components (from the inventory) | Source-ref |
 |---|---|---|---|
-| default | історія повідомлень завантажена, композер готовий | `NEW: MessageList`, `NEW: Composer` | wireframe нижче |
-| empty-onboarding | перша сесія, повідомлень ще немає (AC-13) | `NEW: MessageBubble` (вітання агента), `NEW: Composer` | wireframe нижче |
+| default | історія повідомлень завантажена, композер готовий | `NEW: MessageList`, `NEW: Composer` | wireframe нижче (історичний) |
+| empty-onboarding | перша сесія, повідомлень ще немає (AC-13) | `NEW: MessageBubble` (вітання агента), `NEW: Composer` | wireframe нижче (історичний) |
 | loading | початковий `GET /messages` | `Spinner` (pending, за структурою) | — |
-| proposal-pending | агент сформував пропозицію, чекає підтвердження (AC-01/AC-02/AC-10) | `NEW: MessageList`, `NEW: ProposalCard`, `Button` | wireframe нижче |
+| proposal-pending | агент сформував пропозицію, чекає підтвердження (AC-01/AC-02/AC-10) | `NEW: MessageList`, `NEW: ProposalCard`, `Button` | wireframe нижче (історичний) |
 | confirmed | щойно підтверджено, короткий фідбек (AC-02) | `NEW: MessageBubble`, `Banner` (pending, за структурою) | — |
-| confirmed-hint | те саме, плюс дисмісибл-підказка над `Composer` — перший показ після дії, ще не закрита (AC-16/AC-16b) | `NEW: MessageBubble`, `Banner`, `NEW: HintBubble` | wireframe нижче |
-| clarifying | агент ставить уточнююче питання/пояснює, без пропозиції (AC-04, AC-05, AC-14 конфлікт) | `NEW: MessageBubble` | wireframe нижче |
+| confirmed-hint | те саме, плюс дисмісибл-підказка над `Composer` — перший показ після дії, ще не закрита (AC-16/AC-16b) | `NEW: MessageBubble`, `Banner`, `NEW: HintBubble` | wireframe нижче (історичний) |
+| clarifying | агент ставить уточнююче питання/пояснює, без пропозиції (AC-04, AC-05, AC-14 конфлікт) | `NEW: MessageBubble` | wireframe нижче (історичний) |
 | attachment-error | `422 agent.attachment_unrecognized` (AC-10b) | `Banner` | — |
 | rate-limited | `429 agent.rate_limited` (§8 SAD) | `Banner` | — |
 | llm-unavailable | `503 agent.llm_unavailable`, `sad.md §6` Flow 2 — без retry, текст не втрачено | `Banner` | — |

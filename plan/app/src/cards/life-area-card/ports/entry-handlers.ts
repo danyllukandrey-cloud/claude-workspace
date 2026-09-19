@@ -43,6 +43,7 @@
 import {
   createEntry as createEntryUseCase,
   type CreateEntryInput,
+  type RecordAction,
 } from '../app/create-entry';
 import { resolveEntry as resolveEntryUseCase, type EntryResolutionStatus } from '../app/resolve-entry';
 import { findCardById, listEntriesByCard } from '../infra/postgres-repo';
@@ -107,7 +108,8 @@ export async function createEntry(
   ownerUserId: string,
   cardId: string,
   metricBlockId: string,
-  body: CreateEntryBody
+  body: CreateEntryBody,
+  recordAction?: RecordAction
 ): Promise<EntryResponse> {
   const input: CreateEntryInput = {
     ownerUserId,
@@ -120,7 +122,7 @@ export async function createEntry(
     // EntryCreate -- сервер підставляє момент прийому запиту.
     recordedAt: Date.now(),
   };
-  const record = await createEntryUseCase(db, input);
+  const record = await createEntryUseCase(db, input, recordAction);
   return toEntryResponse(record);
 }
 
@@ -134,8 +136,14 @@ export interface ResolveEntryBody {
  * визначення власної картки запису робить use-case (T19, ISS-32) -- контракт
  * навмисно НЕ передає cardId, лише entryId + status.
  */
-export async function resolveEntry(db: Db, ownerUserId: string, entryId: string, body: ResolveEntryBody): Promise<EntryResponse> {
-  const record = await resolveEntryUseCase(db, { ownerUserId, entryId, status: body.status });
+export async function resolveEntry(
+  db: Db,
+  ownerUserId: string,
+  entryId: string,
+  body: ResolveEntryBody,
+  recordAction?: RecordAction
+): Promise<EntryResponse> {
+  const record = await resolveEntryUseCase(db, { ownerUserId, entryId, status: body.status }, recordAction);
   return toEntryResponse(record);
 }
 

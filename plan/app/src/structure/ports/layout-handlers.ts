@@ -14,13 +14,15 @@
 // AC-07: getLayoutHistoryAsOf реконструює розкладку "на момент часу" з
 // structure_history_event -- validate-first (structure.invalid_as_of, 422)
 // ДО будь-якого запиту в базу, той самий підхід, що structure-handlers.ts's
-// updateStructure, і той самий "cell_index -> N" `detail`-формат, що
-// ../app/get-analytics.ts вже парсить.
+// updateStructure. Вільне полотно (D-131-наступне рішення): `detail`-формат
+// тепер "pos_x -> N, pos_y -> M, prev_x -> ..., prev_y -> ..." (../app/move-card.ts
+// formatMovedDetail), той самий, що ../../app/main.tsx's loadAnalytics читає
+// для тренду розриву (AC-07).
 
 import { listActiveLayoutPositionsByOwner, findStructureByOwner } from '../infra/postgres-repo';
 import type { Db, LayoutPositionRecord, LayoutPositionStatusRow } from '../infra/postgres-repo';
 import { findHistoryEventsAsOf, type HistoryEventRecord } from '../infra/history-repo';
-import { moveCard } from '../app/move-card';
+import { moveCard, type RecordAction } from '../app/move-card';
 import { closeCard, type CloseCardMetricTransfer } from '../app/close-card';
 import { AppError } from '../../shared/errors';
 
@@ -28,7 +30,8 @@ import { AppError } from '../../shared/errors';
 
 export interface LayoutPositionDto {
   cardId: string;
-  cellIndex: number;
+  x: number | null;
+  y: number | null;
   status: LayoutPositionStatusRow;
   positionUpdatedAt: string;
 }
@@ -43,7 +46,8 @@ export interface LayoutPositionPageDto {
 function toLayoutPositionDto(record: LayoutPositionRecord): LayoutPositionDto {
   return {
     cardId: record.cardId,
-    cellIndex: record.cellIndex,
+    x: record.x,
+    y: record.y,
     status: record.status,
     positionUpdatedAt: record.positionUpdatedAt.toISOString(),
   };
@@ -117,11 +121,18 @@ export async function listLayoutPositions(
 
 // --- getLayoutHistoryAsOf -- GET /api/v1/structure/layout/history ----------
 
-/** Parses the only `detail` shape currently in use: "cell_index -> N" (../app/get-analytics.ts). */
-function parsePastCellIndex(detail: string | null): number | null {
-  if (!detail) return null;
-  const match = detail.match(/cell_index\s*->\s*(-?\d+)/);
-  return match ? Number(match[1]) : null;
+/**
+ * Parses the `detail` shape ../app/move-card.ts's formatMovedDetail writes:
+ * "pos_x -> N, pos_y -> M, prev_x -> ..., prev_y -> ...". `pos_x`/`pos_y` are
+ * NOT substrings of each other (unlike the old `cell_index`/`from_cell_index`
+ * pair) -- no token-order trap here, either regex finds its own token
+ * directly, first match is always the right one.
+ */
+function parsePastPosition(detail: string | null): { x: number | null; y: number | null } {
+  if (!detail) return { x: null, y: null };
+  const x = detail.match(/pos_x\s*->\s*(-?\d+(?:\.\d+)?)/);
+  const y = detail.match(/pos_y\s*->\s*(-?\d+(?:\.\d+)?)/);
+  return { x: x ? Number(x[1]) : null, y: y ? Number(y[1]) : null };
 }
 
 /**
@@ -169,11 +180,16 @@ export async function getLayoutHistoryAsOf(
 
   const items: LayoutPositionDto[] = [];
   for (const [cardId, event] of latestMovedByCard) {
-    const cellIndex = parsePastCellIndex(event.detail);
-    if (cellIndex === null) continue;
+    const { x, y } = parsePastPosition(event.detail);
+    // x/y завжди приходять разом (постгре-репо коментар: "x/y завжди
+    // приходять разом... викликач гарантує пару") -- перевіряємо ОБИДВА,
+    // не лише x, інакше зіпсований чи майбутній формат detail міг би
+    // пропустити напівпорожню {x: N, y: null} позицію в DTO.
+    if (x === null || y === null) continue;
     items.push({
       cardId,
-      cellIndex,
+      x,
+      y,
       status: 'active',
       positionUpdatedAt: event.occurredAt.toISOString(),
     });
@@ -185,7 +201,8 @@ export async function getLayoutHistoryAsOf(
 // --- moveCardPosition -- PUT /api/v1/structure/layout/{cardId} (T17) -------
 
 export interface MoveCardPositionBody {
-  cellIndex: number;
+  x: number;
+  y: number;
   positionUpdatedAt: string;
 }
 
@@ -193,21 +210,28 @@ export interface MoveCardPositionBody {
  * Тонка обгортка над app/move-card.ts's `moveCard` (T12, вже done) --
  * порт лише мапить `LayoutPositionRecord` у той самий `LayoutPositionDto`,
  * що вже виробляє `listLayoutPositions`, і пропускає `AppError`
- * (structure.card_not_found 404, structure.cell_occupied 409) як є --
- * жодного іншого статусу порт не додає (DoD).
+ * (structure.card_not_found 404) як є -- жодного іншого статусу порт не
+ * додає (DoD). `structure.cell_occupied` (409) скасовано разом із
+ * клітинками (D-132) -- вільне полотно дозволяє карткам перекриватись.
  */
 export async function moveCardPosition(
   db: Db,
   ownerUserId: string,
   cardId: string,
-  body: MoveCardPositionBody
+  body: MoveCardPositionBody,
+  recordAction?: RecordAction
 ): Promise<LayoutPositionDto> {
-  const moved = await moveCard(db, {
-    ownerUserId,
-    cardId,
-    cellIndex: body.cellIndex,
-    positionUpdatedAt: body.positionUpdatedAt,
-  });
+  const moved = await moveCard(
+    db,
+    {
+      ownerUserId,
+      cardId,
+      x: body.x,
+      y: body.y,
+      positionUpdatedAt: body.positionUpdatedAt,
+    },
+    recordAction
+  );
   return toLayoutPositionDto(moved);
 }
 
@@ -231,7 +255,8 @@ export async function closeCardPosition(
   db: Db,
   ownerUserId: string,
   cardId: string,
-  body: CloseCardPositionBody = {}
+  body: CloseCardPositionBody = {},
+  recordAction?: RecordAction
 ): Promise<LayoutPositionDto> {
   const activePositions = await listActiveLayoutPositionsByOwner(db, ownerUserId);
   const current = activePositions.find((position) => position.cardId === cardId);
@@ -240,7 +265,7 @@ export async function closeCardPosition(
   }
 
   try {
-    await closeCard(db, { ownerUserId, cardId, metricTransfers: body.metricTransfers ?? [] });
+    await closeCard(db, { ownerUserId, cardId, metricTransfers: body.metricTransfers ?? [] }, recordAction);
   } catch (error) {
     if (error instanceof AppError && error.code === 'card.not_found') {
       throw new AppError('structure.metric_transfer_target_invalid', error.message, 422);
@@ -250,7 +275,8 @@ export async function closeCardPosition(
 
   return {
     cardId: current.cardId,
-    cellIndex: current.cellIndex,
+    x: current.x,
+    y: current.y,
     status: 'closed',
     positionUpdatedAt: new Date().toISOString(),
   };

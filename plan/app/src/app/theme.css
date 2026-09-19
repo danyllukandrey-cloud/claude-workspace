@@ -1,0 +1,92 @@
+/* Дизайн-токени проєкту ПЛАН (docs/design-system.md, D-120, оновлено --
+ * фірмовий оранжевий колір прибрано повністю).
+ *
+ * Tailwind CSS v4 -- на відміну від v3, тут нема файлу `tailwind.config.ts`:
+ * токени (кольори/шрифт/тінь/радіус) задаються прямо тут, у блоці `@theme`,
+ * як CSS-змінні. Tailwind сам генерує з них класи (--color-ink ->
+ * bg-ink/text-ink/border-ink, --font-display -> font-display,
+ * --shadow-soft -> shadow-soft, --radius-card -> rounded-card).
+ * `docs/design-system.md` посилається саме на ЦЕЙ файл, не на
+ * `tailwind.config.ts` (D-46 -- стара назва була для Tailwind v3).
+ *
+ * Джерело значень -- узгоджений з Андрієм зразок (D-120), оновлено: світла й
+ * темна тема, "сфумато" (розмита кольорова підкладка) під матовими картками,
+ * БЕЗ жодного фірмового кольору-заливки -- кнопки й межі тепер прозорі з
+ * рамкою (border/ink), текст лише чорний/білий (--color-ink за темою), і
+ * ОКРЕМА "мова" кольору -- світлофор (червоний/жовтий/зелений, глянцевий)
+ * лише для статусу виміру -- лишається незмінною. Перемикання світла/темна --
+ * автоматичне, за системною темою пристрою (prefers-color-scheme) -- ручного
+ * перемикача в застосунку поки нема, не робимо наперед (YAGNI), доки хтось
+ * не попросить.
+ */
+@import 'tailwindcss';
+
+@theme {
+  /* Шрифти -- обидва читають кирилицю (Google Fonts, підключено в index.html) */
+  --font-sans: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Sora', ui-sans-serif, system-ui, sans-serif;
+
+  /* Радіус -- м'які заокруглені форми (не типова Tailwind-шкала) */
+  --radius-card: 28px;
+  --radius-control: 14px;
+
+  /* Кольори -- значення нижче це СВІТЛА тема (значення за замовчуванням);
+     темна перевизначає ті самі CSS-змінні нижче під prefers-color-scheme. */
+  --color-bg: #f6f3ef;
+  --color-blob-a: #e3ecfb;
+  --color-blob-b: #fbe7da;
+  --color-blob-c: #f0e6f7;
+  --color-surface: rgba(255, 255, 255, 0.66);
+  --color-surface-solid: #ffffff;
+  --color-border: rgba(42, 38, 32, 0.08);
+  --color-ink: #2a2622;
+  --color-ink-muted: #7a7168;
+  --color-ink-faint: #a79e93;
+  --color-good: #2fae66;
+  --color-warn: #db9a2e;
+  --color-bad: #dd5044;
+
+  /* Тіні -- матова поверхня: розсіяна, без відблиску */
+  --shadow-soft: 0 18px 40px -20px rgba(60, 45, 30, 0.28);
+  --shadow-btn: 0 1px 2px rgba(42, 38, 32, 0.18);
+}
+
+/* Темна тема -- ті самі імена змінних, нові значення (Tailwind-класи,
+   згенеровані з @theme вище, читають var() і підхоплюють це самі). */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #14110d;
+    --color-blob-a: rgba(255, 140, 76, 0.16);
+    --color-blob-b: rgba(140, 120, 210, 0.1);
+    --color-blob-c: rgba(255, 90, 60, 0.08);
+    --color-surface: rgba(255, 247, 238, 0.055);
+    --color-surface-solid: #1f1a15;
+    --color-border: rgba(255, 247, 238, 0.1);
+    --color-ink: #f3ece2;
+    --color-ink-muted: #ab9f91;
+    --color-ink-faint: #786e63;
+    --color-good: #39c97c;
+    --color-warn: #f0b429;
+    --color-bad: #f1584f;
+    --shadow-soft: 0 22px 46px -18px rgba(0, 0, 0, 0.55);
+    --shadow-btn: 0 1px 2px rgba(0, 0, 0, 0.4);
+  }
+}
+
+/* Глянцева "намистина" -- статус виміру (світлофор), НІКОЛИ фірмовий колір.
+   Клас застосовується разом з кольором стану: <div class="chip-gloss bg-good">.
+   Радіальна світлова пляма + внутрішня тінь -- те, чого немає в матовому
+   `shadow-btn`/`shadow-soft` вище. */
+.chip-gloss {
+  background-image: radial-gradient(120% 120% at 30% 24%, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0) 46%);
+  box-shadow:
+    inset 0 -4px 6px rgba(0, 0, 0, 0.28),
+    inset 0 1px 1px rgba(255, 255, 255, 0.55),
+    0 3px 8px rgba(0, 0, 0, 0.22);
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}

@@ -114,10 +114,16 @@ describe('confirmProposal handler (POST /api/v1/proposals/{proposalId}/confirm, 
     // confirmProposal -- ані `recordedAt`, ані `sourceDeviceId` більше не
     // проходять через порт-шар, симетрично entry-handlers.ts createEntry
     // (сервер сам підставляє момент запису в ../app/confirm.ts).
-    expect(confirmProposalUseCase).toHaveBeenCalledWith(db, {
-      userId: USER_ID,
-      proposalId: PROPOSAL_ID,
-    });
+    // Лог дій: recordAction -- 3-й опційний параметр, тут не переданий
+    // (undefined), той самий підхід, що інші опційні DI-колаборатори.
+    expect(confirmProposalUseCase).toHaveBeenCalledWith(
+      db,
+      {
+        userId: USER_ID,
+        proposalId: PROPOSAL_ID,
+      },
+      undefined
+    );
     expect(result).toEqual({
       id: PROPOSAL_ID,
       cardId: 'card-1',

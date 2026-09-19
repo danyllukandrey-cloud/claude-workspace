@@ -146,8 +146,8 @@ export function AccountScreen({
   // loading=true назавжди -- unhandled rejection + вічний спінер).
   if (loadError !== null) {
     return (
-      <div>
-        <h1>Обліковий запис і дані</h1>
+      <div className="flex flex-col gap-4 p-4">
+        <h1 className="font-display text-xl font-bold leading-relaxed text-ink">Обліковий запис і дані</h1>
         <Banner variant="error" text={loadError} />
       </div>
     );
@@ -155,9 +155,9 @@ export function AccountScreen({
 
   if (mode === 'deleted') {
     return (
-      <div>
-        <h1>Обліковий запис і дані</h1>
-        <p>Акаунт видалено. Усі дані видалено назавжди.</p>
+      <div className="flex flex-col gap-2 p-4">
+        <h1 className="font-display text-xl font-bold leading-relaxed text-ink">Обліковий запис і дані</h1>
+        <p className="text-sm italic text-ink-muted">Акаунт видалено. Усі дані видалено назавжди.</p>
       </div>
     );
   }
@@ -252,9 +252,9 @@ export function AccountScreen({
   if (mode === 'confirm-delete') {
     const canDelete = confirmationInput === DELETE_CONFIRMATION_WORD;
     return (
-      <div>
-        <h1>Видалити акаунт і всі дані</h1>
-        <p>
+      <div className="flex flex-col gap-5 p-4">
+        <h1 className="font-display text-xl font-bold leading-relaxed text-ink">Видалити акаунт і всі дані</h1>
+        <p className="text-sm italic text-ink-muted">
           Це незворотно. Усі картки, записи, декларація й пам'ять агента будуть видалені назавжди.
         </p>
 
@@ -264,8 +264,31 @@ export function AccountScreen({
           onChange={setConfirmationInput}
         />
 
-        <Button label="Скасувати" onClick={handleCancelDeleteAccount} />
-        <Button label="Видалити" onClick={handleConfirmDeleteAccount} disabled={!canDelete || deleting} />
+        {/* D-120 (оновлено): справжня незворотна дія -- матовий суцільний bad
+            (той самий стиль, що ConfirmDialog.tsx), не .chip-gloss (глянець
+            лишається лише за світлофором статусу виміру). "Скасувати" --
+            нейтральна другорядна дія (border-border/text-ink), той самий
+            підхід, що кнопка "Скасувати" в ConfirmDialog.tsx -- Button-
+            примітив свідомо має лише один (прозорий з рамкою) варіант, поділ
+            на головну/другорядну дію навмисно лишено кроку стилізації екрана
+            (коментар у Button.tsx). */}
+        <div className="flex flex-wrap justify-end gap-3">
+          <button
+            type="button"
+            onClick={handleCancelDeleteAccount}
+            className="rounded-control border border-border px-4 py-3 text-sm font-bold text-ink transition-colors hover:bg-border"
+          >
+            Скасувати
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirmDeleteAccount}
+            disabled={!canDelete || deleting}
+            className="rounded-control bg-bad px-4 py-3 text-sm font-bold text-ink shadow-btn transition-opacity enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+          >
+            Видалити
+          </button>
+        </div>
 
         {deleteError !== null && <Banner variant="error" text={deleteError} />}
       </div>
@@ -274,8 +297,8 @@ export function AccountScreen({
 
   if (mode === 'add-resource') {
     return (
-      <div>
-        <h1>Обліковий запис і дані</h1>
+      <div className="flex flex-col gap-5 p-4">
+        <h1 className="font-display text-xl font-bold leading-relaxed text-ink">Обліковий запис і дані</h1>
 
         <TextField
           label="Посилання на зовнішній ресурс"
@@ -285,47 +308,81 @@ export function AccountScreen({
           error={addError ?? undefined}
         />
 
-        <Button label="Додати" onClick={handleSubmitAddResource} disabled={adding} />
-        <Button label="Скасувати" onClick={handleCancelAddResource} />
+        <div className="flex flex-wrap gap-3">
+          <Button label="Додати" onClick={handleSubmitAddResource} disabled={adding} />
+          <button
+            type="button"
+            onClick={handleCancelAddResource}
+            className="rounded-control border border-border px-4 py-3 text-sm font-bold text-ink transition-colors hover:bg-border"
+          >
+            Скасувати
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div>
-      <h1>Обліковий запис і дані</h1>
+    <div className="flex flex-col gap-6 p-4">
+      <h1 className="font-display text-xl font-bold leading-relaxed text-ink">Обліковий запис і дані</h1>
 
-      <h2>Синхронізація</h2>
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-bold uppercase tracking-wide leading-relaxed text-ink-muted">Синхронізація</h2>
 
-      {resources.length === 0 ? (
-        <EmptyState
-          message="Ще жодного ресурсу синхронізації не додано"
-          actionHint='Додай посилання на зовнішній ресурс кнопкою "Додати ресурс"'
-        />
-      ) : (
-        <ul>
-          {resources.map((resource) => (
-            <li key={resource.id}>
-              {resource.url}
-              <button type="button" aria-label={`Прибрати ${resource.url}`} onClick={() => handleRemoveResource(resource.id)}>
-                x
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+        {resources.length === 0 ? (
+          <EmptyState
+            message="Ще жодного ресурсу синхронізації не додано"
+            actionHint='Додай посилання на зовнішній ресурс кнопкою "Додати ресурс"'
+          />
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {resources.map((resource) => (
+              <li
+                key={resource.id}
+                className="flex items-center justify-between gap-3 rounded-control border border-border bg-surface-solid px-3.5 py-2.5 text-sm text-ink"
+              >
+                <span className="min-w-0 flex-1 truncate">{resource.url}</span>
+                <button
+                  type="button"
+                  aria-label={`Прибрати ${resource.url}`}
+                  onClick={() => handleRemoveResource(resource.id)}
+                  className="shrink-0 text-ink-faint transition-colors hover:text-bad"
+                >
+                  x
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
 
-      {errorResources.map((resource) => (
-        <Banner key={resource.id} variant="error" text={resource.lastError as string} />
-      ))}
+        {errorResources.map((resource) => (
+          <Banner key={resource.id} variant="error" text={resource.lastError as string} />
+        ))}
 
-      {removeError !== null && <Banner variant="error" text={removeError} />}
+        {removeError !== null && <Banner variant="error" text={removeError} />}
 
-      <Button label="Додати ресурс" onClick={handleStartAddResource} />
+        <Button label="Додати ресурс" onClick={handleStartAddResource} />
+      </section>
 
-      <hr />
-      <h2>Небезпечна зона</h2>
-      <Button label="Видалити акаунт і всі дані" onClick={handleStartDeleteAccount} />
+      <hr className="border-t border-border" />
+
+      {/* D-120: "Небезпечна зона" -- заголовок лишається нейтральним (той самий
+          стиль, що "Синхронізація" вище), сигнал небезпеки несе САМА кнопка --
+          контурний bad (border-bad/text-bad), не суцільна заливка: це вхід у
+          підтвердження (mode="confirm-delete"), не сама незворотна дія --
+          та вже отримує суцільний bg-bad нижче, той самий підхід, що
+          ConfirmDialog.tsx. Button-примітив лишається єдиним фірмовим
+          варіантом (коментар у Button.tsx) -- тут навмисно raw <button>. */}
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-bold uppercase tracking-wide leading-relaxed text-ink-muted">Небезпечна зона</h2>
+        <button
+          type="button"
+          onClick={handleStartDeleteAccount}
+          className="self-start rounded-control border border-bad px-4 py-3 text-sm font-bold text-bad transition-colors hover:bg-bad/10"
+        >
+          Видалити акаунт і всі дані
+        </button>
+      </section>
     </div>
   );
 }

@@ -22,16 +22,38 @@ export interface EntryHistoryListProps {
   isFlagEntryDisabled?: boolean;
 }
 
+// D-120: entry.status -- готовий дискретний статус (confirmed/pending/
+// rejected, domain/entry.ts), не вигаданий поріг -- саме той випадок, де
+// дозволено світлофор (good/warn/bad), глянцевий `.chip-gloss`.
+const STATUS_DOT: Record<EntryViewModel['status'], string> = {
+  confirmed: 'bg-good',
+  pending: 'bg-warn',
+  rejected: 'bg-bad',
+};
+
 export function EntryHistoryList({ entries, onFlagEntry, isFlagEntryDisabled }: EntryHistoryListProps): JSX.Element {
   return (
-    <div>
-      <h3>Історія записів</h3>
-      <ul>
+    <div className="flex flex-col gap-2">
+      <h3 className="font-display text-sm font-bold uppercase tracking-wide leading-relaxed text-ink-muted">Історія записів</h3>
+      <ul className="flex flex-col gap-2">
         {entries.map((entry) => (
-          <li key={entry.id}>
-            <span>{entry.recordedAtLabel}</span> <span>{entry.summary}</span>{' '}
+          <li
+            key={entry.id}
+            className="flex flex-wrap items-center gap-2 rounded-control border border-border bg-surface-solid px-3 py-2.5"
+          >
+            <span
+              aria-hidden="true"
+              className={`chip-gloss h-2.5 w-2.5 shrink-0 rounded-full ${STATUS_DOT[entry.status]}`}
+            />{' '}
+            <span className="text-xs text-ink-muted">{entry.recordedAtLabel}</span>{' '}
+            <span className="flex-1 text-sm text-ink">{entry.summary}</span>{' '}
             {entry.status === 'confirmed' && onFlagEntry && (
-              <button type="button" onClick={() => onFlagEntry(entry.id)} disabled={isFlagEntryDisabled}>
+              <button
+                type="button"
+                onClick={() => onFlagEntry(entry.id)}
+                disabled={isFlagEntryDisabled}
+                className="shrink-0 rounded-control border border-border px-2.5 py-1 text-xs font-bold text-ink transition-colors hover:bg-border disabled:cursor-not-allowed disabled:opacity-50"
+              >
                 виправити
               </button>
             )}
