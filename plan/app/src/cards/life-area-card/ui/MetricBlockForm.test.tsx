@@ -14,10 +14,10 @@ describe('MetricBlockForm (SCR-05)', () => {
   it('renders an empty form by default', () => {
     render(<MetricBlockForm onSubmit={vi.fn()} />);
 
-    expect((screen.getByLabelText('Що рахуємо:') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('Що рахуємо/вимірюємо:') as HTMLInputElement).value).toBe('');
     expect((screen.getByLabelText('Одиниця:') as HTMLInputElement).value).toBe('');
     expect((screen.getByLabelText('Ціль:') as HTMLInputElement).value).toBe('');
-    expect((screen.getByLabelText('Постійний процес (без дати)') as HTMLInputElement).checked).toBe(
+    expect((screen.getByLabelText('Постійний процес з метриками (без дати)') as HTMLInputElement).checked).toBe(
       false
     );
     expect(screen.queryByLabelText('До:')).not.toBeNull();
@@ -30,9 +30,9 @@ describe('MetricBlockForm (SCR-05)', () => {
 
     expect(screen.queryByLabelText('До:')).not.toBeNull();
 
-    fireEvent.click(screen.getByLabelText('Постійний процес (без дати)'));
+    fireEvent.click(screen.getByLabelText('Постійний процес з метриками (без дати)'));
 
-    expect((screen.getByLabelText('Постійний процес (без дати)') as HTMLInputElement).checked).toBe(
+    expect((screen.getByLabelText('Постійний процес з метриками (без дати)') as HTMLInputElement).checked).toBe(
       true
     );
     expect(screen.queryByLabelText('До:')).toBeNull();
@@ -48,7 +48,7 @@ describe('MetricBlockForm (SCR-05)', () => {
       />
     );
 
-    expect((screen.getByLabelText('Що рахуємо:') as HTMLInputElement).value).toBe('тренування');
+    expect((screen.getByLabelText('Що рахуємо/вимірюємо:') as HTMLInputElement).value).toBe('тренування');
     expect((screen.getByLabelText('Одиниця:') as HTMLInputElement).value).toBe('раз');
     expect((screen.getByLabelText('Ціль:') as HTMLInputElement).value).toBe('12');
   });
@@ -85,7 +85,7 @@ describe('MetricBlockForm (SCR-05)', () => {
     const { container } = render(<MetricBlockForm onSubmit={vi.fn()} />);
     const text = container.textContent ?? '';
 
-    const idxLabel = text.indexOf('Що рахуємо:');
+    const idxLabel = text.indexOf('Що рахуємо/вимірюємо:');
     const idxOngoing = text.indexOf('Постійний процес');
     const idxUnit = text.indexOf('Одиниця:');
     const idxTarget = text.indexOf('Ціль:');
@@ -100,10 +100,10 @@ describe('MetricBlockForm (SCR-05)', () => {
   it('D-112: поля мають хмаринки-підказки з правильною позначкою обовʼязковості', () => {
     render(<MetricBlockForm onSubmit={vi.fn()} />);
 
-    fireEvent.focus(screen.getByLabelText('Що рахуємо:'));
+    fireEvent.focus(screen.getByLabelText('Що рахуємо/вимірюємо:'));
     expect(screen.getByRole('tooltip').textContent).toContain('Обовʼязково');
 
-    fireEvent.blur(screen.getByLabelText('Що рахуємо:'));
+    fireEvent.blur(screen.getByLabelText('Що рахуємо/вимірюємо:'));
     fireEvent.focus(screen.getByLabelText('Ціль:'));
     expect(screen.getByRole('tooltip').textContent).toContain('Необовʼязково');
   });

@@ -20,7 +20,8 @@ import { CardShell } from '../../../shared/ui';
 import { CardBack } from './CardBack';
 import { CardFace } from './CardFace';
 import type { MetricBlockFormValues } from './MetricBlockForm';
-import type { CardBackData, CardFaceData } from './types';
+import type { CardBackData, CardFaceData, MetricBlockTransferTargetCard } from './types';
+import type { CardTrackingMode, CardHealthState } from '../domain/card';
 
 export interface DeckFrontCardProps {
   cardId: string;
@@ -47,6 +48,14 @@ export interface DeckFrontCardProps {
   onCreateMetricBlock?: (cardId: string, values: MetricBlockFormValues) => Promise<void>;
   /** Видаляє (архівує) блок-метрику -- опційно, як і в CardBack. */
   onArchiveMetricBlock?: (cardId: string, metricBlockId: string) => Promise<void>;
+  /** CH-02: зберігає режим відстеження картки -- опційно, як і в CardBack. */
+  onUpdateTracking?: (cardId: string, input: { trackingMode: CardTrackingMode; healthState: CardHealthState | null }) => Promise<void>;
+  /** CH-03: зберігає перейменування/налаштування блоку-метрики -- опційно, як і в CardBack. */
+  onUpdateMetricBlock?: (cardId: string, metricBlockId: string, values: MetricBlockFormValues) => Promise<void>;
+  /** CH-03: переносить блок-метрику на іншу картку -- опційно, як і в CardBack. */
+  onTransferMetricBlock?: (cardId: string, metricBlockId: string, targetCardId: string) => Promise<void>;
+  /** CH-03: картки-цілі для пікера перенесення -- DeckScreen.tsx вже фільтрує поточну картку. */
+  transferTargetCards?: MetricBlockTransferTargetCard[];
 }
 
 type Side = 'face' | 'back';
@@ -62,6 +71,10 @@ export function DeckFrontCard({
   onFlagEntry,
   onCreateMetricBlock,
   onArchiveMetricBlock,
+  onUpdateTracking,
+  onUpdateMetricBlock,
+  onTransferMetricBlock,
+  transferTargetCards,
 }: DeckFrontCardProps): JSX.Element {
   const [side, setSide] = useState<Side>('face');
 
@@ -93,6 +106,10 @@ export function DeckFrontCard({
           onFlagEntry={onFlagEntry ? (entryId) => onFlagEntry(cardId, entryId) : undefined}
           onCreateMetricBlock={onCreateMetricBlock ? (values) => onCreateMetricBlock(cardId, values) : undefined}
           onArchiveMetricBlock={onArchiveMetricBlock ? (metricBlockId) => onArchiveMetricBlock(cardId, metricBlockId) : undefined}
+          onUpdateTracking={onUpdateTracking ? (input) => onUpdateTracking(cardId, input) : undefined}
+          onUpdateMetricBlock={onUpdateMetricBlock ? (metricBlockId, values) => onUpdateMetricBlock(cardId, metricBlockId, values) : undefined}
+          onTransferMetricBlock={onTransferMetricBlock ? (metricBlockId, targetCardId) => onTransferMetricBlock(cardId, metricBlockId, targetCardId) : undefined}
+          transferTargetCards={transferTargetCards}
         />
       }
     />

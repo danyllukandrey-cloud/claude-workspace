@@ -47,6 +47,7 @@
 import { createMetricBlock as createMetricBlockUseCase } from '../app/create-metric-block';
 import { transferMetricBlock as transferMetricBlockUseCase } from '../app/transfer-metric-block';
 import { archiveMetricBlock as archiveMetricBlockUseCase } from '../app/archive-metric-block';
+import { updateMetricBlock as updateMetricBlockUseCase } from '../app/update-metric-block';
 import type { RecordAction } from '../app/archive-metric-block';
 import { findCardById, listMetricBlocksByCard } from '../infra/postgres-repo';
 import type { Db, MetricBlockRecord } from '../infra/postgres-repo';
@@ -67,6 +68,20 @@ export interface MetricBlockTransferRequestBody {
   sourceMetricBlockId: string;
   /** NULL, доки колізія не виявлена (openapi.yaml) -- трактується як "не надано". */
   newLabel?: string | null;
+}
+
+/**
+ * Тіло PATCH /api/v1/cards/{cardId}/metric-blocks/{metricBlockId} (CH-03,
+ * docs/features/life-area-card/changes.md) -- часткове оновлення: лише
+ * передані поля змінюються (update-metric-block.ts).
+ */
+export interface MetricBlockUpdateBody {
+  label?: string;
+  unit?: string;
+  frequency?: string | null;
+  targetCount?: number | null;
+  isOngoing?: boolean;
+  targetDate?: string | null;
 }
 
 /** Відповідь за схемою MetricBlock контракту (openapi.yaml) -- без ownerUserId, він не публічний. */
@@ -215,5 +230,42 @@ export async function archiveMetricBlock(
   recordAction?: RecordAction
 ): Promise<MetricBlock> {
   const record = await archiveMetricBlockUseCase(db, { ownerUserId, cardId, metricBlockId }, recordAction);
+  return toMetricBlock(record);
+}
+
+/**
+ * PATCH /api/v1/cards/{cardId}/metric-blocks/{metricBlockId} (CH-03,
+ * docs/features/life-area-card/changes.md) -- перейменування й зміна
+ * налаштувань (ціль/одиниця/частота) БЕЗ перенесення на іншу картку.
+ * Перенесення й далі йде через transferMetricBlock вище (наявний бекенд).
+ *
+ * Пропускає нагору AppError від use-case: 404 card.not_found (non-disclosure,
+ * той самий підхід, що archiveMetricBlock); 409 metric_block.name_collision
+ * (перейменування зіткнулось із наявним блоком тієї ж картки); 422
+ * metric_block.invalid_target_count.
+ */
+export async function updateMetricBlock(
+  db: Db,
+  ownerUserId: string,
+  cardId: string,
+  metricBlockId: string,
+  body: MetricBlockUpdateBody,
+  recordAction?: RecordAction
+): Promise<MetricBlock> {
+  const record = await updateMetricBlockUseCase(
+    db,
+    {
+      ownerUserId,
+      cardId,
+      metricBlockId,
+      label: body.label,
+      unit: body.unit,
+      frequency: body.frequency,
+      targetCount: body.targetCount,
+      isOngoing: body.isOngoing,
+      targetDate: body.targetDate,
+    },
+    recordAction
+  );
   return toMetricBlock(record);
 }

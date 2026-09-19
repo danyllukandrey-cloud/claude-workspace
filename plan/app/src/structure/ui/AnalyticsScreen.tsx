@@ -50,6 +50,14 @@ import { Banner, Button, Spinner } from '../../shared/ui';
 
 export type AnalyticsTrend = 'growing' | 'shrinking' | null;
 
+/**
+ * CH-02 (docs/features/structure/changes.md, скоординовано з life-area-card
+ * CH-02): та сама незалежна локальна копія, що LayoutBoard.tsx's
+ * LayoutBoardCardHealthState -- правило залежностей забороняє прямий імпорт
+ * з life-area-card.
+ */
+export type AnalyticsScreenCardHealthState = 'active' | 'critical' | 'paused';
+
 export interface AnalyticsScreenCard {
   cardId: string;
   cardTitle: string;
@@ -57,6 +65,8 @@ export interface AnalyticsScreenCard {
   gap: number | null;
   trend: AnalyticsTrend;
   unmaintained: boolean;
+  /** CH-02: ненульове лише для карток у режимі "стан без вимірювань". */
+  healthState: AnalyticsScreenCardHealthState | null;
 }
 
 export interface AnalyticsScreenState {
@@ -108,6 +118,27 @@ function progressBarFillClass(share: number): string {
   if (share >= 0.3) return 'bg-warn';
   return 'bg-bad';
 }
+
+// CH-02: той самий колірний словник (chip-gloss/D-120/D-126), що
+// life-area-card/ui/CardFace.tsx's HEALTH_STATE_DOT і structure's own
+// LayoutBoard.tsx copy -- окрема копія того самого факту (правило залежностей).
+const HEALTH_STATE_DOT: Record<AnalyticsScreenCardHealthState, string> = {
+  active: 'bg-good',
+  critical: 'bg-bad',
+  paused: 'bg-warn',
+};
+
+/**
+ * Той самий переклад, що life-area-card/ui/CardFace.tsx's HEALTH_STATE_LABEL
+ * і structure's own LayoutBoard.tsx copy -- окрема копія (правило
+ * залежностей). Code review 2026-09-19: aria-label має нести український
+ * підпис, не сирий enum-код.
+ */
+const HEALTH_STATE_LABEL: Record<AnalyticsScreenCardHealthState, string> = {
+  active: 'використовується',
+  critical: 'критично потребує відновлення',
+  paused: 'на паузі',
+};
 
 export function AnalyticsScreen({
   loadAnalytics,
@@ -197,8 +228,15 @@ export function AnalyticsScreen({
                   return (
                     <li
                       key={card.cardId}
-                      className="flex flex-col gap-1 rounded-control border border-border bg-surface-solid px-2.5 py-2"
+                      className="relative flex flex-col gap-1 rounded-control border border-border bg-surface-solid px-2.5 py-2"
                     >
+                      {/* CH-02: м'ячик стану -- правий верхній кут картки показників, той самий кут, що life-area-card/ui/CardFace.tsx і LayoutBoard.tsx's cardChip. */}
+                      {card.healthState && (
+                        <span
+                          aria-label={`Стан картки: ${HEALTH_STATE_LABEL[card.healthState]}`}
+                          className={`chip-gloss absolute -right-1 -top-1 h-2.5 w-2.5 shrink-0 rounded-full ${HEALTH_STATE_DOT[card.healthState]}`}
+                        />
+                      )}
                       <div className="flex items-baseline justify-between gap-1">
                         <span className="truncate text-sm font-medium text-ink">{card.cardTitle}</span>
                         {progressText !== null && (

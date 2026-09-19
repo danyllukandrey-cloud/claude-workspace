@@ -64,12 +64,24 @@ const LAYOUT_MODE_OPTIONS: LayoutModeOption[] = [
   { value: 'staging', label: 'Готово до розкладання' },
 ];
 
+/**
+ * CH-02 (docs/features/structure/changes.md, скоординовано з life-area-card
+ * CH-02): той самий тримовний набір, що `life-area-card`'s CardHealthState
+ * -- НЕЗАЛЕЖНИЙ локальний тип, не імпорт з `life-area-card` (правило
+ * залежностей, plan/app/CLAUDE.md: `structure` не перевикористовує UI/типи
+ * картки, лише власний канал `loadLayout`, який `app` (main.tsx) наповнює
+ * тим самим фактом з GET /cards).
+ */
+export type LayoutBoardCardHealthState = 'active' | 'critical' | 'paused';
+
 export interface LayoutBoardCard {
   cardId: string;
   cardTitle: string;
   /** Відсоток канви (0-100). Обидва `null` разом -- картка в купці нерозкладених знизу екрана. */
   x: number | null;
   y: number | null;
+  /** CH-02: ненульове лише для карток у режимі "стан без вимірювань" -- домальовується м'ячиком у cardChip нижче. */
+  healthState: LayoutBoardCardHealthState | null;
 }
 
 export interface LayoutBoardConnection {
@@ -148,6 +160,26 @@ function isAppErrorShape(err: unknown): err is AppErrorShape {
 
 /** Обидва варіанти, які пропонує інструмент "Зв'язати" (вимога 5). */
 type LinkTool = 'line' | 'arrow';
+
+// CH-02: той самий колірний словник (chip-gloss/STATUS_DOT патерн, D-120/
+// D-126), що life-area-card/ui/CardFace.tsx's HEALTH_STATE_DOT -- НЕ спільний
+// імпорт (правило залежностей), окрема копія того самого факту.
+const HEALTH_STATE_DOT: Record<LayoutBoardCardHealthState, string> = {
+  active: 'bg-good',
+  critical: 'bg-bad',
+  paused: 'bg-warn',
+};
+
+/**
+ * Той самий переклад, що life-area-card/ui/CardFace.tsx's HEALTH_STATE_LABEL
+ * -- окрема копія (правило залежностей). Code review 2026-09-19: aria-label
+ * має нести український підпис, як і решта картки, не сирий enum-код.
+ */
+const HEALTH_STATE_LABEL: Record<LayoutBoardCardHealthState, string> = {
+  active: 'використовується',
+  critical: 'критично потребує відновлення',
+  paused: 'на паузі',
+};
 
 export function LayoutBoard({
   loadLayout,
@@ -495,8 +527,16 @@ export function LayoutBoard({
       data-card-id={card.cardId}
       onPointerDown={handlePointerDown(card.cardId)}
       style={{ touchAction: 'none' }}
-      className={`flex max-w-full cursor-grab flex-col items-center gap-1 rounded-control bg-surface-solid px-2.5 py-2 text-center shadow-soft active:cursor-grabbing ${extraClassName}`}
+      className={`relative flex max-w-full cursor-grab flex-col items-center gap-1 rounded-control bg-surface-solid px-2.5 py-2 text-center shadow-soft active:cursor-grabbing ${extraClassName}`}
     >
+      {/* CH-02: м'ячик стану -- правий верхній кут чипа, той самий кут, що
+          life-area-card/ui/CardFace.tsx домальовує на самій картці. */}
+      {card.healthState && (
+        <span
+          aria-label={`Стан картки: ${HEALTH_STATE_LABEL[card.healthState]}`}
+          className={`chip-gloss absolute -right-1 -top-1 h-2.5 w-2.5 shrink-0 rounded-full ${HEALTH_STATE_DOT[card.healthState]}`}
+        />
+      )}
       <span className="max-w-full truncate text-xs font-semibold text-ink">{card.cardTitle}</span>
       {canCloseCard && (
         <button

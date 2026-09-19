@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { createCard, markFilled, getLifecycleState, archiveCard, CardValidationError } from './card';
+import {
+  createCard,
+  markFilled,
+  getLifecycleState,
+  archiveCard,
+  setTrackingModeMetrics,
+  setTrackingModeState,
+  isCardHealthState,
+  CardValidationError,
+} from './card';
 
 describe('createCard', () => {
   // AC-02: Given a user is creating a new card, when the user tries to save
@@ -21,6 +30,44 @@ describe('createCard', () => {
     expect(card.name).toBe('Здоров’я');
     expect(card.status).toBe('active');
     expect(card.description).toBeNull();
+  });
+
+  // CH-02: нова картка завжди стартує в метричному режимі -- картки,
+  // створені до цієї зміни, поводяться так само (той самий дефолт).
+  it('defaults to metrics tracking mode with no health state', () => {
+    const card = createCard({ id: 'card-1', name: 'Здоров’я' });
+    expect(card.trackingMode).toBe('metrics');
+    expect(card.healthState).toBeNull();
+  });
+});
+
+describe('setTrackingModeState / setTrackingModeMetrics', () => {
+  // CH-02: "картка: стан без вимірювань" -- перемикання в один із трьох
+  // кольорових станів і назад у звичайний метричний режим.
+  it('switches into state tracking with the given health state', () => {
+    const card = createCard({ id: 'card-1', name: 'Здоров’я' });
+    const stateCard = setTrackingModeState(card, 'critical');
+    expect(stateCard.trackingMode).toBe('state');
+    expect(stateCard.healthState).toBe('critical');
+  });
+
+  it('switching back to metrics always clears healthState', () => {
+    const card = setTrackingModeState(createCard({ id: 'card-1', name: 'Здоров’я' }), 'paused');
+    const metricsCard = setTrackingModeMetrics(card);
+    expect(metricsCard.trackingMode).toBe('metrics');
+    expect(metricsCard.healthState).toBeNull();
+  });
+});
+
+describe('isCardHealthState', () => {
+  it('accepts only the three known values', () => {
+    expect(isCardHealthState('active')).toBe(true);
+    expect(isCardHealthState('critical')).toBe(true);
+    expect(isCardHealthState('paused')).toBe(true);
+    expect(isCardHealthState('archived')).toBe(false);
+    expect(isCardHealthState(null)).toBe(false);
+    expect(isCardHealthState(undefined)).toBe(false);
+    expect(isCardHealthState(42)).toBe(false);
   });
 
   // Рев'ю-знахідка 4: перевірка йде по trim(), а зберігалось сире значення —

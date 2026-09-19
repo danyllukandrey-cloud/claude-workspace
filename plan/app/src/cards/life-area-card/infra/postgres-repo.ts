@@ -34,6 +34,9 @@ export interface Db {
 }
 
 export type CardStatusRow = 'active' | 'archived';
+/** CH-02 (docs/features/life-area-card/changes.md) -- "картка: стан без вимірювань" vs звичайна метрична картка. */
+export type CardTrackingModeRow = 'metrics' | 'state';
+export type CardHealthStateRow = 'active' | 'critical' | 'paused';
 
 export interface CardRecord {
   id: string;
@@ -41,6 +44,10 @@ export interface CardRecord {
   name: string;
   description: string | null;
   status: CardStatusRow;
+  /** CH-02: за замовчуванням 'metrics' у БД (DEFAULT), тож рядки, застарілі за цю міграцію, читаються так само. */
+  trackingMode: CardTrackingModeRow;
+  /** CH-02: ненульове лише коли trackingMode === 'state'. */
+  healthState: CardHealthStateRow | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -94,6 +101,12 @@ interface RawCardRow extends QueryResultRow {
   name: string;
   description: string | null;
   status: CardStatusRow;
+  // CH-02: опційні -- тестові fixtures у репозиторії (десятки файлів, до цієї
+  // зміни) конструюють "сирий рядок" вручну й не несуть цих двох полів;
+  // toCardRecord() нижче дефолтить їх так само, як сама колонка в БД
+  // (DEFAULT 'metrics' / NULL), щоб не змушувати правити кожен fixture.
+  tracking_mode?: CardTrackingModeRow;
+  health_state?: CardHealthStateRow | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -105,12 +118,14 @@ function toCardRecord(row: RawCardRow): CardRecord {
     name: row.name,
     description: row.description,
     status: row.status,
+    trackingMode: row.tracking_mode ?? 'metrics',
+    healthState: row.health_state ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-const CARD_COLUMNS = 'id, owner_user_id, name, description, status, created_at, updated_at';
+const CARD_COLUMNS = 'id, owner_user_id, name, description, status, tracking_mode, health_state, created_at, updated_at';
 
 export async function insertCard(
   db: Db,
@@ -171,7 +186,14 @@ export async function updateCard(
   db: Db,
   ownerUserId: string,
   cardId: string,
-  patch: { name?: string; description?: string | null; status?: CardStatusRow }
+  patch: {
+    name?: string;
+    description?: string | null;
+    status?: CardStatusRow;
+    /** CH-02 (D-127-style same generic patch approach). */
+    trackingMode?: CardTrackingModeRow;
+    healthState?: CardHealthStateRow | null;
+  }
 ): Promise<CardRecord | null> {
   const sets: string[] = [];
   const values: unknown[] = [];
@@ -187,6 +209,14 @@ export async function updateCard(
   if (patch.status !== undefined) {
     values.push(patch.status);
     sets.push(`status = $${values.length}`);
+  }
+  if (patch.trackingMode !== undefined) {
+    values.push(patch.trackingMode);
+    sets.push(`tracking_mode = $${values.length}`);
+  }
+  if (patch.healthState !== undefined) {
+    values.push(patch.healthState);
+    sets.push(`health_state = $${values.length}`);
   }
   if (sets.length === 0) {
     // Нічого змінювати -- non-disclosure все одно діє через звичайне читання.

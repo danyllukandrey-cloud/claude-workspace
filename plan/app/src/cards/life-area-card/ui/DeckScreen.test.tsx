@@ -17,13 +17,17 @@ import type { CardBackData, CardFaceData } from './types';
 // (+опційні onUpdateDescription/onFlagEntry/onCreateMetricBlock). baseProps()
 // нижче -- єдине місце, що їх задає, щоб не повторювати в кожному тесті.
 
-const FACE_DATA: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null };
+const FACE_DATA: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'metrics', healthState: null };
 const BACK_DATA: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
 
 function baseProps(overrides: Partial<Parameters<typeof DeckScreen>[0]> = {}) {
   return {
     loadCards: vi.fn().mockResolvedValue([]),
-    onCreateCard: vi.fn(),
+    // CH-04 (docs/features/life-area-card/changes.md): реальне createCard --
+    // DeckScreen сам показує inline CreateCardForm і викликає цей проп лише
+    // з її onSubmit, той самий "успіх -> Promise<void>" контракт, що
+    // onRename/onArchive нижче.
+    onCreateCard: vi.fn().mockResolvedValue(undefined),
     // CH-01 (docs/features/life-area-card/changes.md): дубль "Архів карток"
     // біля "Створити картку" -- App.tsx підставляє реальний shared callback.
     onOpenArchive: vi.fn(),
@@ -88,8 +92,13 @@ test('error: реджект без Error-повідомлення падає н�
   expect(await screen.findByText('Не вдалося завантажити колоду карток')).toBeTruthy();
 });
 
-test('ISS-55: empty-стан показує кнопку "Створити картку", клік викликає onCreateCard', async () => {
-  const onCreateCard = vi.fn();
+// CH-04 (docs/features/life-area-card/changes.md): клік "Створити картку" НЕ
+// викликає injected onCreateCard напряму -- лише показує inline
+// CreateCardForm на місці передньої картки колоди (renderFront); сам проп
+// викликається ЛИШЕ з onSubmit цієї форми (тести нижче, "CH-04:").
+
+test('ISS-55/CH-04: empty-стан показує кнопку "Створити картку", клік показує inline форму, а не викликає onCreateCard одразу', async () => {
+  const onCreateCard = vi.fn().mockResolvedValue(undefined);
   const props = baseProps({ loadCards: vi.fn().mockResolvedValue([]), onCreateCard });
 
   render(<DeckScreen {...props} />);
@@ -97,10 +106,45 @@ test('ISS-55: empty-стан показує кнопку "Створити ка�
   await screen.findByText('Тут ще немає жодної картки');
   fireEvent.click(screen.getByRole('button', { name: 'Створити картку' }));
 
-  expect(onCreateCard).toHaveBeenCalledTimes(1);
+  expect(await screen.findByRole('heading', { name: 'Нова картка' })).toBeTruthy();
+  expect(onCreateCard).not.toHaveBeenCalled();
 });
 
-test('ISS-55: default-стан (DeckGrid з картками) показує кнопку "Створити картку" поряд з переднью карткою', async () => {
+test('ISS-55/CH-04: default-стан (DeckGrid з картками) показує кнопку "Створити картку" поряд з передньою карткою, клік показує inline форму', async () => {
+  const items = [{ id: 'card-1', name: 'Спорт' }];
+  const onCreateCard = vi.fn().mockResolvedValue(undefined);
+  const props = baseProps({ loadCards: vi.fn().mockResolvedValue(items), onCreateCard });
+
+  render(<DeckScreen {...props} />);
+
+  await screen.findByRole('heading', { name: 'Спорт' });
+  fireEvent.click(screen.getByRole('button', { name: 'Створити картку' }));
+
+  expect(await screen.findByRole('heading', { name: 'Нова картка' })).toBeTruthy();
+  // CH-04: реальна картка "Спорт" (передня чи задня) зникає з екрана, поки
+  // триває створення -- порожня картка "на місці передньої", не поряд з нею.
+  expect(screen.queryByText('Спорт')).toBeNull();
+  expect(onCreateCard).not.toHaveBeenCalled();
+});
+
+test('CH-04: заповнення й збереження inline форми викликає onCreateCard, закриває форму й перезавантажує колоду', async () => {
+  const onCreateCard = vi.fn().mockResolvedValue(undefined);
+  const loadCards = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 'card-1', name: 'Спорт' }]);
+  const props = baseProps({ loadCards, onCreateCard });
+
+  render(<DeckScreen {...props} />);
+
+  await screen.findByText('Тут ще немає жодної картки');
+  fireEvent.click(screen.getByRole('button', { name: 'Створити картку' }));
+  fireEvent.change(await screen.findByLabelText('Назва'), { target: { value: 'Спорт' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Створити' }));
+
+  expect(onCreateCard).toHaveBeenCalledWith({ name: 'Спорт' });
+  expect(await screen.findByRole('heading', { name: 'Спорт' })).toBeTruthy();
+  expect(loadCards).toHaveBeenCalledTimes(2);
+});
+
+test('CH-04: "Скасувати" в inline формі закриває її без виклику onCreateCard, повертає передню картку', async () => {
   const items = [{ id: 'card-1', name: 'Спорт' }];
   const onCreateCard = vi.fn();
   const props = baseProps({ loadCards: vi.fn().mockResolvedValue(items), onCreateCard });
@@ -109,8 +153,11 @@ test('ISS-55: default-стан (DeckGrid з картками) показує к�
 
   await screen.findByRole('heading', { name: 'Спорт' });
   fireEvent.click(screen.getByRole('button', { name: 'Створити картку' }));
+  await screen.findByRole('heading', { name: 'Нова картка' });
+  fireEvent.click(screen.getByRole('button', { name: 'Скасувати' }));
 
-  expect(onCreateCard).toHaveBeenCalledTimes(1);
+  expect(await screen.findByRole('heading', { name: 'Спорт' })).toBeTruthy();
+  expect(onCreateCard).not.toHaveBeenCalled();
 });
 
 // D-124 (живе тестування): "Вийти" переїхало у верхній бар (App.test.tsx),

@@ -294,8 +294,8 @@ test('loadLayout читає /structure + /structure/layout + /structure/connecti
 
   expect(layout.layoutMode).toBe('focus');
   expect(layout.cards).toEqual([
-    { cardId: 'card-a', cardTitle: 'Картка A', x: 20, y: 30 },
-    { cardId: 'card-b', cardTitle: 'Картка B', x: null, y: null },
+    { cardId: 'card-a', cardTitle: 'Картка A', x: 20, y: 30, healthState: null },
+    { cardId: 'card-b', cardTitle: 'Картка B', x: null, y: null, healthState: null },
   ]);
   expect(layout.connections).toEqual([{ id: 'conn-1', cardIdA: 'card-a', cardIdB: 'card-b', directed: true }]);
 });

@@ -14,6 +14,13 @@
 // Компонент сам керує локальним станом навколо цього виклику: default (порожнє
 // поле) -> validation (порожня назва при спробі зберегти) -> saving (Promise
 // в польоті) -> error (Promise відхилено) чи назад у default (успіх).
+//
+// CH-04 (docs/features/life-area-card/changes.md): раніше повноекранний
+// вигляд (min-h-screen, DeckScreen.tsx робив screen-swap на цю форму) --
+// тепер DeckGrid's renderFront рендерить її ПРЯМО НА МІСЦІ передньої картки
+// колоди (DeckScreen.tsx, синтетичний item), тож обгортка нижче адаптована
+// під розмір слоту картки (h-full, той самий контракт, що DeckFrontCard's
+// CardShell -- `height: 100%` від предка з означеною висотою), не сторінку.
 
 import { useState, type FormEvent } from 'react';
 import { Banner } from '../../../shared/ui/Banner';
@@ -89,13 +96,18 @@ export function CreateCardForm({ onCreate, onCancel }: CreateCardFormProps): JSX
 
   return (
     // D-120: TextField/Banner/Spinner/Button уже самі стилізовані й не
-    // приймають className -- тут стилізуються лише сторінка-обгортка, сама
-    // картка форми (той самий вигляд, що в ConfirmDialog.tsx) і групування
-    // кнопок "Створити"/"Скасувати" поряд (D-111).
-    <div className="flex min-h-screen flex-col bg-bg px-4 py-8">
+    // приймають className -- тут стилізуються лише обгортка, сама картка
+    // форми (той самий вигляд, що в ConfirmDialog.tsx) і групування кнопок
+    // "Створити"/"Скасувати" поряд (D-111).
+    //
+    // CH-04: `h-full items-center justify-center` (не `min-h-screen px-4
+    // py-8`) -- обгортка тепер заповнює слот картки в колоді (той самий
+    // "означена висота предка" контракт, що CardShell.tsx документує) і
+    // центрує форму вертикально всередині нього, а не веде сторінку.
+    <div className="flex h-full flex-col items-center justify-center bg-bg px-4">
       <form
         onSubmit={handleSubmit}
-        className="flex flex-col gap-5 rounded-card border border-border bg-surface-solid p-6 shadow-soft"
+        className="flex w-full max-w-sm flex-col gap-5 rounded-card border border-border bg-surface-solid p-6 shadow-soft"
       >
         <h2 className="font-display text-lg font-bold leading-relaxed text-ink">Нова картка</h2>
         {submitError && <Banner variant="error" text={submitError} />}

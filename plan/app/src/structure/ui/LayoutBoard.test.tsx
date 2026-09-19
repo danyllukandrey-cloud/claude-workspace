@@ -82,8 +82,8 @@ function baseState(overrides: Partial<LayoutBoardState> = {}): LayoutBoardState 
   return {
     layoutMode: null,
     cards: [
-      { cardId: 'card-a', cardTitle: 'Картка A', x: 20, y: 30 },
-      { cardId: 'card-b', cardTitle: 'Картка B', x: 60, y: 70 },
+      { cardId: 'card-a', cardTitle: 'Картка A', x: 20, y: 30, healthState: null },
+      { cardId: 'card-b', cardTitle: 'Картка B', x: 60, y: 70, healthState: null },
     ],
     connections: [],
     ...overrides,
@@ -144,8 +144,8 @@ test('default: розкладені картки показані всереди
 test('default: нерозкладена картка (x/y null) показана в купці, не серед вільно розташованих карток канви', async () => {
   const props = baseProps({
     cards: [
-      { cardId: 'card-a', cardTitle: 'Картка A', x: 20, y: 30 },
-      { cardId: 'card-tray', cardTitle: 'У треї', x: null, y: null },
+      { cardId: 'card-a', cardTitle: 'Картка A', x: 20, y: 30, healthState: null },
+      { cardId: 'card-tray', cardTitle: 'У треї', x: null, y: null, healthState: null },
     ],
   });
   render(<LayoutBoard {...props} />);
@@ -179,8 +179,8 @@ describe('вимога 3 (чат): реальний драг мишею/доти
   test('перетягування картки з купки нерозкладених на канву теж зберігає нову позицію', async () => {
     const props = baseProps({
       cards: [
-        { cardId: 'card-a', cardTitle: 'Картка A', x: 20, y: 30 },
-        { cardId: 'card-tray', cardTitle: 'У треї', x: null, y: null },
+        { cardId: 'card-a', cardTitle: 'Картка A', x: 20, y: 30, healthState: null },
+        { cardId: 'card-tray', cardTitle: 'У треї', x: null, y: null, healthState: null },
       ],
     });
     render(<LayoutBoard {...props} />);
@@ -409,7 +409,7 @@ test('AC-12: після успішного закриття діалог зни�
   const loadLayout = vi
     .fn()
     .mockResolvedValueOnce(baseState())
-    .mockResolvedValueOnce(baseState({ cards: [{ cardId: 'card-b', cardTitle: 'Картка B', x: 60, y: 70 }] }));
+    .mockResolvedValueOnce(baseState({ cards: [{ cardId: 'card-b', cardTitle: 'Картка B', x: 60, y: 70, healthState: null }] }));
   const props = {
     loadLayout,
     onMoveCard: vi.fn().mockResolvedValue(undefined),
@@ -446,7 +446,7 @@ test('AC-12: "Скасувати" закриває діалог і нічого 
 test('AC-12 + купка нерозкладених: картку звідти теж можна закрити', async () => {
   const props = {
     ...baseProps({
-      cards: [{ cardId: 'card-a', cardTitle: 'Картка A', x: null, y: null }],
+      cards: [{ cardId: 'card-a', cardTitle: 'Картка A', x: null, y: null, healthState: null }],
     }),
     ...closeCapability(),
   };
@@ -477,7 +477,7 @@ test('CH-01: кнопка "Архів карток" видима поруч із
 // --- Живе тестування: "Конфігурація" -- пікер режиму розкладки (D-131) -------
 
 test('живе тестування: плаваюча кнопка "Конфігурація" знизу по центру перемикає на пікер 5 режимів', async () => {
-  const props = baseProps({ layoutMode: 'free', cards: [{ cardId: 'card-a', cardTitle: 'Картка A', x: null, y: null }] });
+  const props = baseProps({ layoutMode: 'free', cards: [{ cardId: 'card-a', cardTitle: 'Картка A', x: null, y: null, healthState: null }] });
   render(<LayoutBoard {...props} />);
 
   await screen.findByTestId('unassigned-tray');
@@ -493,8 +493,8 @@ test('AC-11: обрання нового layoutMode без уже розклад
   const props = baseProps({
     layoutMode: 'free',
     cards: [
-      { cardId: 'card-a', cardTitle: 'Картка A', x: null, y: null },
-      { cardId: 'card-b', cardTitle: 'Картка B', x: null, y: null },
+      { cardId: 'card-a', cardTitle: 'Картка A', x: null, y: null, healthState: null },
+      { cardId: 'card-b', cardTitle: 'Картка B', x: null, y: null, healthState: null },
     ],
   });
   render(<LayoutBoard {...props} />);
@@ -582,8 +582,8 @@ test('staging: підказка з\'являється, поки лишаєть�
   const props = baseProps({
     layoutMode: 'staging',
     cards: [
-      { cardId: 'card-a', cardTitle: 'Картка A', x: null, y: null },
-      { cardId: 'card-b', cardTitle: 'Картка B', x: null, y: null },
+      { cardId: 'card-a', cardTitle: 'Картка A', x: null, y: null, healthState: null },
+      { cardId: 'card-b', cardTitle: 'Картка B', x: null, y: null, healthState: null },
     ],
   });
   render(<LayoutBoard {...props} />);
@@ -603,10 +603,33 @@ test('staging: коли всі картки вже розкладені, під�
 test('staging: режим інший -- підказки немає навіть із нерозкладеними картками', async () => {
   const props = baseProps({
     layoutMode: 'free',
-    cards: [{ cardId: 'card-a', cardTitle: 'Картка A', x: null, y: null }],
+    cards: [{ cardId: 'card-a', cardTitle: 'Картка A', x: null, y: null, healthState: null }],
   });
   render(<LayoutBoard {...props} />);
 
   await screen.findByTestId('unassigned-tray');
   expect(screen.queryByText(/готово до розкладання/i)).toBeNull();
+});
+
+// CH-02 (docs/features/structure/changes.md, скоординовано з life-area-card
+// CH-02): м'ячик стану на чипі картки -- власний канал (loadLayout), не
+// перевикористання UI картки.
+
+test('CH-02: картка без healthState не показує жодного м\'ячика', async () => {
+  const props = baseProps({
+    cards: [{ cardId: 'card-a', cardTitle: 'Картка A', x: 20, y: 30, healthState: null }],
+  });
+  render(<LayoutBoard {...props} />);
+
+  await screen.findByTestId('card-card-a');
+  expect(screen.queryByLabelText(/Стан картки/)).toBeNull();
+});
+
+test('CH-02: картка з healthState показує м\'ячик стану на чипі', async () => {
+  const props = baseProps({
+    cards: [{ cardId: 'card-a', cardTitle: 'Картка A', x: 20, y: 30, healthState: 'critical' }],
+  });
+  render(<LayoutBoard {...props} />);
+
+  expect(await screen.findByLabelText('Стан картки: критично потребує відновлення')).toBeTruthy();
 });

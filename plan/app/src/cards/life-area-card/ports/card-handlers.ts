@@ -27,7 +27,7 @@ import type { RecordCardRenameEvent } from '../app/update-card';
 import { archiveCard as archiveCardUseCase } from '../app/archive-card';
 import type { CloseStructurePositionForCard } from '../app/archive-card';
 import { restoreCard as restoreCardUseCase } from '../app/restore-card';
-import type { CardRecord, CardStatusRow, Db } from '../infra/postgres-repo';
+import type { CardRecord, CardStatusRow, CardTrackingModeRow, CardHealthStateRow, Db } from '../infra/postgres-repo';
 
 // --- DTO -- форма відповіді, camelCase, точно як у схемах контракту --------
 // ownerUserId навмисно НЕ входить у жодну публічну схему -- відсіюємо тут.
@@ -37,6 +37,10 @@ export interface CardDto {
   name: string;
   description: string | null;
   status: CardStatusRow;
+  /** CH-02 (docs/features/life-area-card/changes.md) -- "картка: стан без вимірювань". */
+  trackingMode: CardTrackingModeRow;
+  /** CH-02: ненульове лише коли trackingMode === 'state'. */
+  healthState: CardHealthStateRow | null;
   /**
    * Присутнє лише там, де відповідний use-case реально рахує прогрес (getCard,
    * T20) -- createCard/updateCard/archiveCard/listCards повертають CardRecord
@@ -62,6 +66,8 @@ function toCardDto(record: CardRecord): CardDto {
     name: record.name,
     description: record.description,
     status: record.status,
+    trackingMode: record.trackingMode,
+    healthState: record.healthState,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
   };
@@ -172,6 +178,9 @@ export interface UpdateCardBody {
   name?: string;
   description?: string | null;
   markFilled?: boolean;
+  /** CH-02: 'state' вимагає healthState у ТОМУ Ж тілі -- use-case (update-card.ts) валідує. */
+  trackingMode?: CardTrackingModeRow;
+  healthState?: CardHealthStateRow | null;
 }
 
 /**
@@ -193,7 +202,15 @@ export async function updateCard(
   recordRenameEvent?: RecordCardRenameEvent,
   recordAction?: RecordAction
 ): Promise<CardDto> {
-  const input: { ownerUserId: string; cardId: string; name?: string; description?: string | null; markFilled?: boolean } = {
+  const input: {
+    ownerUserId: string;
+    cardId: string;
+    name?: string;
+    description?: string | null;
+    markFilled?: boolean;
+    trackingMode?: CardTrackingModeRow;
+    healthState?: CardHealthStateRow | null;
+  } = {
     ownerUserId,
     cardId,
   };
@@ -205,6 +222,12 @@ export async function updateCard(
   }
   if (body.markFilled !== undefined) {
     input.markFilled = body.markFilled;
+  }
+  if (body.trackingMode !== undefined) {
+    input.trackingMode = body.trackingMode;
+  }
+  if (body.healthState !== undefined) {
+    input.healthState = body.healthState;
   }
 
   const record = await updateCardUseCase(db, input, recordRenameEvent, recordAction);

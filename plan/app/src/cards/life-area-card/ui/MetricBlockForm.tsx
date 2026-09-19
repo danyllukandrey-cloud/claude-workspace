@@ -117,7 +117,7 @@ export function MetricBlockForm({ initialValues, onSubmit }: MetricBlockFormProp
           того, ЩО рахуємо (є в нього кінець чи ні), тож логічно йде одразу
           за цим полем, не після одиниці й цілі. */}
       <TextField
-        label="Що рахуємо:"
+        label="Що рахуємо/вимірюємо:"
         value={label}
         onChange={setLabel}
         error={labelError}
@@ -131,7 +131,7 @@ export function MetricBlockForm({ initialValues, onSubmit }: MetricBlockFormProp
           onChange={(event) => setIsOngoing(event.target.checked)}
           className="h-4 w-4 rounded border-border"
         />
-        Постійний процес (без дати)
+        Постійний процес з метриками (без дати)
       </label>
       <TextField
         label="Одиниця:"

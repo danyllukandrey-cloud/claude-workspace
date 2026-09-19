@@ -26,6 +26,11 @@ export type { ArchiveScreenProps } from './ui/ArchiveScreen';
 export { computeProgress, computeAggregateProgress } from './domain/progress';
 export type { MetricBlockGoal, RawEntry, Progress } from './domain/progress';
 
+// CH-02 (docs/features/life-area-card/changes.md): main.tsx (composition
+// root) типізує свій DI-проп onUpdateTracking (PATCH /cards/{id}) цими
+// самими доменними типами -- одна назва поняття, не власна копія union'у.
+export type { CardTrackingMode, CardHealthState } from './domain/card';
+
 // T45 (review 2026-09-07 B8/C13): main.tsx -- єдине місце, що підставляє
 // реальний StoragePort (shared/storage/local.ts) -- читає/пише офлайн-кеш
 // картки лише через ці функції, ніколи не сягаючи в infra/local-cache.ts напряму.

@@ -6,8 +6,16 @@
 // localStorage['plan.jwt'] і Date.now() (composition root -- main.tsx).
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArchiveScreen, CreateCardForm, DeckScreen } from '../cards/life-area-card';
-import type { CardBackData, CardFaceData, DeckGridItem, EntryViewModel, MetricBlockFormValues } from '../cards/life-area-card';
+import { ArchiveScreen, DeckScreen } from '../cards/life-area-card';
+import type {
+  CardBackData,
+  CardFaceData,
+  CardHealthState,
+  CardTrackingMode,
+  DeckGridItem,
+  EntryViewModel,
+  MetricBlockFormValues,
+} from '../cards/life-area-card';
 import { AnalyticsScreen, DeclarationScreen, LayoutBoard } from '../structure';
 import type {
   AnalyticsScreenState,
@@ -83,6 +91,12 @@ export interface AppProps {
   createMetricBlock: (cardId: string, values: MetricBlockFormValues) => Promise<void>;
   /** Видаляє (архівує) блок-метрику обраної картки (DELETE /cards/{id}/metric-blocks/{metricBlockId}, CardBack.onArchiveMetricBlock). */
   archiveMetricBlock: (cardId: string, metricBlockId: string) => Promise<void>;
+  /** CH-02 (docs/features/life-area-card/changes.md) -- зберігає режим відстеження обраної картки (PATCH /cards/{id}, CardBack.onUpdateTracking). */
+  onUpdateTracking: (cardId: string, input: { trackingMode: CardTrackingMode; healthState: CardHealthState | null }) => Promise<void>;
+  /** CH-03 (docs/features/life-area-card/changes.md) -- зберігає перейменування/налаштування блоку-метрики (PATCH /cards/{cardId}/metric-blocks/{metricBlockId}, CardBack.onUpdateMetricBlock). */
+  onUpdateMetricBlock: (cardId: string, metricBlockId: string, values: MetricBlockFormValues) => Promise<void>;
+  /** CH-03 -- переносить блок-метрику на іншу картку (наявний POST .../metric-blocks/transfer, CardBack.onTransferMetricBlock). */
+  onTransferMetricBlock: (cardId: string, metricBlockId: string, targetCardId: string) => Promise<void>;
   /** Review C10 (AC-03) -- зберігає Опис/markFilled обраної картки (PATCH /cards/{id}, CardFace.onUpdateDescription). */
   onUpdateDescription: (cardId: string, input: { description: string; markFilled: boolean }) => Promise<void>;
   /** Review 2026-09-07 C11 (AC-12) -- позначає запис в історії обраної картки помилковим (PATCH /entries/{id}, CardBack.onFlagEntry) і повертає свіжий зворот. */
@@ -166,7 +180,12 @@ export interface AppProps {
 // DeckScreen.onOpenArchive ('cards', той самий підпис на Картках) -- поле й
 // далі типізоване як Direction, а не буквальний літерал, тож "Назад" сам
 // повертає туди, звідки реально прийшли, без додаткової гілки коду.
-type Screen = { screen: 'deck' } | { screen: 'create' } | { screen: 'archive'; from: Direction };
+// CH-04 (docs/features/life-area-card/changes.md): 'create' прибрано --
+// створення картки більше не окремий Screen App.tsx перемикає, а inline
+// стан усередині самого DeckScreen (renderFront, синтетичний item на місці
+// передньої картки колоди) -- App.tsx лише прокидає реальне createCard
+// напряму як DeckScreen.onCreateCard, той самий DI-стиль, що onRename/onArchive.
+type Screen = { screen: 'deck' } | { screen: 'archive'; from: Direction };
 
 // T24 (sad.md §5 "Навігація (чотири напрямки)") + T29 (агент, D-25 "єдиний
 // канал прямого вводу"): постійне нижнє нав-меню, незалежне від Screen
@@ -209,6 +228,9 @@ export function App({
   archiveCard,
   createMetricBlock,
   archiveMetricBlock,
+  onUpdateTracking,
+  onUpdateMetricBlock,
+  onTransferMetricBlock,
   onUpdateDescription,
   onFlagEntry,
   loadStructure,
@@ -510,15 +532,6 @@ export function App({
             />
           )}
 
-          {direction === 'cards' && screen.screen === 'create' && (
-            <CreateCardForm
-              onCreate={async (input) => {
-                await createCard(input);
-                setScreen({ screen: 'deck' });
-              }}
-              onCancel={() => setScreen({ screen: 'deck' })}
-            />
-          )}
           {direction === 'cards' && screen.screen === 'archive' && (
             // Живе тестування (Андрій): "Назад" -- плаваюча, знизу справа,
             // поверх контенту (той самий патерн, що плаваюча "Звіт" на
@@ -549,7 +562,10 @@ export function App({
           {direction === 'cards' && screen.screen === 'deck' && (
             <DeckScreen
               loadCards={loadCards}
-              onCreateCard={() => setScreen({ screen: 'create' })}
+              // CH-04: реальне createCard напряму -- DeckScreen сам показує
+              // inline CreateCardForm (renderFront) і викликає цей проп лише
+              // з її onSubmit, той самий DI-стиль, що onRename/archiveCard.
+              onCreateCard={createCard}
               // D-124 (живе тестування, історичний крок): "Вийти" прибрано
               // звідси -- переїхало у верхній бар (поруч із шестернею).
               // "Архів карток" ЛИШАЄТЬСЯ/ПОВЕРТАЄТЬСЯ сюди -- CH-01
@@ -573,6 +589,9 @@ export function App({
               onFlagEntry={onFlagEntry}
               onCreateMetricBlock={createMetricBlock}
               onArchiveMetricBlock={archiveMetricBlock}
+              onUpdateTracking={onUpdateTracking}
+              onUpdateMetricBlock={onUpdateMetricBlock}
+              onTransferMetricBlock={onTransferMetricBlock}
               // CH-01 (life-area-card): дубль кнопки "Архів карток" біля
               // "Створити картку" -- той самий shared callback, що LayoutBoard
               // вище отримує для своєї кнопки; обидві ведуть в те саме місце.

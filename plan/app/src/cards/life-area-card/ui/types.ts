@@ -12,12 +12,25 @@
 // самої предметної області (ui -> domain дозволено), нема сенсу дублювати їх.
 import type { Progress } from '../domain/progress';
 import type { EntryStatus } from '../domain/entry';
+import type { CardTrackingMode, CardHealthState } from '../domain/card';
 
 export interface CardFaceData {
   name: string;
   description: string | null;
   /** AC-10: непорожнє лише коли агент справді запідозрив щось у даних картки. */
   dataWarning: string | null;
+  /** CH-02 (docs/features/life-area-card/changes.md): 'metrics' -- звичайна картка, 'state' -- "стан без вимірювань" (кольоровий м'ячик замість прогресу). */
+  trackingMode: CardTrackingMode;
+  /** CH-02: ненульове лише коли trackingMode === 'state' -- визначає колір м'ячика в правому верхньому кутку картки. */
+  healthState: CardHealthState | null;
+}
+
+/** CH-03 (docs/features/life-area-card/changes.md): сирі налаштування блоку -- потрібні лише для попереднього заповнення форми редагування (MetricBlockForm), не для показу прогресу (той рахунок -- Progress вище). */
+export interface MetricBlockSettings {
+  targetCount: number | null;
+  isOngoing: boolean;
+  /** `<input type="date">` формат (YYYY-MM-DD) або null -- той самий формат, що MetricBlockFormValues.targetDate. */
+  targetDate: string | null;
 }
 
 export interface MetricBlockViewModel {
@@ -27,6 +40,19 @@ export interface MetricBlockViewModel {
   progress: Progress;
   /** AC-06/AC-11: серед записів цього блоку є хоч один зі статусом 'pending'. */
   hasPendingEntry: boolean;
+  /**
+   * CH-03: сирі налаштування для попереднього заповнення форми редагування.
+   * Опційне -- десятки наявних тестових fixtures (до CH-03) не несуть його;
+   * MetricBlockCard.tsx/CardBack.tsx трактують відсутність як "олівець
+   * редагування налаштувань недоступний, лише перейменування/перенесення".
+   */
+  settings?: MetricBlockSettings;
+}
+
+/** CH-03: одна картка-ціль у пікері "перенести на іншу картку". */
+export interface MetricBlockTransferTargetCard {
+  id: string;
+  name: string;
 }
 
 export interface EntryViewModel {
@@ -61,4 +87,14 @@ export interface CardBackData {
   /** Історія записів, найновіші перші (AC-13). */
   entries: EntryViewModel[];
   pendingTransferCollision?: PendingTransferCollision | null;
+  /**
+   * CH-02: той самий режим, що CardFaceData -- звідси керується
+   * "неактивність" налаштувань метрик нижче. Опційне (на відміну від
+   * CardFaceData, де це поле обов'язкове) -- десятки наявних тестових
+   * fixtures цього файлу передували CH-02; відсутнє поле трактується як
+   * 'metrics' (CardBack.tsx), той самий дефолт, що й у самій базі даних.
+   */
+  trackingMode?: CardTrackingMode;
+  /** CH-02: ненульове лише коли trackingMode === 'state'. */
+  healthState?: CardHealthState | null;
 }

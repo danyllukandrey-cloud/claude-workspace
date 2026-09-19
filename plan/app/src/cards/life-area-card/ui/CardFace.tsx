@@ -22,6 +22,22 @@ import { useEffect, useState } from 'react';
 import { Banner, Button, Spinner, TextField } from '../../../shared/ui';
 import { ArchiveCardDialog } from './ArchiveCardDialog';
 import type { CardFaceData } from './types';
+import type { CardHealthState } from '../domain/card';
+
+// CH-02 (docs/features/life-area-card/changes.md): той самий патерн, що
+// EntryHistoryList.tsx's STATUS_DOT/chip-gloss (D-120/D-126) -- готовий
+// дискретний стан (не вигаданий поріг), тому дозволено той самий світлофор.
+const HEALTH_STATE_DOT: Record<CardHealthState, string> = {
+  active: 'bg-good',
+  critical: 'bg-bad',
+  paused: 'bg-warn',
+};
+
+const HEALTH_STATE_LABEL: Record<CardHealthState, string> = {
+  active: 'використовується',
+  critical: 'критично потребує відновлення',
+  paused: 'на паузі',
+};
 
 export interface CardFaceProps {
   /** Завантажує дані лицьової сторони картки. */
@@ -223,7 +239,17 @@ export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived, on
     // КРІМ кнопки -- САМЕ вона скролиться, якщо контенту забагато. Кнопка --
     // сестринський елемент ПІСЛЯ обгортки, природно лишається внизу (flex-1
     // забирає решту висоти в сусіда), mt-auto їй більше не потрібен.
-    <div className="flex h-full flex-col gap-4">
+    //
+    // `relative` -- точка відліку для CH-02's м'ячик стану (absolute, правий
+    // верхній кут КАРТКИ, не лише рядка заголовка).
+    <div className="relative flex h-full flex-col gap-4">
+      {data.trackingMode === 'state' && data.healthState && (
+        <span
+          aria-label={`Стан картки: ${HEALTH_STATE_LABEL[data.healthState]}`}
+          title={HEALTH_STATE_LABEL[data.healthState]}
+          className={`chip-gloss absolute -right-1 -top-1 h-3 w-3 shrink-0 rounded-full ${HEALTH_STATE_DOT[data.healthState]}`}
+        />
+      )}
       <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
         {isRenaming ? (
           <div className="flex flex-col gap-3">

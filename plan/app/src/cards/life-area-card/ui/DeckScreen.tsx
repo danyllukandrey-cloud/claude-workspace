@@ -14,14 +14,24 @@
 import { useEffect, useState } from 'react';
 import { AppError } from '../../../shared/errors';
 import { Banner, Button, EmptyState, Spinner } from '../../../shared/ui';
+import { CreateCardForm } from './CreateCardForm';
+import type { CreateCardFormInput } from './CreateCardForm';
 import { DeckFrontCard } from './DeckFrontCard';
 import { DeckGrid } from './DeckGrid';
 import type { DeckGridItem } from './DeckGrid';
 import type { MetricBlockFormValues } from './MetricBlockForm';
-import type { CardBackData, CardFaceData } from './types';
+import type { CardBackData, CardFaceData, MetricBlockTransferTargetCard } from './types';
+import type { CardTrackingMode, CardHealthState } from '../domain/card';
 
 const CREATE_CARD_LABEL = 'Створити картку';
 const ARCHIVE_LABEL = 'Архів карток';
+// CH-04 (docs/features/life-area-card/changes.md): DeckGrid вимагає хоч один
+// item, щоб узагалі щось намалювати (порожній масив -- <></>, DeckGrid.tsx).
+// Коли колода порожня (перша картка користувача), інлайн-форма створення
+// все одно має з'явитись "на місці передньої картки" -- цей синтетичний
+// item існує лише для того, щоб дати DeckGrid один шар для рендеру;
+// renderFront ігнорує сам item, коли isCreating (завжди CreateCardForm).
+const CREATE_PLACEHOLDER_ITEM: DeckGridItem = { id: '__create-card-placeholder__', name: '' };
 
 export interface DeckScreenProps {
   /**
@@ -34,8 +44,16 @@ export interface DeckScreenProps {
    * функція (нова лямбда щорендера) спричинить цикл повторних запитів.
    */
   loadCards: () => Promise<DeckGridItem[]>;
-  /** Викликається при кліку на кнопку "Створити картку" (ISS-55). */
-  onCreateCard: () => void;
+  /**
+   * CH-04 (docs/features/life-area-card/changes.md): реальне створення
+   * картки (POST /cards) -- ISS-55 ввів цей проп як `() => void` (перемикач
+   * екрана App.tsx), CH-04 прибирає окремий екран: тепер це сам виклик
+   * створення, ін'єктований сюди тим самим стилем DI, що onRename/onArchive.
+   * DeckScreen сам керує локальним "isCreating" перемиканням -- клік
+   * "Створити картку" НЕ викликає цей проп напряму, лише показує inline
+   * CreateCardForm (renderFront нижче), яка викликає його з onSubmit.
+   */
+  onCreateCard: (input: CreateCardFormInput) => Promise<void>;
   /**
    * CH-01 (docs/features/life-area-card/changes.md): дубль кнопки "Архів
    * карток" біля "Створити картку" -- та сама точка входу, що кнопка на
@@ -63,6 +81,12 @@ export interface DeckScreenProps {
   onFlagEntry?: (cardId: string, entryId: string) => Promise<CardBackData>;
   onCreateMetricBlock?: (cardId: string, values: MetricBlockFormValues) => Promise<void>;
   onArchiveMetricBlock?: (cardId: string, metricBlockId: string) => Promise<void>;
+  /** CH-02: зберігає режим відстеження картки -- опційно, той самий DI-патерн, що решта дій вище. */
+  onUpdateTracking?: (cardId: string, input: { trackingMode: CardTrackingMode; healthState: CardHealthState | null }) => Promise<void>;
+  /** CH-03: зберігає перейменування/налаштування блоку-метрики -- опційно, той самий DI-патерн, що решта дій вище. */
+  onUpdateMetricBlock?: (cardId: string, metricBlockId: string, values: MetricBlockFormValues) => Promise<void>;
+  /** CH-03: переносить блок-метрику на іншу картку (наявна transferMetricBlock) -- опційно. */
+  onTransferMetricBlock?: (cardId: string, metricBlockId: string, targetCardId: string) => Promise<void>;
 }
 
 type LoadState =
@@ -85,8 +109,15 @@ export function DeckScreen({
   onFlagEntry,
   onCreateMetricBlock,
   onArchiveMetricBlock,
+  onUpdateTracking,
+  onUpdateMetricBlock,
+  onTransferMetricBlock,
 }: DeckScreenProps): JSX.Element {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
+  // CH-04: чи зараз показано inline CreateCardForm ЗАМІСТЬ передньої картки
+  // колоди -- локальний UI-перемикач (той самий "isX toggle-стан" підхід, що
+  // isCreatingBlock у CardBack.tsx), НЕ окремий Screen App.tsx більше не тримає.
+  const [isCreating, setIsCreating] = useState(false);
   // C14: "Спробувати ще раз" не може просто повторно викликати loadCards()
   // напряму (ефект нижче має лишитись єдиним місцем, що читає/пише state) --
   // інкремент цього лічильника в deps ефекту тригерить той самий цикл
@@ -96,6 +127,18 @@ export function DeckScreen({
   // CardDetailScreen (ремаунт через зміну ключа стану, не прямий виклик).
   const [retryToken, setRetryToken] = useState(0);
   const reload = (): void => setRetryToken((token) => token + 1);
+
+  /**
+   * CH-04: injected onCreateCard -- CreateCardForm сам ловить відхилення й
+   * показує свій Banner (лишається відкритою на невдачі, той самий підхід,
+   * що CreateCardForm.test.tsx уже покриває), тому тут НЕ обгортаємо в
+   * try/catch -- лише успіх закриває inline-форму й перезавантажує колоду.
+   */
+  const handleCreate = (input: CreateCardFormInput): Promise<void> =>
+    onCreateCard(input).then(() => {
+      setIsCreating(false);
+      reload();
+    });
 
   useEffect(() => {
     let cancelled = false;
@@ -178,16 +221,33 @@ export function DeckScreen({
     );
   }
 
-  if (state.items.length === 0) {
+  if (state.items.length === 0 && !isCreating) {
     return (
       <div className="flex h-full flex-col gap-3 bg-bg">
         <EmptyState message="Тут ще немає жодної картки" actionHint="Створіть першу картку, щоб почати" />
         <div className="mt-auto flex flex-wrap items-center justify-center gap-3">
-          <Button label={CREATE_CARD_LABEL} onClick={onCreateCard} />
+          <Button label={CREATE_CARD_LABEL} onClick={() => setIsCreating(true)} />
           {/* CH-01 (life-area-card/changes.md): дубль "Архів карток", та сама
               точка входу, що кнопка на Схемі (structure CH-01). */}
           <Button label={ARCHIVE_LABEL} onClick={onOpenArchive} />
         </div>
+      </div>
+    );
+  }
+
+  // CH-04 (docs/features/life-area-card/changes.md): порожня картка
+  // з'являється "на місці передньої картки колоди" -- ЗАВЖДИ один
+  // синтетичний item (не реальний масив state.items), незалежно від того,
+  // скільки карток уже в колоді. Так само і для порожньої колоди (гілка
+  // вище цього не покриває -- DeckGrid.tsx повертає <></> для []).
+  // Навмисно: реальні картки під час створення "ховаються" з DeckGrid --
+  // інакше клік по картці, що визирає позаду (DeckGrid's жест "перегорнути
+  // колоду"), змінив би key переднього шару й перемонтував CreateCardForm,
+  // втративши недописану чернетку.
+  if (isCreating) {
+    return (
+      <div className="flex h-full flex-col gap-3 bg-bg">
+        <DeckGrid items={[CREATE_PLACEHOLDER_ITEM]} renderFront={() => <CreateCardForm onCreate={handleCreate} onCancel={() => setIsCreating(false)} />} />
       </div>
     );
   }
@@ -208,11 +268,21 @@ export function DeckScreen({
             onFlagEntry={onFlagEntry}
             onCreateMetricBlock={onCreateMetricBlock}
             onArchiveMetricBlock={onArchiveMetricBlock}
+            onUpdateTracking={onUpdateTracking}
+            onUpdateMetricBlock={onUpdateMetricBlock}
+            onTransferMetricBlock={onTransferMetricBlock}
+            // CH-03: картки-цілі пікера перенесення -- решта колоди, без
+            // цієї самої (переносити блок у картку, яку зараз редагуєш,
+            // безглуздо, той самий принцип, що LayoutBoard's
+            // loadCloseCardOptions target-фільтр).
+            transferTargetCards={state.items
+              .filter((c) => c.id !== item.id)
+              .map((c): MetricBlockTransferTargetCard => ({ id: c.id, name: c.name }))}
           />
         )}
       />
       <div className="mt-auto flex flex-wrap items-center justify-center gap-3">
-        <Button label={CREATE_CARD_LABEL} onClick={onCreateCard} />
+        <Button label={CREATE_CARD_LABEL} onClick={() => setIsCreating(true)} />
         {/* CH-01 (life-area-card/changes.md): дубль "Архів карток", та сама
             точка входу, що кнопка на Схемі (structure CH-01). */}
         <Button label={ARCHIVE_LABEL} onClick={onOpenArchive} />

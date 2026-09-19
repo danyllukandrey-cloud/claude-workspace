@@ -13,6 +13,7 @@ export type {
   LayoutBoardProps,
   LayoutBoardState,
   LayoutBoardCard,
+  LayoutBoardCardHealthState,
   LayoutBoardConnection,
   LayoutBoardCloseCardOptions,
 } from './ui/LayoutBoard';
@@ -30,7 +31,13 @@ export type {
 } from './ui/CloseCardDialog';
 
 export { AnalyticsScreen } from './ui/AnalyticsScreen';
-export type { AnalyticsScreenProps, AnalyticsScreenState, AnalyticsScreenCard, AnalyticsTrend } from './ui/AnalyticsScreen';
+export type {
+  AnalyticsScreenProps,
+  AnalyticsScreenState,
+  AnalyticsScreenCard,
+  AnalyticsScreenCardHealthState,
+  AnalyticsTrend,
+} from './ui/AnalyticsScreen';
 
 // App-shell (App.tsx) типізує свій DI-проп onSaveDeclaration (PATCH /structure)
 // цим самим доменним типом -- одна назва поняття, не власна копія enum'у.

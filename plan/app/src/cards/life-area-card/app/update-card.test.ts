@@ -8,13 +8,23 @@ const OWNER = 'owner-1';
 const CARD_ID = 'card-1';
 
 /** Канонічний рядок таблиці `card`, як його повертає `pg` (snake_case). */
-function cardRow(overrides: Partial<{ name: string; description: string | null; status: 'active' | 'archived' }> = {}) {
+function cardRow(
+  overrides: Partial<{
+    name: string;
+    description: string | null;
+    status: 'active' | 'archived';
+    tracking_mode: 'metrics' | 'state';
+    health_state: 'active' | 'critical' | 'paused' | null;
+  }> = {}
+) {
   return {
     id: CARD_ID,
     owner_user_id: OWNER,
     name: overrides.name ?? 'Здоровʼя',
     description: overrides.description ?? null,
     status: overrides.status ?? 'active',
+    tracking_mode: overrides.tracking_mode ?? 'metrics',
+    health_state: overrides.health_state ?? null,
     created_at: new Date('2026-01-01T00:00:00Z'),
     updated_at: new Date('2026-01-01T00:00:00Z'),
   };
@@ -228,5 +238,66 @@ describe('updateCard', () => {
     await expect(
       updateCard(db, { ownerUserId: OWNER, cardId: CARD_ID, name: 'Тіло і розум' })
     ).resolves.toMatchObject({ name: 'Тіло і розум' });
+  });
+
+  // CH-02 (docs/features/life-area-card/changes.md): "картка: стан без
+  // вимірювань" -- перемикання trackingMode/healthState.
+  describe('CH-02 trackingMode', () => {
+    it('rejects switching to state tracking without a valid healthState, before any UPDATE query', async () => {
+      const db = fakeDb({ current: cardRow() });
+
+      await expect(
+        updateCard(db, { ownerUserId: OWNER, cardId: CARD_ID, trackingMode: 'state' })
+      ).rejects.toThrow(CardValidationError);
+      expect(db.query).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects an invalid healthState value, before any UPDATE query', async () => {
+      const db = fakeDb({ current: cardRow() });
+
+      await expect(
+        updateCard(db, {
+          ownerUserId: OWNER,
+          cardId: CARD_ID,
+          trackingMode: 'state',
+          healthState: 'archived' as never,
+        })
+      ).rejects.toThrow(CardValidationError);
+      expect(db.query).toHaveBeenCalledTimes(1);
+    });
+
+    it('switches to state tracking with a valid healthState', async () => {
+      const db = fakeDb({
+        current: cardRow(),
+        updated: cardRow({ tracking_mode: 'state', health_state: 'critical' }),
+      });
+
+      const result = await updateCard(db, {
+        ownerUserId: OWNER,
+        cardId: CARD_ID,
+        trackingMode: 'state',
+        healthState: 'critical',
+      });
+
+      expect(result.trackingMode).toBe('state');
+      expect(result.healthState).toBe('critical');
+    });
+
+    it('switching back to metrics always clears healthState, even if one is passed', async () => {
+      const db = fakeDb({
+        current: cardRow({ tracking_mode: 'state', health_state: 'paused' }),
+        updated: cardRow({ tracking_mode: 'metrics', health_state: null }),
+      });
+
+      const result = await updateCard(db, {
+        ownerUserId: OWNER,
+        cardId: CARD_ID,
+        trackingMode: 'metrics',
+        healthState: 'active',
+      });
+
+      expect(result.trackingMode).toBe('metrics');
+      expect(result.healthState).toBeNull();
+    });
   });
 });

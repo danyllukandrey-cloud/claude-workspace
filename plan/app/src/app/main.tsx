@@ -109,6 +109,9 @@ const GOOGLE_LOAD_ERROR_MESSAGE = 'Не вдалося завантажити в
 interface CardDto {
   id: string;
   name: string;
+  /** CH-02 (docs/features/life-area-card/changes.md) -- "картка: стан без вимірювань". */
+  trackingMode: 'metrics' | 'state';
+  healthState: 'active' | 'critical' | 'paused' | null;
 }
 
 interface CardPageDto {
@@ -121,6 +124,9 @@ interface CardDetailDto {
   description: string | null;
   aggregateProgress: number | null;
   dataWarning: string | null;
+  /** CH-02: те саме поле, що CardDto -- GET /cards/{id} несе його теж. */
+  trackingMode: 'metrics' | 'state';
+  healthState: 'active' | 'critical' | 'paused' | null;
 }
 
 interface MetricBlockDto {
@@ -333,7 +339,15 @@ function renderGoogleButton(
     });
 }
 
-async function loadCards(): Promise<DeckGridItem[]> {
+/**
+ * Спільний GET /api/v1/cards -- джерело правди і для loadCards (DeckScreen,
+ * лише id/name) і для CH-02's join у loadLayout/loadAnalytics (structure/ui,
+ * потребують ще й trackingMode/healthState, щоб домалювати м'ячик стану
+ * "власним каналом", не перевикористовуючи UI картки -- structure/changes.md
+ * CH-02). Один fetch, дві форми споживання -- не два окремі запити тієї
+ * самої колекції.
+ */
+async function fetchCardSummaries(): Promise<CardDto[]> {
   const response = await fetch('/api/v1/cards', { headers: authHeaders() });
 
   if (!response.ok) {
@@ -349,7 +363,12 @@ async function loadCards(): Promise<DeckGridItem[]> {
   }
 
   const page = (await response.json()) as CardPageDto;
-  return page.items.map((card) => ({ id: card.id, name: card.name }));
+  return page.items;
+}
+
+async function loadCards(): Promise<DeckGridItem[]> {
+  const items = await fetchCardSummaries();
+  return items.map((card) => ({ id: card.id, name: card.name }));
 }
 
 async function createCard(input: { name: string }): Promise<void> {
@@ -382,8 +401,12 @@ async function loadCard(cardId: string): Promise<CardFaceData> {
   try {
     response = await fetch(`/api/v1/cards/${cardId}`, { headers: authHeaders() });
   } catch (networkError) {
+    // CH-02: офлайн-кеш (CachedCardFace) не несе trackingMode/healthState --
+    // навмисний, задокументований компроміс обсягу (offline-only fallback):
+    // м'ячик стану просто не показується офлайн, деградує без крашу, той
+    // самий "не блокуючий" дух, що й решта офлайн-фолбеків цього файлу.
     const cached = readCachedCardFace(storage, ownerUserId, cardId);
-    if (cached) return { ...cached, dataWarning: null };
+    if (cached) return { ...cached, dataWarning: null, trackingMode: 'metrics', healthState: null };
     throw networkError;
   }
 
@@ -394,7 +417,13 @@ async function loadCard(cardId: string): Promise<CardFaceData> {
 
   const card = (await response.json()) as CardDetailDto;
   cacheCardFace(storage, ownerUserId, cardId, { name: card.name, description: card.description });
-  return { name: card.name, description: card.description, dataWarning: card.dataWarning };
+  return {
+    name: card.name,
+    description: card.description,
+    dataWarning: card.dataWarning,
+    trackingMode: card.trackingMode,
+    healthState: card.healthState,
+  };
 }
 
 /**
@@ -528,13 +557,23 @@ async function loadBack(cardId: string): Promise<CardBackData> {
       unit: block.unit,
       progress: computeProgress(goal, rawEntries),
       hasPendingEntry: blockEntries.some((entry) => entry.status === 'pending'),
+      // CH-03 (docs/features/life-area-card/changes.md): сирі налаштування --
+      // потрібні лише щоб попередньо заповнити форму редагування
+      // (CardBack.tsx's MetricBlockForm initialValues), не для прогресу вище.
+      settings: { targetCount: block.targetCount, isOngoing: block.isOngoing, targetDate: block.targetDate },
     };
   });
 
   const blockById = new Map(blocks.map((block) => [block.id, block]));
   const entries: EntryViewModel[] = allEntries.map((entry) => toEntryViewModel(entry, blockById.get(entry.metricBlockId)));
 
-  return { metricBlocks, aggregateProgress: card.aggregateProgress, entries };
+  return {
+    metricBlocks,
+    aggregateProgress: card.aggregateProgress,
+    entries,
+    trackingMode: card.trackingMode,
+    healthState: card.healthState,
+  };
 }
 
 /** EntryDto -> Entry (domain, для кешу) -- лише поля, які local-cache.ts вимагає. */
@@ -640,6 +679,28 @@ async function archiveCard(cardId: string): Promise<void> {
   }
 }
 
+/**
+ * CH-02 (docs/features/life-area-card/changes.md): реальний PATCH /cards/{cardId}
+ * -- CardBack.onUpdateTracking. Той самий ендпоінт, що onUpdateDescription
+ * вище, лише інше підмножина тіла (updateCard use-case приймає обидва набори
+ * полів незалежно одне від одного).
+ */
+async function onUpdateTracking(
+  cardId: string,
+  input: { trackingMode: 'metrics' | 'state'; healthState: 'active' | 'critical' | 'paused' | null },
+): Promise<void> {
+  const response = await fetch(`/api/v1/cards/${cardId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ trackingMode: input.trackingMode, healthState: input.healthState }),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? 'Не вдалося зберегти режим картки');
+  }
+}
+
 /** ISS-60 (docs/ISSUES.md): реальний POST /cards/{id}/metric-blocks -- CardBack.onCreateMetricBlock. */
 async function createMetricBlock(cardId: string, values: MetricBlockFormValues): Promise<void> {
   const response = await fetch(`/api/v1/cards/${cardId}/metric-blocks`, {
@@ -681,6 +742,53 @@ async function archiveMetricBlock(cardId: string, metricBlockId: string): Promis
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { message?: string } | null;
     throw new Error(body?.message ?? 'Не вдалося видалити метрику');
+  }
+}
+
+/**
+ * CH-03 (docs/features/life-area-card/changes.md): реальний PATCH
+ * /cards/{cardId}/metric-blocks/{metricBlockId} -- CardBack.onUpdateMetricBlock
+ * (олівець на MetricBlockCard). Перейменування/зміна налаштувань, БЕЗ
+ * перенесення на іншу картку (те робить onTransferMetricBlock нижче).
+ */
+async function onUpdateMetricBlock(cardId: string, metricBlockId: string, values: MetricBlockFormValues): Promise<void> {
+  const response = await fetch(`/api/v1/cards/${cardId}/metric-blocks/${metricBlockId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({
+      label: values.label,
+      unit: values.unit,
+      targetCount: values.targetCount,
+      isOngoing: values.isOngoing,
+      targetDate: values.targetDate,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? 'Не вдалося зберегти блок-метрику');
+  }
+}
+
+/**
+ * CH-03: реальний POST /cards/{targetCardId}/metric-blocks/transfer --
+ * CardBack.onTransferMetricBlock. Той самий ендпоінт, що structure's
+ * "Закрити напрямок" (CloseCardDialog) уже використовує -- наявний бекенд,
+ * нового не додається (CH-03 юзер-кейс п.3). Перший параметр (картка-джерело)
+ * узгоджує сигнатуру з App.tsx/DeckScreen.tsx (той самий cardId-префікс, що
+ * решта DI-дій цього файлу) -- сам запит його не потребує: бекенд визначає
+ * джерело з sourceMetricBlockId (ISS-30, transfer-metric-block.ts).
+ */
+async function onTransferMetricBlock(_sourceCardId: string, metricBlockId: string, targetCardId: string): Promise<void> {
+  const response = await fetch(`/api/v1/cards/${targetCardId}/metric-blocks/transfer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ sourceMetricBlockId: metricBlockId }),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? 'Не вдалося перенести блок-метрику');
   }
 }
 
@@ -836,7 +944,10 @@ async function loadLayout(): Promise<LayoutBoardState> {
     fetch('/api/v1/structure', { headers: authHeaders() }),
     fetchActiveLayoutPositions(),
     fetchConnections(),
-    loadCards(),
+    // CH-02 (structure/changes.md): fetchCardSummaries (не DeckScreen's
+    // narrower loadCards) -- потрібне trackingMode/healthState для м'ячика
+    // стану на чипі, той самий один запит, ширша форма.
+    fetchCardSummaries(),
   ]);
 
   // Ця Структура -- лише допоміжна підказка (staging-підказка), не критичні
@@ -860,6 +971,9 @@ async function loadLayout(): Promise<LayoutBoardState> {
         cardTitle: card.name,
         x: position?.x ?? null,
         y: position?.y ?? null,
+        // CH-02: власний канал (не перевикористання UI картки) -- лише
+        // ненульове, коли картка справді в режимі "стан без вимірювань".
+        healthState: card.trackingMode === 'state' ? card.healthState : null,
       };
     }),
     connections: connections.map((connection) => ({
@@ -1002,7 +1116,8 @@ async function loadAnalytics(): Promise<AnalyticsScreenState> {
   const [structureResponse, positions, cards] = await Promise.all([
     fetch('/api/v1/structure', { headers: authHeaders() }),
     fetchActiveLayoutPositions(),
-    loadCards(),
+    // CH-02 (structure/changes.md): fetchCardSummaries -- та сама причина, що loadLayout вище.
+    fetchCardSummaries(),
   ]);
 
   if (!structureResponse.ok) {
@@ -1182,6 +1297,8 @@ async function loadAnalytics(): Promise<AnalyticsScreenState> {
       gap: gapByCardId.get(card.id) ?? null,
       trend: trendByCardId.get(card.id) ?? null,
       unmaintained: unmaintainedIds.has(card.id),
+      // CH-02: той самий принцип, що loadLayout -- власний канал.
+      healthState: card.trackingMode === 'state' ? card.healthState : null,
     })),
   };
 }
@@ -1630,6 +1747,9 @@ createRoot(root).render(
       archiveCard={archiveCard}
       createMetricBlock={createMetricBlock}
       archiveMetricBlock={archiveMetricBlock}
+      onUpdateTracking={onUpdateTracking}
+      onUpdateMetricBlock={onUpdateMetricBlock}
+      onTransferMetricBlock={onTransferMetricBlock}
       onUpdateDescription={onUpdateDescription}
       onFlagEntry={onFlagEntry}
       loadStructure={loadStructure}

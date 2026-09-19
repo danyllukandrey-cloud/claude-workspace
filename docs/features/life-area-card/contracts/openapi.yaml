@@ -361,6 +361,64 @@ paths:
           $ref: "#/components/responses/InvalidBodyTooLarge"
 
   /api/v1/cards/{cardId}/metric-blocks/{metricBlockId}:
+    patch:
+      tags: [MetricBlocks]
+      summary: Виправити блок-метрику — перейменувати чи змінити налаштування (CH-03)
+      description: |
+        Часткове оновлення (лише передані поля змінюються): перейменування, зміна
+        ціль/одиниця/частота/постійний процес/дата. Перенесення на іншу картку НЕ
+        входить сюди — те робить окремий `POST .../metric-blocks/transfer` (наявний,
+        AC-14/AC-15), нового бекенду для перенесення не додається (CH-03).
+      operationId: updateMetricBlock
+      parameters:
+        - in: path
+          name: cardId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: path
+          name: metricBlockId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MetricBlockUpdate" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MetricBlock" }
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          description: |
+            блок-метрика не знайдена, не належить користувачу, або `cardId` зі шляху не
+            відповідає справжній картці блоку — той самий код, що DELETE нижче й
+            `.../metric-blocks/transfer` (non-disclosure AC-04)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "card.not_found"
+                message: "Card not found"
+        "409":
+          description: перейменування зіткнулось із наявним блоком тієї ж картки (та сама назва+одиниця)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "metric_block.name_collision"
+                message: "У картці вже є блок із такою назвою й одиницею"
+        "422":
+          description: некоректна ціль (напр. <= 0)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "metric_block.invalid_target_count"
+                message: "Ціль має бути додатним числом"
     delete:
       tags: [MetricBlocks]
       summary: Видалити (архівувати) окремий блок-метрику (AC-20 US-17)
@@ -605,7 +663,7 @@ components:
 
     Card:
       type: object
-      required: [id, name, status, createdAt, updatedAt]
+      required: [id, name, status, trackingMode, healthState, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id: { type: string, format: uuid }
@@ -615,6 +673,14 @@ components:
           type: string
           enum: [active, archived]
           description: "archived — м'яка архівація (AC-16), ніколи фізичне видалення"
+        trackingMode:
+          type: string
+          enum: [metrics, state]
+          description: "CH-02 — 'state' = «картка: стан без вимірювань» (кольоровий м'ячик замість блоків-метрик)"
+        healthState:
+          type: [string, "null"]
+          enum: [active, critical, paused, null]
+          description: "CH-02 — ненульове лише коли trackingMode='state': активна (зелений) / критично потребує відновлення (червоний) / на паузі (жовтий)"
         aggregateProgress:
           type: [number, "null"]
           description: середнє часток виконання цілі по всіх блоках-метриках картки; NULL для декларативної картки без жодного блоку (AC-08)
@@ -640,6 +706,14 @@ components:
         markFilled:
           type: boolean
           description: "true = спроба перейти в стан «заповнена» (AC-03 перевіряє Опис)"
+        trackingMode:
+          type: string
+          enum: [metrics, state]
+          description: "CH-02 — 'state' вимагає healthState у ТОМУ Ж тілі; 'metrics' завжди скидає healthState на null"
+        healthState:
+          type: [string, "null"]
+          enum: [active, critical, paused, null]
+          description: "CH-02 — обов'язкове, лише коли trackingMode='state' у цьому ж тілі"
 
     MetricBlock:
       type: object
@@ -679,6 +753,18 @@ components:
         frequency: { type: [string, "null"] }
         targetCount: { type: [number, "null"] }
         isOngoing: { type: boolean, default: false }
+        targetDate: { type: [string, "null"], format: date }
+
+    MetricBlockUpdate:
+      type: object
+      additionalProperties: false
+      description: "CH-03 (docs/features/life-area-card/changes.md) — часткове оновлення (перейменування/налаштування), БЕЗ перенесення на іншу картку (те робить MetricBlockTransferRequest)"
+      properties:
+        label: { type: string }
+        unit: { type: string }
+        frequency: { type: [string, "null"] }
+        targetCount: { type: [number, "null"] }
+        isOngoing: { type: boolean }
         targetDate: { type: [string, "null"], format: date }
 
     MetricBlockTransferRequest:
