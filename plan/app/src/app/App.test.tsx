@@ -373,53 +373,96 @@ test('C11/AC-12: клік "виправити" в історії записів 
 });
 
 // ISS-55, stage 3/3: App.tsx отримує четвертий екран 'archive' -- клік на
-// кнопку "Архів" перемикає рендер на ArchiveScreen (T36, SCR-07). Обгортаю
-// ArchiveScreen тонкою "← Назад" кнопкою прямо в App.tsx -- ArchiveScreen сам
-// не має кнопки назад (фіксований контракт T36). Повернення на 'deck'
-// повторно викликає loadCards (той самий стиль ремаунту, що раніше мав
-// onBack у прибраному CardDetailScreen, D-121).
+// кнопку "Архів карток" перемикає рендер на ArchiveScreen (T36, SCR-07).
+// Обгортаю ArchiveScreen тонкою "← Назад" кнопкою прямо в App.tsx --
+// ArchiveScreen сам не має кнопки назад (фіксований контракт T36).
+// Повернення на 'deck' повторно викликає loadCards (той самий стиль
+// ремаунту, що раніше мав onBack у прибраному CardDetailScreen, D-121).
 //
-// D-124 (живе тестування): "Архів" переїхав з Колоди на Літопис-Аналітику --
-// клік перемикає ОБИДВА рівні стану одразу (direction на 'cards' +
-// внутрішній Screen на 'archive'), тому тести нижче спершу переходять на
-// "Аналітика", а не на "Картки".
+// D-124 (живе тестування, історичний крок): "Архів" переїхав з Колоди на
+// Літопис-Аналітику. CH-01 (docs/features/structure/changes.md,
+// docs/features/life-area-card/changes.md, координовані правки) прибрав ту
+// кнопку з Аналітики знову й додав "Архів карток" на ДВА нові місця --
+// Схема (LayoutBoard) і Картки (DeckScreen) -- обидва через СПІЛЬНИЙ
+// App.tsx-callback (openArchive), тому тести нижче перевіряють обидва входи.
 
-test('ISS-55 stage 3+D-124: клік "Архів" на Літопис-Аналітиці перемикає екран на ArchiveScreen', async () => {
+test('CH-01 (structure): клік "Архів карток" на Схемі перемикає екран на ArchiveScreen', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
+  props.loadLayout.mockResolvedValue({
+    layoutMode: null,
+    cards: [{ cardId: 'card-x', cardTitle: 'X', x: 20, y: 30 }],
+    connections: [],
+  });
+  props.loadArchivedCards.mockResolvedValue([{ id: 'card-2', name: 'Читання' }]);
+
+  render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Схема' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Архів карток' }));
+
+  // ArchiveScreen (T36) рендерить архівовані тайли через DeckGrid -- "Читання"
+  // видиме; direction тим часом перемкнувся назад на "Картки" (той самий
+  // механізм, що D-124 мав для колишньої кнопки на Аналітиці).
+  expect(await screen.findByText('Читання')).toBeTruthy();
+  expect(props.loadArchivedCards).toHaveBeenCalledTimes(1);
+});
+
+test('CH-01 (life-area-card): клік "Архів карток" на Картках (DeckScreen) перемикає екран на ArchiveScreen', async () => {
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
   props.loadArchivedCards.mockResolvedValue([{ id: 'card-2', name: 'Читання' }]);
 
   render(<App {...props} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Аналітика' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Архів' }));
+  // D-121: дефолтний напрямок -- уже Картки, кнопка одразу на екрані.
+  await screen.findByRole('heading', { name: 'Спорт' });
+  fireEvent.click(await screen.findByRole('button', { name: 'Архів карток' }));
 
-  // ArchiveScreen (T36) рендерить архівовані тайли через DeckGrid -- "Читання"
-  // видиме; direction тим часом перемкнувся назад на "Картки" (D-124).
   expect(await screen.findByText('Читання')).toBeTruthy();
   expect(props.loadArchivedCards).toHaveBeenCalledTimes(1);
 });
 
 // Задача 13 (живе тестування): раніше "← Назад" завжди виставляв Screen на
 // 'deck' -- у зв'язці з direction='cards' (виставленим ще при відкритті
-// архіву з onOpenArchive) це вело на Картки, а не туди, звідки користувач
-// реально прийшов. Архів зараз відкривається лише з Аналітики (onOpenArchive
-// вище), тож "Назад" має повернути саме на AnalyticsScreen.
-test('Задача 13: кнопка "← Назад" в Архіві, відкритому з Аналітики, повертає на Аналітику', async () => {
+// архіву) це вело на Картки, а не туди, звідки користувач реально прийшов.
+// CH-01: тепер ДВА можливих входи (Схема/Картки) -- "Назад" має повернути
+// саме на той, звідки відкрили.
+test('CH-01: кнопка "← Назад" в Архіві, відкритому зі Схеми, повертає на Схему', async () => {
   const props = validSessionProps();
+  props.loadLayout.mockResolvedValue({
+    layoutMode: null,
+    cards: [{ cardId: 'card-x', cardTitle: 'X', x: 20, y: 30 }],
+    connections: [],
+  });
   props.loadArchivedCards.mockResolvedValue([]);
 
   render(<App {...props} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Аналітика' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Архів' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Схема' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Архів карток' }));
   await screen.findByText('Архів порожній');
 
   fireEvent.click(screen.getByRole('button', { name: '← Назад' }));
 
-  // Повернення на 'analytics' -- AnalyticsScreen знову видимий (кнопка
-  // "Архів" -- її власний елемент), loadAnalytics викликано вдруге (перший
-  // раз при первинному монтуванні Аналітики, перед відкриттям архіву).
-  expect(await screen.findByRole('button', { name: 'Архів' })).toBeTruthy();
-  expect(props.loadAnalytics).toHaveBeenCalledTimes(2);
+  // Повернення на 'layout' -- LayoutBoard знову видимий (кнопка "Архів
+  // карток" -- її власний елемент), loadLayout викликано вдруге (перший раз
+  // при первинному монтуванні Схеми, перед відкриттям архіву).
+  expect(await screen.findByRole('button', { name: 'Архів карток' })).toBeTruthy();
+  expect(props.loadLayout).toHaveBeenCalledTimes(2);
+});
+
+test('CH-01: кнопка "← Назад" в Архіві, відкритому з Карток, повертає на Картки', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
+  props.loadArchivedCards.mockResolvedValue([]);
+
+  render(<App {...props} />);
+  await screen.findByRole('heading', { name: 'Спорт' });
+  fireEvent.click(await screen.findByRole('button', { name: 'Архів карток' }));
+  await screen.findByText('Архів порожній');
+
+  fireEvent.click(screen.getByRole('button', { name: '← Назад' }));
+
+  expect(await screen.findByRole('heading', { name: 'Спорт' })).toBeTruthy();
+  expect(screen.queryByText('Архів порожній')).toBeNull();
 });
 
 // Живе тестування (Андрій): "При натисканні на картки я попадаю в архів
@@ -427,14 +470,19 @@ test('Задача 13: кнопка "← Назад" в Архіві, відкр
 // 'archive' (D-111: навмисно, "Картки не скидає під-навігацію create/detail/
 // archive"), тому клік із Архіву повертав в Архів. Тепер "Картки" ЗАВЖДИ
 // скидає й Screen на 'deck' -- цей тест пінить саме реальний баг-сценарій.
-test('живе тестування: клік "Картки" з Архіву (відкритого з Аналітики) веде на Колоду, не лишає в Архіві', async () => {
+test('живе тестування: клік "Картки" з Архіву (відкритого зі Схеми) веде на Колоду, не лишає в Архіві', async () => {
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([{ id: 'card-1', name: 'Спорт' }]);
+  props.loadLayout.mockResolvedValue({
+    layoutMode: null,
+    cards: [{ cardId: 'card-x', cardTitle: 'X', x: 20, y: 30 }],
+    connections: [],
+  });
   props.loadArchivedCards.mockResolvedValue([]);
 
   render(<App {...props} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Аналітика' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Архів' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Схема' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Архів карток' }));
   await screen.findByText('Архів порожній');
 
   fireEvent.click(screen.getByRole('button', { name: 'Картки' }));
@@ -449,8 +497,8 @@ test('ISS-55 stage 3: розархівування картки в Архіві 
   props.loadArchivedCards.mockResolvedValue([{ id: 'card-2', name: 'Читання' }]);
 
   render(<App {...props} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Аналітика' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Архів' }));
+  await screen.findByText('Тут ще немає жодної картки');
+  fireEvent.click(await screen.findByRole('button', { name: 'Архів карток' }));
   fireEvent.click(await screen.findByText('Читання'));
   fireEvent.click(await screen.findByRole('button', { name: 'Розархівувати' }));
 

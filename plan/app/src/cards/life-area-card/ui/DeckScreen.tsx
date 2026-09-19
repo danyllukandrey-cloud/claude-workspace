@@ -21,6 +21,7 @@ import type { MetricBlockFormValues } from './MetricBlockForm';
 import type { CardBackData, CardFaceData } from './types';
 
 const CREATE_CARD_LABEL = 'Створити картку';
+const ARCHIVE_LABEL = 'Архів карток';
 
 export interface DeckScreenProps {
   /**
@@ -35,6 +36,13 @@ export interface DeckScreenProps {
   loadCards: () => Promise<DeckGridItem[]>;
   /** Викликається при кліку на кнопку "Створити картку" (ISS-55). */
   onCreateCard: () => void;
+  /**
+   * CH-01 (docs/features/life-area-card/changes.md): дубль кнопки "Архів
+   * карток" біля "Створити картку" -- та сама точка входу, що кнопка на
+   * Схемі (`structure` CH-01, координовано). App.tsx (composition root)
+   * підставляє СПІЛЬНИЙ callback в обидва місця -- не окрему реалізацію тут.
+   */
+  onOpenArchive: () => void;
   /**
    * Review 2026-09-07 C14 (AC-04): loadCards відхилено з AppError, чий
    * httpStatus === 401 (сесія протермінована/невалідна, main.tsx) --
@@ -67,6 +75,7 @@ const DEFAULT_ERROR_MESSAGE = 'Не вдалося завантажити кол
 export function DeckScreen({
   loadCards,
   onCreateCard,
+  onOpenArchive,
   onSessionExpired,
   loadCard,
   loadBack,
@@ -122,11 +131,18 @@ export function DeckScreen({
   //
   // D-124 (живе тестування): "Архів" переїхав на Літопис-Аналітику
   // (structure/ui/AnalyticsScreen.tsx), "Вийти" -- у верхній бар (App.tsx,
-  // поруч із шестернею) -- обидва прибрано звідси. Лишається лише "Створити
+  // поруч із шестернею) -- обидва прибрано звідси. Лишається "Створити
   // картку" (без "+", наступний прохід живого тестування прибрав), центрована
   // й АВТОШИРИНИ -- `flex justify-center` замість колишнього `flex-col` (у
   // колонці Button стретчився на всю ширину за замовчуванням flex-стиснення,
   // не через власний CSS).
+  //
+  // CH-01 (docs/features/life-area-card/changes.md, координовано зі
+  // structure CH-01): "Архів карток" повертається сюди як ДУБЛЬ (не як
+  // повернення старої D-124 поведінки -- та кнопка вела на іншу дію й досі
+  // прибрана з Аналітики) поруч із "Створити картку" -- `justify-center`
+  // лишається, `flex-col` -> `flex-wrap` (дві кнопки в ряд, перенос на
+  // вузькому екрані, той самий "не на всю ширину" контракт).
   //
   // D-125 (живе тестування): "усе пропорційно" -- відступ кнопки від нижньої
   // панелі має дорівнювати власному відступу самої панелі (py-3, App.tsx's
@@ -166,8 +182,11 @@ export function DeckScreen({
     return (
       <div className="flex h-full flex-col gap-3 bg-bg">
         <EmptyState message="Тут ще немає жодної картки" actionHint="Створіть першу картку, щоб почати" />
-        <div className="mt-auto flex justify-center">
+        <div className="mt-auto flex flex-wrap items-center justify-center gap-3">
           <Button label={CREATE_CARD_LABEL} onClick={onCreateCard} />
+          {/* CH-01 (life-area-card/changes.md): дубль "Архів карток", та сама
+              точка входу, що кнопка на Схемі (structure CH-01). */}
+          <Button label={ARCHIVE_LABEL} onClick={onOpenArchive} />
         </div>
       </div>
     );
@@ -192,8 +211,11 @@ export function DeckScreen({
           />
         )}
       />
-      <div className="mt-auto flex justify-center">
+      <div className="mt-auto flex flex-wrap items-center justify-center gap-3">
         <Button label={CREATE_CARD_LABEL} onClick={onCreateCard} />
+        {/* CH-01 (life-area-card/changes.md): дубль "Архів карток", та сама
+            точка входу, що кнопка на Схемі (structure CH-01). */}
+        <Button label={ARCHIVE_LABEL} onClick={onOpenArchive} />
       </div>
     </div>
   );
