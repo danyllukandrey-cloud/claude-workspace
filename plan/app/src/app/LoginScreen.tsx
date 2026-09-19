@@ -83,14 +83,14 @@ export function LoginScreen({ requestSession, onLoginSuccess, renderGoogleButton
   }, [retryToken]);
 
   return (
-    <main className="relative isolate flex min-h-dvh items-center justify-center overflow-hidden bg-bg px-4">
+    <main className="relative isolate flex min-h-dvh items-center justify-center overflow-x-hidden overflow-y-auto bg-bg px-4 py-10">
       {/* Та сама "сфумато"-аура, що позаду CardShell (D-120) -- екран входу
           лишається візуально тим самим продуктом, не окремою заставкою. */}
       <div aria-hidden="true" className="absolute -left-16 -top-20 -z-10 h-72 w-72 rounded-full bg-blob-a opacity-90 blur-3xl" />
       <div aria-hidden="true" className="absolute -bottom-24 -right-10 -z-10 h-64 w-64 rounded-full bg-blob-b opacity-90 blur-3xl" />
       <div aria-hidden="true" className="absolute right-1/3 top-2/3 -z-10 h-48 w-48 rounded-full bg-blob-c opacity-90 blur-3xl" />
 
-      <div className="flex w-full max-w-xs flex-col items-center gap-8 text-center">
+      <div className="flex w-full max-w-md flex-col items-center gap-8 text-center">
         <div className="flex flex-col items-center gap-3">
           <Logo className="h-48 w-48 text-ink" />
           <h1 className="font-display text-2xl font-bold leading-relaxed tracking-tight text-ink">ПЛАН</h1>
@@ -110,6 +110,49 @@ export function LoginScreen({ requestSession, onLoginSuccess, renderGoogleButton
             />
           </div>
         )}
+
+        {/* Пояснення сервісу під кнопкою входу -- той самий italic-стиль
+            вторинного/пояснювального тексту, що вже є в системних підказках
+            і порожніх станах (EmptyState, TextField/NumberField hint,
+            DeclarationScreen), не новий стиль. */}
+        <div className="flex flex-col gap-3 text-left">
+          <p className="text-sm italic text-ink-muted">
+            Сервіс задуманий як інструмент за допомогою якого користувач опише та буде вести план свого життя. Тут
+            навмисно немає дрібних завдань, сервіс дає можливість аналізувати основні напрямки (навчання, кар'єра,
+            здоров'я, ...), сформулювати загальну картину та відстежувати напрямок зусиль відносно плану.
+          </p>
+          <p className="text-sm italic text-ink-muted">
+            Основним інструментом сервісу є ШІ Агент. Його завдання провести по сервісу, допомогти заповнити тексти,
+            скласти плани, сформулювати картки та схему, а в кінці віддати аналітику, що допоможе бачити та
+            працювати над справжньою картиною вашого життя.
+          </p>
+          <p className="text-sm italic text-ink-muted">
+            У першій вкладці сервісу потрібно описати картину світу, як і ким ви себе відчуваєте, або який шлях
+            вибрали. Це вкладка "Декларація".
+          </p>
+          <p className="text-sm italic text-ink-muted">
+            Друга вкладка "ПЛАН" - це вкладка де ви розпишите власні плани в трьох рівнях - тактичному, оперативному
+            та стратегічному. Так ви зафіксуєте та продумаєте всі рівні, зможете відстежувати стійкість та
+            виконання.
+          </p>
+          <p className="text-sm italic text-ink-muted">
+            Третя вкладка це "Картки" - вкладка де ви заведете картку на кожну важливу для вас зону життя, чи ту яку
+            ви вибрали відстежувати. До прикладу картка "Навчання" чи "Кар'єра". Кожна з цих карток має дві сторони.
+            Лицева сторона це сторона щоб описати навіщо, чи чому важливо, а також декілька слів де за важливістю ви
+            відчуваєте в своєму житті цю зону/картку. Зворот картки це місце основних метрик що ви будете
+            вимірювати. До прикладу метрика "Прочитано книг", ви виберете ціль, строк або властивість. Ця сторона
+            буде збирати та відображати дані про прогрес.
+          </p>
+          <p className="text-sm italic text-ink-muted">
+            Четверта вкладка Це вкладка "Схема" Тут ви розкладете візуально ваші картки, ваші зони життя за
+            пріоритетами. Це місце візуалізації та побудови схеми життя, що буде відображати куди ви хочете
+            зосередити зусилля, послідовність, пріоритети та можливо зони, що просто поза вимірюванням.
+          </p>
+          <p className="text-sm italic text-ink-muted">
+            Останньою вкладкою є вкладка "Аналітика". Тут буде зібрана картина з усіх карток, та звіти від Агента.
+          </p>
+          <p className="text-sm italic text-ink-muted">Приємного користування.</p>
+        </div>
       </div>
     </main>
   );
