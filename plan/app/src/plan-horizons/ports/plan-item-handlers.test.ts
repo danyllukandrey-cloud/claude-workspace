@@ -12,7 +12,7 @@
 //   - курсорну пагінацію `PlanItemPage` (DoD T8);
 //   - код помилки, який транспорт мапить у 422/404/400.
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   listPlanItems,
   createPlanItem,
@@ -185,6 +185,122 @@ describe('createPlanItem handler -- POST /api/v1/plan-items (AC-01, AC-02, AC-05
       createPlanItem(db, OWNER, { horizon: 'yearly', planText: 'Щось' } as never)
     ).rejects.toBeInstanceOf(PlanItemValidationError);
     expect(query).not.toHaveBeenCalled();
+  });
+});
+
+// RED (T14) -- ідемпотентність створення пункту (spec.md §6 NFR: два натискання
+// «Зберегти» в межах 1 секунди не створюють дублю; контракт дає на це запас у
+// 5 хвилин через обов'язковий заголовок Idempotency-Key).
+//
+// Перевіряємо не «функція викликалась», а саме те, від чого захищаємось:
+// скільки рядків народилось у базі. Лічильник db.query -- це і є кількість
+// INSERT-ів, тож «один рядок» тут доказовий, а не декларативний.
+describe('createPlanItem handler -- ідемпотентність за Idempotency-Key (T14, spec.md §6 NFR)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Кожен виклик віддає СВІЙ id -- дубль у базі був би одразу видно за різними id. */
+  function insertingDb(): { db: Db; query: ReturnType<typeof vi.fn> } {
+    let n = 0;
+    const query = vi.fn().mockImplementation(async () => {
+      n += 1;
+      return { rows: [planItemRow({ id: `plan-item-${n}` })] };
+    });
+    return { db: { query }, query };
+  }
+
+  const BODY = { horizon: 'tactical', planText: 'Пробігти півмарафон' };
+
+  it('returns the first result and writes a single row for a repeat of the same key within 1 second', async () => {
+    const { db, query } = insertingDb();
+
+    const first = await createPlanItem(db, OWNER, BODY, undefined, 'key-double-save');
+    const second = await createPlanItem(db, OWNER, BODY, undefined, 'key-double-save');
+
+    expect(second).toEqual(first);
+    expect(second.id).toBe('plan-item-1');
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it('collapses two simultaneous in-flight saves with the same key into one row', async () => {
+    const { db, query } = insertingDb();
+
+    const [first, second] = await Promise.all([
+      createPlanItem(db, OWNER, BODY, undefined, 'key-in-flight'),
+      createPlanItem(db, OWNER, BODY, undefined, 'key-in-flight'),
+    ]);
+
+    expect(second).toEqual(first);
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it('records the action log only once for the deduplicated save (AC-05)', async () => {
+    const { db } = insertingDb();
+    const recordAction = vi.fn().mockResolvedValue(undefined);
+
+    await createPlanItem(db, OWNER, BODY, recordAction, 'key-log-once');
+    await createPlanItem(db, OWNER, BODY, recordAction, 'key-log-once');
+
+    expect(recordAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('creates separate rows for different keys -- no false deduplication', async () => {
+    const { db, query } = insertingDb();
+
+    const first = await createPlanItem(db, OWNER, BODY, undefined, 'key-a');
+    const second = await createPlanItem(db, OWNER, BODY, undefined, 'key-b');
+
+    expect(first.id).toBe('plan-item-1');
+    expect(second.id).toBe('plan-item-2');
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it('never deduplicates across owners -- the same key from another user is another row (AC-07)', async () => {
+    const { db, query } = insertingDb();
+
+    const mine = await createPlanItem(db, OWNER, BODY, undefined, 'key-shared');
+    const theirs = await createPlanItem(db, 'user-77', BODY, undefined, 'key-shared');
+
+    expect(theirs.id).not.toBe(mine.id);
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not deduplicate when no key is given -- two deliberate saves stay two rows', async () => {
+    const { db, query } = insertingDb();
+
+    const first = await createPlanItem(db, OWNER, BODY);
+    const second = await createPlanItem(db, OWNER, BODY);
+
+    expect(first.id).toBe('plan-item-1');
+    expect(second.id).toBe('plan-item-2');
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it('forgets the key after the 5-minute contract window', async () => {
+    vi.useFakeTimers();
+    const { db, query } = insertingDb();
+
+    const first = await createPlanItem(db, OWNER, BODY, undefined, 'key-expiring');
+    vi.advanceTimersByTime(5 * 60 * 1000 + 1);
+    const later = await createPlanItem(db, OWNER, BODY, undefined, 'key-expiring');
+
+    expect(later.id).not.toBe(first.id);
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not cache a failed save -- a retry with the same key reaches the database', async () => {
+    const query = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('З\'єднання з базою впало'))
+      .mockResolvedValueOnce({ rows: [planItemRow()] });
+    const db: Db = { query };
+
+    await expect(createPlanItem(db, OWNER, BODY, undefined, 'key-retry')).rejects.toThrow();
+    await expect(createPlanItem(db, OWNER, BODY, undefined, 'key-retry')).resolves.toMatchObject({
+      id: 'plan-item-1',
+    });
+    expect(query).toHaveBeenCalledTimes(2);
   });
 });
 

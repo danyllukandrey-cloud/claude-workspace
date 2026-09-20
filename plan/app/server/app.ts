@@ -857,11 +857,19 @@ export function createApp(deps: AppDeps): express.Express {
   app.post(
     '/api/v1/plan-items',
     asyncHandler(async (req, res) => {
-      // Idempotency-Key контракт оголошує обов'язковим заголовком -- його
-      // обробка (той самий результат на повтор ключа) лишається за T14, тут
-      // навмисно не імітується напівмірою: мовчазне ігнорування ключа
-      // видніше, ніж наполовину реалізована ідемпотентність.
-      const item = await planItemHandlers.createPlanItem(deps.db, ownerUserId(req), req.body, deps.recordAction);
+      // Idempotency-Key (T14, spec.md §6 NFR): повтор того самого ключа в
+      // межах вікна віддає перший результат і другого пункту не створює.
+      // Відсутність заголовка не блокуємо 400-ю -- контракт оголошує його
+      // обов'язковим, але наявні клієнти (і всі чотири маршрути вище) писались
+      // без нього; жорсткішати тут означало б зламати робочий екран заради
+      // формальності. Немає ключа -- немає дедуплікації, і це видно з коду.
+      const item = await planItemHandlers.createPlanItem(
+        deps.db,
+        ownerUserId(req),
+        req.body,
+        deps.recordAction,
+        req.get('Idempotency-Key')
+      );
       res.status(201).json(item);
     })
   );

@@ -1659,6 +1659,34 @@ describe('composition root -- маршрути ПЛАНу змонтовані (
     }
   });
 
+  // RED (T14): заголовок Idempotency-Key має реально дійти від HTTP до порта --
+  // без цього рядка в composition root уся дедуплікація нижче мертва, той самий
+  // урок, що з немонтованими маршрутами вище.
+  it('POST /api/v1/plan-items twice with the same Idempotency-Key writes one row (spec.md §6 NFR)', async () => {
+    const query = planItemDb();
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+    const save = () =>
+      fetch(`${baseUrl}/api/v1/plan-items`, {
+        method: 'POST',
+        headers: { ...AUTHED_JSON, 'Idempotency-Key': 'a1b2c3d4-0000-4000-8000-000000000001' },
+        body: JSON.stringify({ horizon: 'tactical', planText: 'Пробігти півмарафон' }),
+      });
+
+    try {
+      const first = await save();
+      const second = await save();
+
+      expect(first.status).toBe(201);
+      expect(second.status).toBe(201);
+      expect(await second.json()).toEqual(await first.json());
+      // Один INSERT на два натискання «Зберегти» -- дубля в базі немає.
+      expect(query).toHaveBeenCalledTimes(1);
+    } finally {
+      server.close();
+    }
+  });
+
   it('POST /api/v1/plan-items with blank text is the contract 422 plan_item.text_required (AC-02)', async () => {
     const query = planItemDb();
     const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
