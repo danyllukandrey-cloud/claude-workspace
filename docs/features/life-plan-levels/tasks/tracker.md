@@ -16,7 +16,7 @@
 | T9 | PlanScreen.tsx | ui | Андрій + Claude Code | M | T8 | todo |
 | T10 | PlanItemEditor.tsx | ui | Андрій + Claude Code | M | T8 | todo |
 | T11 | Навігація в App.tsx/main.tsx | wiring | Андрій + Claude Code | S | T9, T10 | todo |
-| T12 | Підключення чату агента | wiring | Андрій + Claude Code | M | T8, T11 | todo |
+| T12 | Підключення чату агента | wiring | Андрій + Claude Code | M | T8, T11 | done |
 | T13 | Тест авторизації/non-disclosure | tests | Андрій + Claude Code | S | T8 | todo |
 | T14 | Тест ідемпотентності | tests | Андрій + Claude Code | S | T8 | todo |
 

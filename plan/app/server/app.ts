@@ -680,10 +680,23 @@ export function createApp(deps: AppDeps): express.Express {
       // threaded through the same optional way as everywhere else -- absent
       // in an environment that hasn't configured outbound email, createMessage
       // simply never attempts to forward a problem to the developer.
+      // T12 (life-plan-levels AC-09, sad.md §6 Critical flow 4): підтверджений
+      // у чаті пункт ПЛАНу створюється РІВНО тим самим хендлером, що обслуговує
+      // POST /api/v1/plan-items прямого введення (нижче в цьому ж файлі) --
+      // один шлях запису на обидва способи. Зв'язується саме тут, у
+      // композиційному корені: ні agent не імпортує plan-horizons, ні навпаки
+      // (tasks/T12 Notes, architecture-map.md §Конвенції).
       const turn = await chatHandlers.createMessage(deps.db, deps.askClaude, ownerUserId(req), req.body, {
         transport: deps.emailTransport,
         developerEmail: deps.developerEmail,
         recordAction: deps.recordAction,
+        createPlanItem: (input) =>
+          planItemHandlers.createPlanItem(
+            deps.db,
+            input.ownerUserId,
+            { horizon: input.horizon, planText: input.planText },
+            deps.recordAction
+          ),
       });
       res.status(201).json(turn);
     })
