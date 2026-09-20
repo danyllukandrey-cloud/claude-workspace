@@ -97,13 +97,24 @@ paths:
         "413":
           $ref: "#/components/responses/InvalidBodyTooLarge"
         "422":
-          description: текст порожній або лише пробіли (AC-02)
+          description: |
+            Текст порожній або лише пробіли (AC-02), або `horizon` поза трьома дозволеними
+            значеннями (`tactical`/`operational`/`strategic`) -- реконсиляція 2026-09-20, review:
+            обидва коди вже кидав `domain/plan-item.ts`, контракт раніше називав лише перший.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
-              example:
-                code: "plan_item.text_required"
-                message: "A plan-item needs text before it can exist"
+              examples:
+                textRequired:
+                  summary: Порожній або лише-пробільний текст
+                  value:
+                    code: "plan_item.text_required"
+                    message: "A plan-item needs text before it can exist"
+                horizonInvalid:
+                  summary: Горизонт не одне з трьох дозволених значень
+                  value:
+                    code: "plan_item.horizon_invalid"
+                    message: "Unknown plan horizon"
 
   /api/v1/plan-items/{planItemId}:
     patch:
@@ -135,7 +146,25 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/PlanItem" }
         "400":
-          $ref: "#/components/responses/InvalidBody"
+          description: |
+            Або зіпсоване тіло запиту (malformed JSON, той самий наскрізний body-parser
+            middleware, що на інших ендпоінтах), або порожній патч без жодного поля для зміни
+            (реконсиляція 2026-09-20, review: `{}` без `planText`/`done` -- код уже кидав
+            `app/update-plan-item.ts`, контракт його не називав).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                invalidBody:
+                  summary: Зіпсоване тіло запиту
+                  value:
+                    code: "request.invalid_body"
+                    message: "Некоректне тіло запиту"
+                nothingToUpdate:
+                  summary: Порожній патч -- жодного поля для зміни
+                  value:
+                    code: "plan_item.nothing_to_update"
+                    message: "Nothing to update"
         "401":
           $ref: "#/components/responses/Error"
         "404":
