@@ -90,6 +90,8 @@ erDiagram
 **Constraints:** UNIQUE на `(structure_id, card_id)` — одна позиція на картку; FK → `structure(id)`; FK → `card(id)`.
 **AC-02 (D-62, колізія клітинки) скасована D-131-наступним рішенням** — вільне позиціювання дозволяє карткам перекриватись, тож частковий UNIQUE `uq_layout_position_active_cell` (раніше блокував дві активні картки в одній клітинці) видалений разом із `cell_index` тією самою міграцією; жодного обмеження рівня БД на `(position_x, position_y)` не додано навмисно.
 
+**Читання поза власною схемою ([CH-02](changes.md), 2026-09-19, spec.md AC-19):** Схема (`LayoutBoard.tsx`) і Аналітика (`AnalyticsScreen.tsx`) домальовують кольоровий м'ячик стану картки, читаючи `card.tracking_mode`/`card.health_state` (`life-area-card/data-model.md#card`) через той самий join за `card_id`, яким уже читається `card.name`/`card.status` для відображення картки. Жодної нової колонки в таблицях `structure` не додано — поле повністю належить `life-area-card`, тут лише споживається на читання.
+
 ## Індекси (Структура і розкладка)
 
 | Index | Columns | Query it serves |
@@ -176,7 +178,7 @@ erDiagram
 
 ## Дрейф (drift)
 
-Greenfield-фіча — жодного домену `structure` в коді ще немає (той самий стан, що й `life-area-card` до свого `data-model`), тож перевірка дрейфу код↔схема неактуальна цього разу.
+**Оновлено 2026-09-20** (стара нотатка вище описувала стан до `implement`, застаріла): `structure` більше не greenfield — 28/28 задач реалізовано, незалежне рев'ю пройдено, [PR #2](https://github.com/danyllukandrey-cloud/claude-workspace/pull/2) змержовано 2026-09-12. Пост-implementation правки CH-01/CH-02 ([changes.md](changes.md), 2026-09-19) не додали жодної нової таблиці чи колонки у власній схемі `structure` — лише нове читання чужого поля (`card.tracking_mode`/`health_state`, дивись вище). Повний прохід код↔схема (`/sdd:data-model structure --drift-only`) з часу `implement` не перезапускався.
 
 ## Відкриті питання (перенесено в spec.md §8, не дублюю тут)
 

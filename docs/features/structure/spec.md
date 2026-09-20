@@ -105,6 +105,12 @@ feature_size: "M"
 
 Раніше: «обравши варіант групування «за логікою», вибрати один із трьох підвидів». Дворівневого вибору («спершу «за логікою», потім підвид») більше немає — баланс навколо ядра / фокус і спостереження / причина і наслідок тепер три з п'яти рівноправних пунктів US-02, обираються напряму. AC-16/AC-16b, що описували цей US, злиті в AC-11/AC-11b нижче.
 
+### US-13: Побачити стан картки без вимірювань на Схемі й Аналітиці ([CH-02](changes.md))
+
+**As a** user
+**I want** бачити кольоровий м'ячик стану картки (використовується / критично потребує відновлення / на паузі, `life-area-card` CH-02) також на Схемі й Аналітиці, а не лише на самій картці
+**So that** я маю повну картину пріоритетів в одному місці, не відкриваючи кожну картку окремо
+
 ## 5. Acceptance criteria
 
 ### AC-01 (US-04) — happy path
@@ -224,6 +230,12 @@ feature_size: "M"
 **Given** a user's Structure is currently in the "staging" layout mode (вимога 15 — "Готово до розкладання")
 **When** a new card is added, or the user switches INTO this mode with cards already placed
 **Then** the card (on add) keeps no position, same as AC-09 everywhere — and switching into "staging" is a deliberate no-op (`computeStagingLayout`/`applyLayoutMode` early-return, D-132): unlike every other mode's AC-11b auto-layout, nothing is recomputed and no card is moved, cards placed under the previous mode simply stay where they are; only a card that already had no position stays in the tray until the user drags it onto the canvas themself
+
+### AC-19 (US-13) — happy path
+
+**Given** a card has its tracking mode set to "стан без вимірювань" with one of the three health states (`life-area-card/spec.md` AC-21/AC-22)
+**When** the user opens Схема or Аналітика
+**Then** the system shows the same colored state indicator on that card's own representation in both screens, sourced directly from the card's field (no independent state of its own in Structure), without needing to open the card itself
 
 ## 6. Non-functional requirements
 
