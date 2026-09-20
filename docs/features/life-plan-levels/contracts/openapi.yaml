@@ -1,0 +1,277 @@
+# Derived -- never hand-edit without re-running /sdd:api life-plan-levels --reconcile after upstream changes.
+#   fields + constraints  <- data-model.md (plan_item)
+#   error responses       <- sad.md §6 sequence alt-branches
+#   endpoint list + shape <- spec.md §4 user stories / §5 acceptance criteria
+openapi: 3.1.0
+
+info:
+  title: Life-plan-levels API
+  version: 0.1.0
+  description: |
+    Сторінка ПЛАН -- три фіксовані часові горизонти (тактичний/оперативний/стратегічний), кожен
+    зі своїм списком пунктів-намірів (spec.md §1/§2). Пункт створюється й редагується напряму;
+    агент у чаті (окремий API, поза цим контрактом) лише опційно допомагає сформулювати текст --
+    підтверджена пропозиція йде через той самий POST, що й пряме введення (sad.md §4 п.3).
+
+    Горизонт пункту незмінний після створення -- перенесення між горизонтами відкладено на v2
+    (spec.md §3 non-goal). "Видалення" пункту -- м'яке (DELETE позначає status=removed, той самий
+    підхід, що archive-metric-block у life-area-card), ніколи фізичне.
+  contact:
+    name: Андрій Данилюк
+
+servers:
+  - url: https://api.example.com
+    description: Production
+  - url: http://localhost
+    description: Local
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: PlanItems
+    description: Пункти плану в трьох часових горизонтах -- створення, читання, редагування, м'яке видалення
+
+paths:
+  /api/v1/plan-items:
+    get:
+      tags: [PlanItems]
+      summary: Прочитати активні пункти плану користувача (US-01, AC-08, AC-11)
+      description: |
+        Повертає активні (`status = active`) пункти всіх трьох горизонтів, у порядку додавання.
+        Порожній список -- легітимний стан (перший запуск, AC-11), не помилка.
+      operationId: listPlanItems
+      parameters:
+        - in: query
+          name: after
+          description: курсор -- id останнього побаченого пункту; сторінка починається після нього
+          schema: { type: string, format: uuid }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlanItemPage" }
+        "401":
+          $ref: "#/components/responses/Error"
+
+    post:
+      tags: [PlanItems]
+      summary: Створити пункт плану (US-02 AC-01, US-03/US-08 AC-09/AC-06)
+      description: |
+        Той самий виклик для прямого введення (AC-01) і для тексту, підтвердженого в чаті з
+        агентом (AC-09) -- сервер не розрізняє джерело тексту, обидва шляхи однакові з погляду
+        API (sad.md §4 п.3). Порожній чи лише-пробільний `planText` блокується (AC-02) --
+        це правило стосується лише створення, редагування має власну поведінку (PATCH нижче).
+      operationId: createPlanItem
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          description: |
+            клієнтський ключ; сервер повертає перший результат при повторі того самого ключа
+            протягом 5 хвилин (покриває вимогу spec.md §6 -- два натискання "Зберегти" в межах
+            1 секунди не створюють дублю, з запасом на реальні мережеві повтори)
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlanItemCreate" }
+            example:
+              horizon: "tactical"
+              planText: "Пробігти півмарафон"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlanItem" }
+        "400":
+          $ref: "#/components/responses/InvalidBody"
+        "401":
+          $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/InvalidBodyTooLarge"
+        "422":
+          description: текст порожній або лише пробіли (AC-02)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "plan_item.text_required"
+                message: "A plan-item needs text before it can exist"
+
+  /api/v1/plan-items/{planItemId}:
+    patch:
+      tags: [PlanItems]
+      summary: Редагувати текст і/чи чекбокс "виконано" (US-04 AC-03/AC-03b, US-05 AC-04 happy-редагування)
+      description: |
+        Часткове оновлення. `done` -- реверсивний тумблер (AC-03b), можна ставити й знімати без
+        обмежень. `planText`, якщо переданий, має бути непорожнім (та сама вимога, що при
+        створенні) -- видалення пункту йде окремим викликом DELETE нижче, не через порожній
+        `planText` тут. `horizon` не редагується цим викликом -- перенесення між горизонтами
+        відкладено на v2 (spec.md §3).
+      operationId: updatePlanItem
+      parameters:
+        - in: path
+          name: planItemId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlanItemUpdate" }
+            example:
+              done: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlanItem" }
+        "400":
+          $ref: "#/components/responses/InvalidBody"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/PlanItemNotFound"
+        "413":
+          $ref: "#/components/responses/InvalidBodyTooLarge"
+        "422":
+          description: переданий порожній чи лише-пробільний `planText` (те саме правило, що AC-02)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: "plan_item.text_required"
+                message: "A plan-item needs text before it can exist"
+
+    delete:
+      tags: [PlanItems]
+      summary: М'яко видалити пункт плану (US-05, AC-04)
+      description: |
+        Позначає пункт `status = removed` (той самий підхід, що archive-metric-block у
+        life-area-card) -- ніколи фізичне видалення. У продукті це подається користувачу як
+        "очищення тексту в редакторі" (AC-04) -- клієнт викликає цей ендпоінт, коли користувач
+        зберігає пункт із порожнім текстом.
+      operationId: deletePlanItem
+      parameters:
+        - in: path
+          name: planItemId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204":
+          description: Видалено (м'яко) -- більше не з'являється в `GET /plan-items`
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/PlanItemNotFound"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Error:
+      description: Error -- unified envelope
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    PlanItemNotFound:
+      description: |
+        пункт не знайдено серед пунктів поточного користувача -- той самий код і для "не існує",
+        і для "належить іншому" (AC-07: не підтверджуємо й не спростовуємо)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            code: "plan_item.not_found"
+            message: "Plan item not found"
+    InvalidBody:
+      description: |
+        Тіло запиту зіпсоване (некоректний JSON) -- наскрізний body-parser middleware
+        (`express.json()`, `plan/app/server/app.ts`), той самий код на кожному POST/PATCH усіх
+        контрактів продукту
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            code: "request.invalid_body"
+            message: "Некоректне тіло запиту"
+    InvalidBodyTooLarge:
+      description: Тіло запиту завелике -- той самий наскрізний body-parser middleware, що InvalidBody
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            code: "request.invalid_body"
+            message: "Некоректне тіло запиту"
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+          pattern: "^[a-z_]+\\.[a-z_]+$"
+          example: "plan_item.not_found"
+        message: { type: string }
+        details:
+          type: object
+          description: опційний структурований контекст
+
+    PlanItem:
+      type: object
+      required: [id, horizon, planText, done, createdAt]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        horizon:
+          type: string
+          enum: [tactical, operational, strategic]
+        planText: { type: string }
+        done: { type: boolean }
+        createdAt:
+          type: string
+          format: date-time
+          description: дата додавання пункту (AC-01/AC-08) -- незмінна після створення
+
+    PlanItemCreate:
+      type: object
+      required: [horizon, planText]
+      additionalProperties: false
+      properties:
+        horizon:
+          type: string
+          enum: [tactical, operational, strategic]
+        planText: { type: string }
+
+    PlanItemUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        planText: { type: string }
+        done: { type: boolean }
+
+    PlanItemPage:
+      type: object
+      required: [items, has_next, has_prev]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/PlanItem" }
+        has_next: { type: boolean }
+        has_prev: { type: boolean }
+        next_cursor: { type: [string, "null"], format: uuid }
