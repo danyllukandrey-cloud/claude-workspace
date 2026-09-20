@@ -78,6 +78,9 @@ const TO_PROMOTE = [
   // вимірювань" -- adds card.tracking_mode/health_state, жодних крос-
   // фічевих залежностей, тож у самому кінці, як і 08/12 вище.
   { slug: 'life-area-card', staged: '09_add_card_tracking_mode', name: 'add-card-tracking-mode' },
+  // life-plan-levels T1: нова таблиця plan_item (три горизонти плану). Єдина
+  // залежність -- FK на вже промоучений app_user, тож у самому кінці, як і 08/12/09.
+  { slug: 'life-plan-levels', staged: '01_create_plan_item', name: 'create-plan-item' },
 ];
 
 function readReadme() {
