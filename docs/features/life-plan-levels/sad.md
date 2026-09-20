@@ -132,7 +132,28 @@ C4Container
 
 ## 6. Runtime view
 
-**Critical flow 1: Пряме створення пункту (AC-01)**
+**Critical flow 1: Перегляд сторінки ПЛАН (US-01, AC-08, AC-11)**
+
+```mermaid
+sequenceDiagram
+    actor User as Користувач
+    participant UI as <ui>
+    participant Service as <service>
+    participant Store as <data-store>
+    User->>UI: відкриває сторінку ПЛАН
+    UI->>Service: запитує пункти всіх трьох горизонтів
+    Service->>Store: читає plan_item власника
+    Store-->>Service: рядки (або жодного)
+    alt є хоча б один пункт
+        Service-->>UI: пункти по горизонтах, з датою й станом чекбокса
+        UI-->>User: три горизонти, кожен зі своїм списком
+    else пунктів ще немає (перший запуск)
+        Service-->>UI: порожні горизонти
+        UI-->>User: три порожні горизонти, кожен з кнопкою "+"
+    end
+```
+
+**Critical flow 2: Пряме створення пункту (US-02, AC-01)**
 
 ```mermaid
 sequenceDiagram
@@ -149,7 +170,20 @@ sequenceDiagram
     PWA-->>User: пункт з'являється в списку горизонту, невідмічений
 ```
 
-**Critical flow 2: Створення пункту через агента (AC-09, AC-06)**
+**Critical flow 3: Спроба зберегти порожній пункт (US-02, AC-02)**
+
+```mermaid
+sequenceDiagram
+    actor User as Користувач
+    participant UI as <ui>
+    participant Service as <service>
+    User->>UI: тисне "+", лишає текст порожнім, тисне "Зберегти"
+    UI->>Service: створити пункт (текст порожній або лише пробіли)
+    Service-->>UI: відмова -- текст обов'язковий
+    UI-->>User: пояснення, що текст потрібен -- пункт не створено
+```
+
+**Critical flow 4: Створення пункту через агента (US-03/US-08, AC-09, AC-06)**
 
 ```mermaid
 sequenceDiagram
@@ -170,6 +204,59 @@ sequenceDiagram
     Backend-->>PWA: пункт створено
     PWA-->>User: пункт з'являється в списку горизонту
 ```
+
+**Critical flow 5: Чекбокс "виконано" туди-назад (US-04, AC-03, AC-03b)**
+
+```mermaid
+sequenceDiagram
+    actor User as Користувач
+    participant UI as <ui>
+    participant Service as <service>
+    participant Store as <data-store>
+    User->>UI: клікає чекбокс на пункті
+    UI->>Service: позначити пункт виконаним
+    Service->>Store: оновлює стан пункту
+    Service->>Store: записує подію в спільний Лог дій (та сама транзакція)
+    Store-->>Service: ok
+    Service-->>UI: пункт виконано
+    UI-->>User: пункт лишається в списку, показаний як виконаний
+    User->>UI: клікає чекбокс ще раз
+    UI->>Service: повернути пункт у стан "не виконано"
+    Service->>Store: оновлює стан + записує подію в Лог дій
+    Store-->>Service: ok
+    Service-->>UI: пункт знову не виконано
+    UI-->>User: чекбокс знято
+```
+
+**Critical flow 6: Редагування тексту / м'яке видалення (US-05, AC-04, AC-05)**
+
+```mermaid
+sequenceDiagram
+    actor User as Користувач
+    participant UI as <ui>
+    participant Service as <service>
+    participant Store as <data-store>
+    User->>UI: відкриває редактор одного пункту, змінює текст
+    alt новий текст непорожній
+        UI->>Service: зберегти новий текст пункту
+        Service->>Store: оновлює текст пункту
+        Service->>Store: записує подію в Лог дій
+        Store-->>Service: ok
+        Service-->>UI: текст оновлено
+        UI-->>User: пункт показує новий текст
+    else текст очищено повністю (не лише пробіли)
+        UI->>Service: зберегти пункт із порожнім текстом
+        Service->>Store: позначає пункт м'яко видаленим (технічно зберігається)
+        Service->>Store: записує подію в Лог дій
+        Store-->>Service: ok
+        Service-->>UI: пункт прибрано зі списку
+        UI-->>User: пункт більше не видно в горизонті
+    end
+```
+
+**Use-case coverage (§4 -> flow):** US-01 -> flow 1. US-02 -> flow 2 (happy) + flow 3 (error). US-03 -> flow 4. US-04 -> flow 5. US-05 -> flow 6. US-06 -> показано в кожному потоці, де є запис (flow 2, 4, 5, 6), без окремого потоку. US-07 -> без потоку, наскрізна перевірка (див. нижче). US-08 -> flow 4.
+
+**Coverage note:** AC-05 (кожна зміна лишає слід у Лозі дій) не має власної окремої діаграми -- показана як крок у кожній з flow 1, 2, 5, 6, де відбувається запис. AC-07 (авторизація -- чужий ПЛАН) не має власної діаграми -- це та сама наскрізна перевірка власника на кожному запиті, що вже вбудована в `structure`/`life-area-card` (§8 Crosscutting), не окремий рантайм-потік цієї фічі.
 
 ## 7. Deployment view
 
