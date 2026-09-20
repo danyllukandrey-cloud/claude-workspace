@@ -21,7 +21,9 @@ feature_size: "S"
 
 Рішення цієї сесії (2026-09-20), що звужують обсяг v1: текст пункту й чекбокс «виконано» — пряма дія користувача, агент лише опційно допомагає сформулювати текст у чаті, і його пропозиція лишається виключно в чаті, доки не підтверджена; перенесення пункту між горизонтами відкладено на v2; кожен пункт показує дату, коли він був доданий; очищення тексту пункту в редакторі — єдиний спосіб прибрати пункт зі списку (м'яко, без фізичного видалення), окремої кнопки видалення нема; чекбокс «виконано» — реверсивна дія.
 
-**Decision override:** вимога «історія не втрачається» (raw idea §1, повторена в `idea-brief.md` §13 як обов'язкова навіть без окремого екрана відновлення) — v1 задовольняє її записом факту зміни (що і коли змінилось) у спільний Лог дій продукту, БЕЗ можливості переглянути чи відновити сам старий текст пункту. Rationale: під час цієї сесії спершу розглядали повне збереження версій тексту з екраном відновлення — але це вимагає окремого сховища попередніх версій і окремого UI, що вивело б фічу за межі вже узгодженого розміру «мала, ~1 тиждень» (`idea-brief.md` §11 сам оцінював зусилля в 3 людино-тижні — навіть без версій, тож повна історія точно підняла б обсяг). Користувач свідомо обрав лишити повне відновлення на v2, коли реальне використання покаже, чи ця можливість справді потрібна.
+**Уточнено при `clarify` (2026-09-20):** редактор відкривається на ОДИН конкретний пункт за раз, не на весь горизонт одразу — кожен горизонт показує свій список уже створених пунктів плюс кнопку «+» (додати ще один пункт), бо наперед невідомо, скільки пунктів комусь знадобиться. Клік на вже наявний пункт відкриває редактор саме його тексту. Коли агент у чаті допоміг сформулювати текст і користувач підтвердив — пункт створюється одразу в списку горизонту тим самим підтвердженням у чаті, без додаткового кроку «Зберегти» в редакторі.
+
+**Decision override:** вимога «історія не втрачається» (raw idea §1, повторена в `idea-brief.md` §13 як обов'язкова навіть без окремого екрана відновлення) — v1 задовольняє її записом факту зміни (що і коли змінилось) у спільний Лог дій продукту, БЕЗ можливості переглянути чи відновити сам старий текст пункту. Rationale: під час цієї сесії спершу розглядали повне збереження версій тексту з екраном відновлення — але це вимагає окремого сховища попередніх версій і окремого UI, що вивело б фічу за межі вже узгодженого розміру «мала, ~1 тиждень» (`idea-brief.md` §11 сам оцінював зусилля в 3 людино-тижні саме РАЗОМ з append-only історією й обов'язковим `recordAction` — це два з §10 top-risks, включені в ту оцінку; прибравши перший із них тут, фактичний обсяг v1 менший за вихідну 3-тижневу оцінку, що й робить розмір S послідовним, а не заниженим). Користувач свідомо обрав лишити повне відновлення на v2, коли реальне використання покаже, чи ця можливість справді потрібна.
 
 ## 2. Goals
 
@@ -92,15 +94,15 @@ feature_size: "S"
 
 ### AC-01 (US-02) — happy path
 
-**Given** an authorized user has opened the full-screen editor for one of the three horizons
-**When** the user types a non-empty text for a new plan-item and saves it
+**Given** an authorized user has pressed the "add a plan-item" control on one of the three horizons, opening a single-item editor for a brand-new plan-item
+**When** the user types a non-empty text and saves it
 **Then** the system adds the plan-item to that horizon's list, shown unchecked and stamped with today's date, without requiring any chat confirmation
 
 ### AC-02 (US-02) — error
 
-**Given** an authorized user is creating a new plan-item in a horizon's editor
-**When** the user tries to save it with empty text
-**Then** the system blocks the save and explains that a plan-item needs text before it can exist
+**Given** an authorized user is creating a new plan-item
+**When** the user tries to save it with no text or only spaces
+**Then** the system blocks the save and explains that a plan-item needs text before it can exist — this "text required" rule applies only to creating a brand-new plan-item, never to editing an existing one (AC-04 relies on emptying an existing plan-item's text as its removal gesture)
 
 ### AC-03 (US-04) — happy path
 
@@ -117,20 +119,20 @@ feature_size: "S"
 ### AC-04 (US-05) — domain invariant
 
 **Given** an authorized user no longer wants to track a plan-item
-**When** the user clears its text entirely in the horizon's editor and saves
-**Then** the system removes the plan-item from the visible list — there is no delete action anywhere in the product for a plan-item; clearing its text via editing is the only way it stops being shown
+**When** the user opens that one plan-item's own single-item editor (by clicking it), clears its text entirely (down to nothing, not just spaces), and saves
+**Then** the system removes the plan-item from the visible list — there is no delete action anywhere in the product for a plan-item; clearing its text via its own editor is the only way it stops being shown
 
 ### AC-05 (US-06) — cross-context
 
-**Given** an authorized user creates a plan-item, edits its text, or changes its done/not-done state, whether typed directly or drafted with the agent's help
+**Given** an authorized user creates a plan-item, edits its text (including clearing it to remove it, AC-04), or changes its done/not-done state, whether typed directly or drafted with the agent's help
 **When** any of these changes is saved
-**Then** the system records the fact of the change (what changed and when) in the product's shared action log — the same log already used by cards and Structure
+**Then** the system records the fact of the change (what changed and when) in the product's shared action log — the same log already used by cards and Structure, viewable on the product's existing action-log screen without any new dedicated screen for plan-items; v1 records only the fact of the change, not the plan-item's previous text (§1 ¶4 Decision override)
 
 ### AC-06 (US-08) — cross-context
 
 **Given** an authorized user has asked the agent in chat to help formulate a plan-item's text
 **When** the agent proposes wording the user has not yet confirmed
-**Then** the system shows that wording only inside the chat — the ПЛАН page's horizon lists show no trace of it until the user explicitly saves it as a plan-item
+**Then** the system shows that wording only inside the chat — the ПЛАН page's horizon lists show no trace of it until the user confirms it in chat (AC-09), which is the single action that creates the plan-item
 
 ### AC-07 (US-07) — authorization
 
@@ -147,17 +149,23 @@ feature_size: "S"
 ### AC-09 (US-03) — happy path
 
 **Given** an authorized user has described a vague or hard-to-word intention to the agent in chat
-**When** the agent proposes plan-item text and the user confirms it
-**Then** the system creates the plan-item with the confirmed text in the horizon the user specified — exactly as if the user had typed it directly in the editor
+**When** the agent proposes plan-item text and the user confirms it in chat
+**Then** the system creates the plan-item immediately with the confirmed text in the horizon the user specified — the chat confirmation itself is the save, no further action in the editor is needed
+
+### AC-11 (US-01) — happy path (empty state)
+
+**Given** an authorized user has never added any plan-item yet
+**When** the user opens the ПЛАН page for the first time
+**Then** the system shows all three horizons empty, each with its own control to add a first plan-item — no error, no blank/broken screen
 
 ## 6. Non-functional requirements
 
 | Aspect | Target | Measurement |
 |---|---|---|
-| Latency p95 запис пункту (створення / редагування тексту чи чекбокса) | ≤ 300 ms | клієнтський таймер від збереження до оновленого стану сторінки |
-| Latency p95 завантаження сторінки ПЛАН (усі три горизонти) | ≤ 500 ms | клієнтський таймер від відкриття сторінки до відображення всіх пунктів |
-| Throughput | N/A — одноосібний клієнтський застосунок | не перевіряється, бо користувач один |
-| Ідемпотентність збереження | подвійне швидке збереження того самого пункту не створює дублю | ручна перевірка / тест на debounce |
+| Latency p95 запис пункту (створення / редагування тексту чи чекбокса) | ≤ 300 ms | клієнтський таймер від дії користувача до підтвердження сервера, що зміна дійсно збережена (не до візуального оновлення екрана) |
+| Latency p95 завантаження сторінки ПЛАН (усі три горизонти) | ≤ 500 ms | клієнтський таймер від відкриття сторінки до підтвердження сервера, що дані всіх пунктів отримані (не до першого візуального відображення) |
+| Throughput | N/A — одноосібний клієнтський застосунок, авторизація й перевірка власника все одно виконуються на кожному запиті (AC-07, §6.1) | не перевіряється, бо користувач один |
+| Ідемпотентність збереження | два натискання «Зберегти» на тому самому пункті в межах 1 секунди одне від одного не створюють дублю — вважаються одним збереженням | ручна перевірка / тест на debounce з вікном 1 секунда |
 
 ## 6.1 Security / privacy
 
@@ -178,3 +186,4 @@ feature_size: "S"
 ## 8. Open questions
 
 - [ ] Feasibility §12 idea-brief — Time не підтверджено (коли з'явиться часове вікно на повний цикл SDD)? Default now: старт відкладено до підтвердження. — owner: Андрій, due: перед `sdd:tasks`
+- [ ] Точне визначення §7 KPI-1 — що саме означає «заповнено горизонт» (хоча б 1 пункт незалежно від статусу виконання, чи інша умова) і що таке «активна сесія» (відкриття сторінки? будь-яка дія? часове вікно?)? Default now: рахуємо «заповнено» = хоча б 1 пункт у горизонті незалежно від «виконано», «активна сесія» = будь-яке відкриття сторінки ПЛАН. — owner: Андрій, due: перед `sdd:tasks`
