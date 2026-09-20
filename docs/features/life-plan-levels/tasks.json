@@ -1,0 +1,175 @@
+{
+  "slug": "life-plan-levels",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Промоутити міграцію plan_item у живе дерево",
+      "layer": "migration",
+      "deps": [],
+      "acs": ["AC-01", "AC-02", "AC-03", "AC-03b", "AC-04", "AC-07", "AC-08", "AC-11"],
+      "dod": "staged migration promoted into plan/app/migrations/, applies and reverts cleanly against real Neon (up -> down -> up)",
+      "files_hint": [
+        "docs/features/life-plan-levels/migrations/01_create_plan_item.up.sql",
+        "docs/features/life-plan-levels/migrations/01_create_plan_item.down.sql",
+        "plan/app/migrations/",
+        "plan/app/MIGRATIONS.md"
+      ]
+    },
+    {
+      "id": "T2",
+      "title": "Доменна сутність PlanItem + інваріанти",
+      "layer": "domain",
+      "deps": [],
+      "acs": ["AC-01", "AC-02", "AC-03", "AC-03b"],
+      "dod": "unit tests cover: creation rejects empty/whitespace-only text, done toggles both directions, horizon is one of the three fixed values",
+      "files_hint": [
+        "plan/app/src/plan-horizons/domain/plan-item.ts",
+        "plan/app/src/plan-horizons/domain/plan-item.test.ts"
+      ]
+    },
+    {
+      "id": "T3",
+      "title": "postgres-repo для plan_item (CRUD + non-disclosure)",
+      "layer": "infra",
+      "deps": ["T1", "T2"],
+      "acs": ["AC-01", "AC-04", "AC-07", "AC-08"],
+      "dod": "integration tests round-trip create/list/update/soft-delete against real Neon; non-disclosure test confirms another user's plan_item returns nothing",
+      "files_hint": [
+        "plan/app/src/plan-horizons/infra/postgres-repo.ts",
+        "plan/app/src/plan-horizons/infra/postgres-repo.integration.test.ts"
+      ]
+    },
+    {
+      "id": "T4",
+      "title": "use-case: створити пункт плану",
+      "layer": "app",
+      "deps": ["T2", "T3"],
+      "acs": ["AC-01", "AC-02", "AC-05"],
+      "dod": "unit tests: creates with valid text and horizon, rejects empty/whitespace text, calls optional recordAction with a human-readable action string",
+      "files_hint": [
+        "plan/app/src/plan-horizons/app/create-plan-item.ts",
+        "plan/app/src/plan-horizons/app/create-plan-item.test.ts"
+      ]
+    },
+    {
+      "id": "T5",
+      "title": "use-case: оновити текст і/чи чекбокс",
+      "layer": "app",
+      "deps": ["T2", "T3"],
+      "acs": ["AC-03", "AC-03b", "AC-05"],
+      "dod": "unit tests: done toggles both ways, text update rejects empty/whitespace, both branches call optional recordAction",
+      "files_hint": [
+        "plan/app/src/plan-horizons/app/update-plan-item.ts",
+        "plan/app/src/plan-horizons/app/update-plan-item.test.ts"
+      ]
+    },
+    {
+      "id": "T6",
+      "title": "use-case: м'яко видалити пункт",
+      "layer": "app",
+      "deps": ["T2", "T3"],
+      "acs": ["AC-04", "AC-05"],
+      "dod": "unit tests: marks status removed (never physical delete), item excluded from subsequent list reads, calls optional recordAction",
+      "files_hint": [
+        "plan/app/src/plan-horizons/app/delete-plan-item.ts",
+        "plan/app/src/plan-horizons/app/delete-plan-item.test.ts"
+      ]
+    },
+    {
+      "id": "T7",
+      "title": "use-case: прочитати активні пункти плану",
+      "layer": "app",
+      "deps": ["T3"],
+      "acs": ["AC-08", "AC-11"],
+      "dod": "unit tests: returns active items grouped by the three horizons in add-order; empty result for a first-time user is not an error",
+      "files_hint": [
+        "plan/app/src/plan-horizons/app/list-plan-items.ts",
+        "plan/app/src/plan-horizons/app/list-plan-items.test.ts"
+      ]
+    },
+    {
+      "id": "T8",
+      "title": "Express-обробники + реєстрація 4 маршрутів у server/app.ts",
+      "layer": "ports",
+      "deps": ["T4", "T5", "T6", "T7"],
+      "acs": ["AC-01", "AC-02", "AC-03", "AC-03b", "AC-04", "AC-05", "AC-07", "AC-08", "AC-11"],
+      "dod": "handler tests exercise each of the 4 endpoints' happy + error paths exactly as documented in contracts/openapi.yaml (status codes, error codes, cursor pagination shape)",
+      "files_hint": [
+        "plan/app/src/plan-horizons/ports/plan-item-handlers.ts",
+        "plan/app/src/plan-horizons/ports/plan-item-handlers.test.ts",
+        "plan/app/server/app.ts"
+      ]
+    },
+    {
+      "id": "T9",
+      "title": "PlanScreen.tsx — три горизонти зі списками пунктів",
+      "layer": "ui",
+      "deps": ["T8"],
+      "acs": ["AC-01", "AC-03", "AC-03b", "AC-08", "AC-11"],
+      "dod": "component test: renders three horizons with their items and dates, checkbox toggles call the update handler, empty horizons show an add control instead of an empty message",
+      "files_hint": [
+        "plan/app/src/plan-horizons/ui/PlanScreen.tsx",
+        "plan/app/src/plan-horizons/ui/PlanScreen.test.tsx"
+      ]
+    },
+    {
+      "id": "T10",
+      "title": "PlanItemEditor.tsx — редактор одного пункту (створення/редагування/видалення)",
+      "layer": "ui",
+      "deps": ["T8"],
+      "acs": ["AC-01", "AC-02", "AC-04"],
+      "dod": "component test: typing non-empty text and saving creates/updates the item, saving with empty text on an existing item calls delete (not update), saving empty text on a new item shows the validation message without a request",
+      "files_hint": [
+        "plan/app/src/plan-horizons/ui/PlanItemEditor.tsx",
+        "plan/app/src/plan-horizons/ui/PlanItemEditor.test.tsx"
+      ]
+    },
+    {
+      "id": "T11",
+      "title": "Підключити ПЛАН у навігацію (App.tsx/main.tsx)",
+      "layer": "wiring",
+      "deps": ["T9", "T10"],
+      "acs": ["AC-01"],
+      "dod": "App.test.tsx covers navigating to the ПЛАН direction and rendering PlanScreen with data from the wired AppProps callbacks",
+      "files_hint": [
+        "plan/app/src/app/App.tsx",
+        "plan/app/src/app/main.tsx",
+        "plan/app/src/plan-horizons/index.ts"
+      ]
+    },
+    {
+      "id": "T12",
+      "title": "Підключити допомогу агента в чаті (пропозиція + підтвердження)",
+      "layer": "wiring",
+      "deps": ["T8", "T11"],
+      "acs": ["AC-06", "AC-09"],
+      "dod": "integration test: confirming the agent's proposal in chat calls the same create endpoint as direct entry with the confirmed text; the unconfirmed proposal never appears on the ПЛАН page before confirmation",
+      "files_hint": [
+        "plan/app/src/agent/app/ask-agent.ts",
+        "plan/app/src/plan-horizons/"
+      ]
+    },
+    {
+      "id": "T13",
+      "title": "Тест: авторизація і non-disclosure на всіх 4 ендпоінтах",
+      "layer": "tests",
+      "deps": ["T8"],
+      "acs": ["AC-07"],
+      "dod": "integration test: another user's bearer token cannot list/update/delete a plan_item it does not own — 404 without confirming or denying existence, on every one of the 4 endpoints",
+      "files_hint": [
+        "plan/app/src/plan-horizons/ports/plan-item-handlers.test.ts"
+      ]
+    },
+    {
+      "id": "T14",
+      "title": "Тест: ідемпотентність подвійного збереження",
+      "layer": "tests",
+      "deps": ["T8"],
+      "acs": [],
+      "dod": "test proves two create requests with the same Idempotency-Key within 1 second return the same plan_item, no duplicate row (spec.md §6 NFR)",
+      "files_hint": [
+        "plan/app/src/plan-horizons/ports/plan-item-handlers.test.ts"
+      ]
+    }
+  ]
+}
