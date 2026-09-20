@@ -59,6 +59,13 @@ import * as syncResourceHandlers from '../src/agent/ports/sync-resource-handler'
 // injected DI-параметр в use-case-и трьох фіч нижче, той самий стиль, що
 // closeActiveLayoutPositionForCard/recordCardRenameEvent вище).
 import * as actionLogHandlers from '../src/agent/ports/action-log-handler';
+// T8 -- порти фічі `life-plan-levels` (сторінка ПЛАН, docs/features/
+// life-plan-levels/contracts/openapi.yaml: 4 шляхи на /api/v1/plan-items).
+// Той самий урок, що MUST-FIX 1 (Структура) і T29 (агент) вище: написані й
+// покриті юніт-тестами порти лишаються 404, якщо composition root їх не
+// монтує -- server/app.test.ts пінить кожен із цих шляхів.
+import * as planItemHandlers from '../src/plan-horizons/ports/plan-item-handlers';
+import { PlanItemValidationError } from '../src/plan-horizons/domain/plan-item';
 import type { RecordAction } from '../src/agent/app/record-action';
 import type { AskClaude } from '../src/agent/infra/claude-client';
 import type { EmailTransport } from '../src/agent/infra/email-client';
@@ -822,6 +829,68 @@ export function createApp(deps: AppDeps): express.Express {
     })
   );
 
+  // --- ПЛАН (фіча `life-plan-levels`) ---------------------------------------
+  //
+  // T8 -- 4 маршрути contracts/openapi.yaml: listPlanItems, createPlanItem,
+  // updatePlanItem, deletePlanItem. Той самий транспортний шаблон, що секції
+  // Cards/Structure/Agent вище: asyncHandler + ownerUserId(req) + param(req,
+  // ...), жодного SQL і жодної логіки тут. Bearer-auth-middleware стоїть ВИЩЕ,
+  // тож 401 із контракту покривається цими маршрутами автоматично.
+  //
+  // withTransaction НЕ потрібен у жодному з чотирьох: кожен -- один-єдиний
+  // write у `plan_item` (той самий випадок, що DELETE metric-block вище).
+  // Опційний запис у Лог дій (AC-05) робить сам use-case уже ПІСЛЯ успішного
+  // write, і його збій не має відкочувати саму зміну плану.
+
+  app.get(
+    '/api/v1/plan-items',
+    asyncHandler(async (req, res) => {
+      const { after, limit } = req.query as { after?: string; limit?: string };
+      const page = await planItemHandlers.listPlanItems(deps.db, ownerUserId(req), {
+        after,
+        limit: limit !== undefined ? Number(limit) : undefined,
+      });
+      res.status(200).json(page);
+    })
+  );
+
+  app.post(
+    '/api/v1/plan-items',
+    asyncHandler(async (req, res) => {
+      // Idempotency-Key контракт оголошує обов'язковим заголовком -- його
+      // обробка (той самий результат на повтор ключа) лишається за T14, тут
+      // навмисно не імітується напівмірою: мовчазне ігнорування ключа
+      // видніше, ніж наполовину реалізована ідемпотентність.
+      const item = await planItemHandlers.createPlanItem(deps.db, ownerUserId(req), req.body, deps.recordAction);
+      res.status(201).json(item);
+    })
+  );
+
+  app.patch(
+    '/api/v1/plan-items/:planItemId',
+    asyncHandler(async (req, res) => {
+      const item = await planItemHandlers.updatePlanItem(
+        deps.db,
+        ownerUserId(req),
+        param(req, 'planItemId'),
+        req.body,
+        deps.recordAction
+      );
+      res.status(200).json(item);
+    })
+  );
+
+  app.delete(
+    '/api/v1/plan-items/:planItemId',
+    asyncHandler(async (req, res) => {
+      // М'яке видалення (AC-04) -- 204 без тіла, точно як у контракті:
+      // віддавати назад щойно прибраний пункт означало б вигадати поле,
+      // якого в openapi.yaml немає.
+      await planItemHandlers.deletePlanItem(deps.db, ownerUserId(req), param(req, 'planItemId'), deps.recordAction);
+      res.status(204).end();
+    })
+  );
+
   // Error-middleware -- ЄДИНЕ місце, де AppError мапиться в конверт контракту
   // (ADR-0006 §Обґрунтування, "Envelope помилки народжується в одному місці").
   // 4 параметри обов'язкові -- Express розпізнає error-handler саме за арністю.
@@ -836,7 +905,11 @@ export function createApp(deps: AppDeps): express.Express {
     // generic-гілку нижче (500 замість контрактного 422 card.name_required/
     // card.description_required) -- домен уже несе правильний `code`, тут
     // лише додаємо статус, як і для AppError вище.
-    if (err instanceof CardValidationError || err instanceof ProgressValidationError) {
+    // T8: PlanItemValidationError -- рівно та сама історія, що A1 вище (домен
+    // ПЛАНу так само нічого не знає про HTTP і несе лише код
+    // plan_item.text_required / plan_item.horizon_invalid). Без цієї гілки
+    // порожній текст пункту віддавав би 500 замість контрактної 422.
+    if (err instanceof CardValidationError || err instanceof ProgressValidationError || err instanceof PlanItemValidationError) {
       res.status(422).json({ code: err.code, message: err.message });
       return;
     }
