@@ -71,10 +71,14 @@ export const PLAN_HORIZON_LABELS: Record<PlanHorizon, string> = {
   strategic: 'Стратегічний',
 };
 
+// Живе тестування (Андрій): часові діапазони (до року / 3-5 років / 10+
+// років) не складались в один суцільний план -- проміжки між ними (2 роки,
+// потім 5) читались як розриви, а не як три частини одного цілого. Підказки
+// тепер описують РОЛЬ горизонту в плануванні, не конкретний строк.
 const PLAN_HORIZON_HINTS: Record<PlanHorizon, string> = {
-  tactical: 'до року',
-  operational: '3-5 років',
-  strategic: '10+ років',
+  tactical: 'план на найближчий час',
+  operational: 'план на декілька років',
+  strategic: 'план з найвіддаленішими цілями',
 };
 
 // День і місяць без року -- ЛИШЕ коли рік пункту збігається з поточним
@@ -188,12 +192,17 @@ export function PlanScreen({
     <div className="flex h-full min-h-0 flex-col gap-6 overflow-y-auto px-4 py-6">
       {saveError !== null && <Banner variant="error" text={saveError} />}
 
-      {PLAN_HORIZONS.map((horizon) => {
+      {PLAN_HORIZONS.map((horizon, index) => {
         const label = PLAN_HORIZON_LABELS[horizon];
         const horizonItems = items.filter((item) => item.horizon === horizon);
+        // Живе тестування (Андрій): три горизонти читались як один суцільний
+        // список без меж -- видима лінія-роздільник над кожним блоком, крім
+        // першого (перший не потребує лінії над самим верхом сторінки).
+        const sectionClassName =
+          index === 0 ? 'flex flex-col gap-2' : 'flex flex-col gap-2 border-t border-border pt-6';
 
         return (
-          <section key={horizon} aria-label={label} className="flex flex-col gap-2">
+          <section key={horizon} aria-label={label} className={sectionClassName}>
             <h2 className="text-sm font-bold text-ink">
               {label} <span className="font-normal text-ink-muted">({PLAN_HORIZON_HINTS[horizon]})</span>
             </h2>
@@ -206,11 +215,22 @@ export function PlanScreen({
                     aria-label={item.planText}
                     checked={item.done}
                     onChange={() => void toggle(item)}
-                    className="h-4 w-4 rounded border-border"
+                    // Живе тестування (Андрій): синій за замовчуванням не
+                    // асоціюється з "виконано" -- зелений (--color-good,
+                    // theme.css) навмисне ВІДХИЛЕННЯ від нейтрального
+                    // accent-ink, який має кожен інший чекбокс продукту
+                    // (CardBack.tsx/RuleSettingsScreen.tsx/LayoutBoard.tsx/
+                    // CloseCardDialog.tsx) -- тут стан "виконано" сам є
+                    // семантичним сигналом, а не нейтральним перемикачем.
+                    className="h-4 w-4 rounded border-border accent-good"
                   />
                   <span
                     onClick={() => onOpenPlanItem(item)}
-                    className={`flex-1 cursor-pointer ${item.done ? 'text-ink-muted line-through' : ''}`}
+                    // Живе тестування (Андрій): закреслення тексту читалось
+                    // як "помилка/видалено", не як "готово" -- курсив м'якше
+                    // передає завершеність; ink-muted (не ink, не line-through)
+                    // тримає текст темно-сірим, а не чорним.
+                    className={`flex-1 cursor-pointer ${item.done ? 'text-ink-muted italic' : ''}`}
                   >
                     {item.planText}
                   </span>
