@@ -850,10 +850,14 @@ export function createApp(deps: AppDeps): express.Express {
   // ...), жодного SQL і жодної логіки тут. Bearer-auth-middleware стоїть ВИЩЕ,
   // тож 401 із контракту покривається цими маршрутами автоматично.
   //
-  // withTransaction НЕ потрібен у жодному з чотирьох: кожен -- один-єдиний
-  // write у `plan_item` (той самий випадок, що DELETE metric-block вище).
-  // Опційний запис у Лог дій (AC-05) робить сам use-case уже ПІСЛЯ успішного
-  // write, і його збій не має відкочувати саму зміну плану.
+  // withTransaction ОБОВ'ЯЗКОВИЙ на трьох write-маршрутах (review 2026-09-20,
+  // sad.md §8): запис у plan_item і запис у Лог дій (AC-05) мусять
+  // комітитись чи відкочуватись РАЗОМ -- інакше збій самого лише запису в
+  // Лог дій лишає зміну плану збереженою без жодного сліду, а це пряме
+  // порушення spec.md §2 цілі 3 ("жодна зміна пункту плану не проходить
+  // непоміченою"). Той самий підхід, що POST /api/v1/cards вище: txDb
+  // прокидається в порт, recordAction усередині use-case викликається тим
+  // самим db-параметром, тож бере участь у тій самій транзакції автоматично.
 
   app.get(
     '/api/v1/plan-items',
@@ -876,12 +880,8 @@ export function createApp(deps: AppDeps): express.Express {
       // обов'язковим, але наявні клієнти (і всі чотири маршрути вище) писались
       // без нього; жорсткішати тут означало б зламати робочий екран заради
       // формальності. Немає ключа -- немає дедуплікації, і це видно з коду.
-      const item = await planItemHandlers.createPlanItem(
-        deps.db,
-        ownerUserId(req),
-        req.body,
-        deps.recordAction,
-        req.get('Idempotency-Key')
+      const item = await deps.withTransaction((txDb) =>
+        planItemHandlers.createPlanItem(txDb, ownerUserId(req), req.body, deps.recordAction, req.get('Idempotency-Key'))
       );
       res.status(201).json(item);
     })
@@ -890,12 +890,8 @@ export function createApp(deps: AppDeps): express.Express {
   app.patch(
     '/api/v1/plan-items/:planItemId',
     asyncHandler(async (req, res) => {
-      const item = await planItemHandlers.updatePlanItem(
-        deps.db,
-        ownerUserId(req),
-        param(req, 'planItemId'),
-        req.body,
-        deps.recordAction
+      const item = await deps.withTransaction((txDb) =>
+        planItemHandlers.updatePlanItem(txDb, ownerUserId(req), param(req, 'planItemId'), req.body, deps.recordAction)
       );
       res.status(200).json(item);
     })
@@ -907,7 +903,9 @@ export function createApp(deps: AppDeps): express.Express {
       // М'яке видалення (AC-04) -- 204 без тіла, точно як у контракті:
       // віддавати назад щойно прибраний пункт означало б вигадати поле,
       // якого в openapi.yaml немає.
-      await planItemHandlers.deletePlanItem(deps.db, ownerUserId(req), param(req, 'planItemId'), deps.recordAction);
+      await deps.withTransaction((txDb) =>
+        planItemHandlers.deletePlanItem(txDb, ownerUserId(req), param(req, 'planItemId'), deps.recordAction)
+      );
       res.status(204).end();
     })
   );

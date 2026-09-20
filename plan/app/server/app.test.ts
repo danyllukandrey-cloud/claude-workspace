@@ -1856,4 +1856,102 @@ describe('composition root -- маршрути ПЛАНу змонтовані (
       server.close();
     }
   });
+
+  // Review 2026-09-20 (stage-1 + stage-2, обидва незалежні рев'юери): збій
+  // Лог дій НЕ мав лишати зміну plan_item закомічену без сліду (sad.md §8,
+  // AC-05). Той самий патерн, що "збій вставки позиції не глушиться" для
+  // карток вище -- withTransaction, що РЕАЛЬНО фіксує відхилення.
+  it('POST /api/v1/plan-items: збій запису в Лог дій не глушиться -- запит падає, щоб транзакція відкотила й сам пункт (AC-05)', async () => {
+    const query = planItemDb();
+    const failingRecordAction = vi.fn().mockRejectedValue(new Error('Лог дій тимчасово недоступний'));
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const rejections: unknown[] = [];
+    const db = { query } as unknown as Db;
+    const deps: AppDeps = {
+      ...noopDeps({ query } as unknown as { query: typeof query }, verifyJwt),
+      recordAction: failingRecordAction,
+      withTransaction: (fn) =>
+        fn(db).catch((err: unknown) => {
+          rejections.push(err);
+          throw err;
+        }),
+    };
+    const { server, baseUrl } = await startServer(deps);
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/plan-items`, {
+        method: 'POST',
+        headers: AUTHED_JSON,
+        body: JSON.stringify({ horizon: 'tactical', planText: 'Пробігти півмарафон' }),
+      });
+
+      expect(res.status).toBe(500);
+      // Ключове: помилка ВИЙШЛА за межі withTransaction -- саме це змушує
+      // server/db.ts зробити ROLLBACK і не лишити пункт плану без сліду в Лозі.
+      expect(rejections).toHaveLength(1);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('PATCH /api/v1/plan-items/{id}: збій запису в Лог дій відкочує і саму зміну тексту (AC-05)', async () => {
+    const query = planItemDb();
+    const failingRecordAction = vi.fn().mockRejectedValue(new Error('Лог дій тимчасово недоступний'));
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const rejections: unknown[] = [];
+    const db = { query } as unknown as Db;
+    const deps: AppDeps = {
+      ...noopDeps({ query } as unknown as { query: typeof query }, verifyJwt),
+      recordAction: failingRecordAction,
+      withTransaction: (fn) =>
+        fn(db).catch((err: unknown) => {
+          rejections.push(err);
+          throw err;
+        }),
+    };
+    const { server, baseUrl } = await startServer(deps);
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/plan-items/plan-item-1`, {
+        method: 'PATCH',
+        headers: AUTHED_JSON,
+        body: JSON.stringify({ done: true }),
+      });
+
+      expect(res.status).toBe(500);
+      expect(rejections).toHaveLength(1);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('DELETE /api/v1/plan-items/{id}: збій запису в Лог дій відкочує і саме м\'яке видалення (AC-05)', async () => {
+    const query = planItemDb();
+    const failingRecordAction = vi.fn().mockRejectedValue(new Error('Лог дій тимчасово недоступний'));
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const rejections: unknown[] = [];
+    const db = { query } as unknown as Db;
+    const deps: AppDeps = {
+      ...noopDeps({ query } as unknown as { query: typeof query }, verifyJwt),
+      recordAction: failingRecordAction,
+      withTransaction: (fn) =>
+        fn(db).catch((err: unknown) => {
+          rejections.push(err);
+          throw err;
+        }),
+    };
+    const { server, baseUrl } = await startServer(deps);
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/plan-items/plan-item-1`, {
+        method: 'DELETE',
+        headers: AUTHED,
+      });
+
+      expect(res.status).toBe(500);
+      expect(rejections).toHaveLength(1);
+    } finally {
+      server.close();
+    }
+  });
 });

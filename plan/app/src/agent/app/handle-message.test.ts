@@ -1073,6 +1073,30 @@ describe('handleMessage -- T12 (AC-06/AC-09): agent-drafted plan-item, confirmed
     expect(createPlanItem).not.toHaveBeenCalled();
   });
 
+  it('review 2026-09-20: Claude returning an unknown horizon does not crash the chat turn -- the reply degrades instead', async () => {
+    const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()] });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(
+      okClaude(
+        decisionJson({
+          outcome: 'clarification',
+          proposedSummary: null,
+          reply: 'Додав до короткострокового горизонту.',
+          // Claude сам вигадує рядок текстом -- тут навмисно щось, чого немає
+          // серед трьох дозволених значень (tactical/operational/strategic).
+          confirmedPlanItem: { horizon: 'short-term', planText: 'Записатись до лікаря цього тижня' },
+        })
+      )
+    );
+    const createPlanItem = vi.fn().mockRejectedValue(new Error('plan_item.horizon_invalid'));
+
+    const result = await handleMessage(db, askClaude, { userId: USER_ID, text: 'так, додай' }, { createPlanItem });
+
+    expect(createPlanItem).toHaveBeenCalledTimes(1);
+    // Хід НЕ впав -- reply замінено детермінованим поясненням, а не винятком,
+    // що вийшов би з handleMessage і зламав POST /api/v1/messages цілком.
+    expect(result.reply).toMatch(/не вдалося зберегти/);
+  });
+
   it('is a no-op when no createPlanItem callback is injected (backward-compatible with every existing caller)', async () => {
     const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()] });
     const askClaude = vi.fn<AskClaude>().mockResolvedValue(

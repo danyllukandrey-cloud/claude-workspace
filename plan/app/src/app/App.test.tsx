@@ -1014,3 +1014,24 @@ test('T11 (AC-04): лише-пробільний текст наявного п�
   expect(props.onDeletePlanItem).not.toHaveBeenCalled();
   expect(props.onUpdatePlanItem).not.toHaveBeenCalled();
 });
+
+test('review 2026-09-20 (AC-09): підтвердження пункту в чаті, поки відкрита сторінка ПЛАН, перечитує список', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([]);
+  props.loadPlanItems.mockResolvedValue([PLAN_ITEM_TACTICAL]);
+  props.sendChatMessage.mockResolvedValue({ reply: 'Додав до тактичного горизонту.', proposal: null });
+
+  render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'ПЛАН' }));
+  await screen.findByText('Пробігти півмарафон');
+
+  expect(props.loadPlanItems).toHaveBeenCalledTimes(1);
+
+  fireEvent.change(screen.getByLabelText('Повідомлення'), { target: { value: 'додай пункт про здоровʼя' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Надіслати' }));
+
+  await waitFor(() => expect(props.sendChatMessage).toHaveBeenCalledTimes(1));
+  // Без переходу на іншу вкладку й назад -- сторінка ПЛАН сама перечитала
+  // список одразу після того, як повідомлення реально пішло.
+  await waitFor(() => expect(props.loadPlanItems).toHaveBeenCalledTimes(2));
+});

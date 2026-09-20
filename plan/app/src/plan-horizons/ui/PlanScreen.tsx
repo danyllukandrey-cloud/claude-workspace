@@ -24,9 +24,16 @@
 // Оптимістичний чекбокс: стан перемикається одразу (AC-03 -- «позначає
 // виконаним НЕГАЙНО»), а збій збереження повертає його назад і показує
 // Banner. Інакше користувач бачив би галочку там, де сервер її не прийняв.
+//
+// Review 2026-09-20 (stage-2): до цього фіксу невдале завантаження
+// (loadPlanItems відхилено) лишало екран у стані "loading" НАЗАВЖДИ --
+// жодного Banner, жодної кнопки "Спробувати ще раз". Той самий шаблон
+// loading/loaded/error + retryToken + onSessionExpired, що вже в
+// DeckScreen.tsx (SCR-01) -- ПЛАН досі був єдиним екраном без нього.
 
 import { useEffect, useState } from 'react';
-import { Banner, Spinner } from '../../shared/ui';
+import { AppError } from '../../shared/errors';
+import { Banner, IconButton, Spinner, Button } from '../../shared/ui';
 import { PLAN_HORIZONS } from '../domain/plan-item';
 import type { PlanHorizon } from '../domain/plan-item';
 
@@ -49,6 +56,13 @@ export interface PlanScreenProps {
   onAddPlanItem: (horizon: PlanHorizon) => void;
   /** Відкриває редактор саме цього наявного пункту (AC-04 -- очищення тексту). */
   onOpenPlanItem: (item: PlanScreenItem) => void;
+  /**
+   * Review 2026-09-20: loadPlanItems, відхилений з AppError, чий
+   * httpStatus === 401 (сесія протермінована/невалідна) -- той самий
+   * контракт, що DeckScreen.tsx (C14/AC-04) уже має. onSessionExpired
+   * повертає до LoginScreen замість глухого банера помилки без дії.
+   */
+  onSessionExpired: () => void;
 }
 
 export const PLAN_HORIZON_LABELS: Record<PlanHorizon, string> = {
@@ -63,35 +77,92 @@ const PLAN_HORIZON_HINTS: Record<PlanHorizon, string> = {
   strategic: '10+ років',
 };
 
-// Той самий формат дати, що в Лозі дій (src/app/main.tsx) -- день і місяць без
-// року: у списку намірів рік майже завжди поточний, і показувати його щоразу
-// означало б шум замість орієнтира.
-function formatAddedAt(createdAt: string): string {
-  return new Intl.DateTimeFormat('uk-UA', { day: '2-digit', month: '2-digit' }).format(new Date(createdAt));
+// День і місяць без року -- ЛИШЕ коли рік пункту збігається з поточним
+// (у списку намірів це майже завжди так, і показувати рік щоразу було б
+// шумом). Review 2026-09-20 (AC-08): тактичний горизонт (до року) майже
+// завжди в поточному році й так, але стратегічний (10+ років) міг раніше
+// вигдядати однаково для пункту, доданого торік, і доданого сьогодні --
+// рік тепер показується щоразу, коли він не поточний, для будь-якого
+// горизонту (не лише стратегічного -- той самий edge case технічно можливий
+// і для тактичного/оперативного, просто рідше).
+function formatAddedAt(createdAt: string, now: Date = new Date()): string {
+  const added = new Date(createdAt);
+  const sameYear = added.getFullYear() === now.getFullYear();
+  return new Intl.DateTimeFormat('uk-UA', {
+    day: '2-digit',
+    month: '2-digit',
+    year: sameYear ? undefined : 'numeric',
+  }).format(added);
 }
+
+type LoadState =
+  | { status: 'loading' }
+  | { status: 'loaded'; items: PlanScreenItem[] }
+  | { status: 'error'; message: string };
+
+const DEFAULT_ERROR_MESSAGE = 'Не вдалося завантажити сторінку ПЛАН';
 
 export function PlanScreen({
   loadPlanItems,
   onToggleDone,
   onAddPlanItem,
   onOpenPlanItem,
+  onSessionExpired,
 }: PlanScreenProps): JSX.Element {
-  const [loading, setLoading] = useState(true);
+  const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [items, setItems] = useState<PlanScreenItem[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // Той самий "лічильник -> перезапустити ефект" підхід, що DeckScreen.tsx's
+  // retryToken -- кнопка "Спробувати ще раз" не викликає loadPlanItems
+  // напряму, а лише тригерить ефект нижче, щоб стан loading/loaded/error
+  // лишався в одному місці.
+  const [retryToken, setRetryToken] = useState(0);
+  const reload = (): void => setRetryToken((token) => token + 1);
 
   useEffect(() => {
-    loadPlanItems().then((loaded) => {
-      setItems(loaded);
-      setLoading(false);
-    });
-    // Навмисно без loadPlanItems у deps -- викликається рівно раз при монтуванні
-    // (той самий підхід, що DeclarationScreen: DI-функція стабільна для життя екрана).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    let cancelled = false;
+    setState({ status: 'loading' });
 
-  if (loading) {
-    return <Spinner />;
+    loadPlanItems()
+      .then((loaded) => {
+        if (cancelled) return;
+        setItems(loaded);
+        setState({ status: 'loaded', items: loaded });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        if (error instanceof AppError && error.httpStatus === 401) {
+          onSessionExpired();
+          return;
+        }
+        const message = error instanceof Error ? error.message : DEFAULT_ERROR_MESSAGE;
+        setState({ status: 'error', message });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // Навмисно без loadPlanItems у deps -- та сама причина, що DeckScreen.tsx:
+    // DI-функція стабільна для життя екрана, лише retryToken/onSessionExpired
+    // мають перезапускати ефект.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [retryToken, onSessionExpired]);
+
+  if (state.status === 'loading') {
+    return (
+      <div className="flex h-full items-center justify-center bg-bg px-4">
+        <Spinner />
+      </div>
+    );
+  }
+
+  if (state.status === 'error') {
+    return (
+      <div className="flex h-full flex-col justify-center gap-4 bg-bg px-4 py-8">
+        <Banner variant="error" text={state.message} />
+        <Button label="Спробувати ще раз" onClick={reload} />
+      </div>
+    );
   }
 
   const setDoneLocally = (id: string, done: boolean): void => {
@@ -100,7 +171,7 @@ export function PlanScreen({
 
   const toggle = async (item: PlanScreenItem): Promise<void> => {
     const next = !item.done;
-    setError(null);
+    setSaveError(null);
     setDoneLocally(item.id, next);
 
     try {
@@ -109,13 +180,13 @@ export function PlanScreen({
       // Сервер не прийняв зміну -- повертаємо чекбокс у попередній стан, щоб
       // екран не показував прогрес, якого насправді немає.
       setDoneLocally(item.id, item.done);
-      setError(err instanceof Error ? err.message : 'Не вдалося зберегти');
+      setSaveError(err instanceof Error ? err.message : 'Не вдалося зберегти');
     }
   };
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-6 overflow-y-auto px-4 py-6">
-      {error !== null && <Banner variant="error" text={error} />}
+      {saveError !== null && <Banner variant="error" text={saveError} />}
 
       {PLAN_HORIZONS.map((horizon) => {
         const label = PLAN_HORIZON_LABELS[horizon];
@@ -148,14 +219,13 @@ export function PlanScreen({
               ))}
             </ul>
 
-            <button
-              type="button"
-              aria-label={`Додати пункт: ${label}`}
+            <IconButton
+              label={`Додати пункт: ${label}`}
               onClick={() => onAddPlanItem(horizon)}
-              className="self-start rounded-control border border-border bg-surface px-3 py-1.5 text-sm font-bold text-ink shadow-btn backdrop-blur-xl transition-colors hover:bg-border"
+              className="self-start border border-border bg-surface shadow-btn backdrop-blur-xl"
             >
               +
-            </button>
+            </IconButton>
           </section>
         );
       })}

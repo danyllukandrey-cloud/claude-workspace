@@ -16,6 +16,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { PlanScreen } from './PlanScreen';
 import type { PlanScreenItem } from './PlanScreen';
+import { AppError } from '../../shared/errors';
 
 function items(): PlanScreenItem[] {
   return [
@@ -49,6 +50,7 @@ function baseProps(loaded: PlanScreenItem[] = items()) {
     onToggleDone: vi.fn().mockResolvedValue(undefined),
     onAddPlanItem: vi.fn(),
     onOpenPlanItem: vi.fn(),
+    onSessionExpired: vi.fn(),
   };
 }
 
@@ -65,6 +67,7 @@ test('loading: показує Spinner, поки список пунктів ще
       onToggleDone={vi.fn()}
       onAddPlanItem={vi.fn()}
       onOpenPlanItem={vi.fn()}
+      onSessionExpired={vi.fn()}
     />
   );
 
@@ -186,4 +189,64 @@ test('збій збереження чекбокса: показує помил�
 
   await waitFor(() => expect(screen.getByText(/Мережа недоступна/)).toBeTruthy());
   expect(checkbox.checked).toBe(false);
+});
+
+// Review 2026-09-20 (stage-2): до цього фіксу невдале завантаження лишало
+// екран у стані "loading" назавжди -- ні Banner, ні кнопки. Той самий
+// шаблон, що DeckScreen.tsx (C14) уже має для GET /cards.
+
+test('збій завантаження (мережева помилка, не 401): показує Banner і кнопку "Спробувати ще раз"', async () => {
+  const props = baseProps();
+  props.loadPlanItems = vi.fn().mockRejectedValue(new Error('Мережа недоступна'));
+  render(<PlanScreen {...props} />);
+
+  await waitFor(() => expect(screen.getByText(/Мережа недоступна/)).toBeTruthy());
+  expect(screen.getByRole('button', { name: 'Спробувати ще раз' })).toBeTruthy();
+});
+
+test('збій завантаження: клік "Спробувати ще раз" повторно викликає loadPlanItems', async () => {
+  const props = baseProps();
+  props.loadPlanItems = vi.fn().mockRejectedValueOnce(new Error('Мережа недоступна')).mockResolvedValueOnce(items());
+  render(<PlanScreen {...props} />);
+
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Спробувати ще раз' })).toBeTruthy());
+  fireEvent.click(screen.getByRole('button', { name: 'Спробувати ще раз' }));
+
+  await waitFor(() => expect(screen.getByText('Пробігти 5 км без зупинки')).toBeTruthy());
+  expect(props.loadPlanItems).toHaveBeenCalledTimes(2);
+});
+
+test('AppError з httpStatus 401 викликає onSessionExpired замість Banner (не глухий кут)', async () => {
+  const props = baseProps();
+  props.loadPlanItems = vi.fn().mockRejectedValue(new AppError('auth.invalid_token', 'Сесія протермінована', 401));
+  render(<PlanScreen {...props} />);
+
+  await waitFor(() => expect(props.onSessionExpired).toHaveBeenCalledTimes(1));
+  expect(screen.queryByRole('button', { name: 'Спробувати ще раз' })).toBeNull();
+});
+
+test('AC-08: дата додавання показує рік, коли він НЕ поточний -- не лише для стратегічного горизонту', async () => {
+  const props = baseProps([
+    {
+      id: 'old',
+      horizon: 'tactical',
+      planText: 'Старий пункт з торішнього року',
+      done: false,
+      createdAt: '2025-03-15T08:00:00.000Z',
+    },
+    {
+      id: 'new',
+      horizon: 'tactical',
+      planText: 'Свіжий пункт цього року',
+      done: false,
+      createdAt: '2026-09-18T08:00:00.000Z',
+    },
+  ]);
+  render(<PlanScreen {...props} />);
+
+  await waitFor(() => expect(screen.getByText('Старий пункт з торішнього року')).toBeTruthy());
+
+  const tactical = horizonSection('Тактичний');
+  expect(within(tactical).getByText('15.03.2025')).toBeTruthy();
+  expect(within(tactical).getByText('18.09')).toBeTruthy();
 });

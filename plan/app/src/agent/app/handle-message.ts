@@ -707,17 +707,32 @@ async function refineActiveProposal(
  * що `prepareFactText`/`persistProposedRule` вище): доменна перевірка
  * plan-horizons однаково відхилила б його, але кидати виняток за очікуваний
  * результат розбору відповіді Claude цей файл ніде не робить.
+ *
+ * Review 2026-09-20 (обидва незалежні рев'юери): `confirmed.horizon` --
+ * рядок, який САМ Claude придумав текстом (жодного списку варіантів у
+ * промпті), тож він може не збігтися з жодним із трьох дозволених значень.
+ * До цього фіксу `deps.createPlanItem` кидав виняток, що летів крізь увесь
+ * `handleMessage` і ламав хід чату цілком (відповідь агента не зберігалась
+ * навіть у частині, що не стосувалась пункту плану) -- той самий клас
+ * помилки, що `notifyDeveloperOfUserIssue` вище вже деградує замість кидати.
+ * Тепер так само: збій колбека замінює відповідь детермінованим поясненням,
+ * а не валить увесь хід.
  */
-async function persistConfirmedPlanItem(deps: HandleMessageDeps | undefined, userId: string, decision: AgentDecision): Promise<void> {
+async function persistConfirmedPlanItem(deps: HandleMessageDeps | undefined, userId: string, decision: AgentDecision): Promise<string | null> {
   const confirmed = decision.confirmedPlanItem;
   if (!confirmed || !deps?.createPlanItem) {
-    return;
+    return null;
   }
   const planText = confirmed.planText.trim();
   if (planText.length === 0) {
-    return;
+    return null;
   }
-  await deps.createPlanItem({ ownerUserId: userId, horizon: confirmed.horizon, planText });
+  try {
+    await deps.createPlanItem({ ownerUserId: userId, horizon: confirmed.horizon, planText });
+    return null;
+  } catch {
+    return 'Спробував додати пункт до плану, але не вдалося зберегти -- спробуй ще раз трохи пізніше.';
+  }
 }
 
 async function notifyDeveloperOfUserIssue(deps: HandleMessageDeps | undefined, decision: AgentDecision): Promise<string | null> {
@@ -845,7 +860,10 @@ export async function handleMessage(
   // хід ще й формує пропозицію запису в картку. Запис у Лог дій (AC-05 тієї
   // фічі) робить сам колбек -- композиційний корінь передає в нього ту саму
   // `recordAction`, що й прямому введенню, тож рядок у Лозі однаковий.
-  await persistConfirmedPlanItem(deps, input.userId, decision);
+  const planItemReply = await persistConfirmedPlanItem(deps, input.userId, decision);
+  if (planItemReply !== null) {
+    decision.reply = planItemReply;
+  }
 
   // AC-20b (review 2026-09-13 gap fix): застосовується ПІСЛЯ AC-14's
   // можливого перезапису -- рідкісний випадок, коли той самий хід одночасно

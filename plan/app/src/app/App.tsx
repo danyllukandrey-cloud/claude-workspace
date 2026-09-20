@@ -329,6 +329,18 @@ export function App({
   // механізму інвалідації.
   const [planEditor, setPlanEditor] = useState<PlanItemEditorTarget | null>(null);
 
+  // Review 2026-09-20 (обидва рев'юери): підтвердження пункту ПЛАНу в чаті
+  // (AC-09) НЕ проходить через planEditor вище -- ChatPanel постійна й видима
+  // одночасно з напрямком `plan`, тож той самий трюк "закриття розмонтовує"
+  // тут не спрацьовує. `key={planItemsVersion}` на PlanScreen нижче -- той
+  // самий принцип (розмонтувати й змонтувати наново = прочитати свіжий
+  // список), лише прапорець зміни не "редактор закрився", а "повідомлення в
+  // чат пішло, поки я стою на ПЛАНі". Рахуємо будь-яке надіслане повідомлення,
+  // не лише те, що реально створило пункт -- агент сам вирішує, чи там
+  // взагалі був пункт плану, і від App цього не видно; зайве перечитування
+  // порожньої зміни дешевше, ніж пропущене реальне.
+  const [planItemsVersion, setPlanItemsVersion] = useState(0);
+
   // Задача 9: click-outside-close для меню налаштувань -- слухач вішається
   // лише поки меню відкрите (і знімається одразу, щойно закрилось чи
   // компонент розмонтувався), щоб не тримати зайвий global listener весь
@@ -563,10 +575,12 @@ export function App({
               робить app-shell, а не компонент і не транспорт. */}
           {direction === 'plan' && planEditor === null && (
             <PlanScreen
+              key={planItemsVersion}
               loadPlanItems={loadPlanItems}
               onToggleDone={(item, done) => onUpdatePlanItem(item.id, { done })}
               onAddPlanItem={(horizon) => setPlanEditor({ kind: 'new', horizon })}
               onOpenPlanItem={(item) => setPlanEditor({ kind: 'existing', item })}
+              onSessionExpired={endSession}
             />
           )}
           {direction === 'plan' && planEditor !== null && (
@@ -739,7 +753,16 @@ export function App({
           loadHistory={loadChatHistory}
           loadOnboarding={loadChatOnboarding}
           loadActiveProposal={loadActiveChatProposal}
-          sendMessage={sendChatMessage}
+          sendMessage={async (input) => {
+            const result = await sendChatMessage(input);
+            // Review 2026-09-20 (AC-09): бампаємо ЛИШЕ коли повідомлення
+            // реально дійшло -- невдале надсилання нічого в базі не змінило,
+            // перечитувати нічого.
+            if (direction === 'plan') {
+              setPlanItemsVersion((v) => v + 1);
+            }
+            return result;
+          }}
           confirmProposal={confirmChatProposal}
         />
       </main>
