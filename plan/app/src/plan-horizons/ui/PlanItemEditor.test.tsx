@@ -106,6 +106,23 @@ test('AC-04: очищення тексту наявного пункту й зб
   await waitFor(() => expect(props.onClose).toHaveBeenCalledTimes(1));
 });
 
+test('AC-04: наявний пункт лише з пробілів -- НЕ те саме, що порожній; ані onDelete, ані onUpdate', async () => {
+  const props = baseProps();
+  const item = existingItem();
+  render(<PlanItemEditor target={{ kind: 'existing', item }} {...props} />);
+
+  fireEvent.change(field(), { target: { value: '   ' } });
+  save();
+
+  // Спека AC-04 -- "down to nothing, not just spaces": лише пробіли не
+  // рахуються "очищенням", і не є валідним новим текстом. Показуємо
+  // пояснення, як для нового пункту, а не мовчки видаляємо.
+  expect(screen.getByRole('alert').textContent).toMatch(/текст/i);
+  expect(props.onDelete).not.toHaveBeenCalled();
+  expect(props.onUpdate).not.toHaveBeenCalled();
+  expect(props.onClose).not.toHaveBeenCalled();
+});
+
 test('AC-04: зміна тексту наявного пункту на інший непорожній викликає onUpdate', async () => {
   const props = baseProps();
   const item = existingItem();

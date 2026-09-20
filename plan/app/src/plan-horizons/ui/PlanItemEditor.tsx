@@ -78,6 +78,16 @@ export function PlanItemEditor({
     const trimmed = planText.trim();
     setSaveError(null);
 
+    // AC-04 буквально: "down to nothing, not just spaces" -- лише СПРАВДІ
+    // порожній рядок (planText === '', жодного символу взагалі) рахується
+    // жестом очищення. Лише-пробільний текст валідним новим текстом теж не
+    // є -- показуємо те саме пояснення, що на створенні, а не мовчки
+    // видаляємо пункт.
+    if (trimmed === '' && planText !== '') {
+      setValidationError(TEXT_REQUIRED);
+      return;
+    }
+
     if (target.kind === 'new' && trimmed === '') {
       setValidationError(TEXT_REQUIRED);
       return;
@@ -87,7 +97,7 @@ export function PlanItemEditor({
     try {
       if (target.kind === 'new') {
         await onCreate({ horizon: target.horizon, planText: trimmed });
-      } else if (trimmed === '') {
+      } else if (planText === '') {
         await onDelete(target.item);
       } else {
         await onUpdate(target.item, trimmed);

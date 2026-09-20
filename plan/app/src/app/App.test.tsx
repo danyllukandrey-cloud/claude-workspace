@@ -986,9 +986,31 @@ test('T11 (AC-04): клік по тексту пункту відкриває р
   const field = await screen.findByLabelText(/Текст пункту/);
   expect((field as HTMLInputElement).value).toBe('Пробігти півмарафон');
 
-  fireEvent.change(field, { target: { value: '   ' } });
+  // AC-04 буквально: "down to nothing, not just spaces" -- лише СПРАВДІ
+  // порожнє поле рахується жестом очищення (виправлено 2026-09-20 після
+  // ручної звірки з текстом специфікації; окремий тест нижче покриває
+  // лише-пробільний випадок).
+  fireEvent.change(field, { target: { value: '' } });
   fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
 
   await waitFor(() => expect(props.onDeletePlanItem).toHaveBeenCalledWith('plan-item-1'));
+  expect(props.onUpdatePlanItem).not.toHaveBeenCalled();
+});
+
+test('T11 (AC-04): лише-пробільний текст наявного пункту -- НЕ видаляє, показує пояснення', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([]);
+  props.loadPlanItems.mockResolvedValue([PLAN_ITEM_TACTICAL]);
+
+  render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'ПЛАН' }));
+  fireEvent.click(await screen.findByText('Пробігти півмарафон'));
+
+  const field = await screen.findByLabelText(/Текст пункту/);
+  fireEvent.change(field, { target: { value: '   ' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+
+  await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+  expect(props.onDeletePlanItem).not.toHaveBeenCalled();
   expect(props.onUpdatePlanItem).not.toHaveBeenCalled();
 });
