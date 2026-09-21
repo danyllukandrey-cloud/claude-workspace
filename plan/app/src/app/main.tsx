@@ -61,7 +61,6 @@ import {
 import type {
   AnalyticsScreenState,
   AnalyticsTrend,
-  CloseCardMetricTransferInput,
   DeclarationScreenState,
   GapTrend,
   LayoutBoardCloseCardOptions,
@@ -1028,16 +1027,14 @@ async function onDeleteConnection(input: { connectionId: string }): Promise<void
 }
 
 /**
- * AC-12, SCR-04 -- що показати в діалозі "Закрити напрямок": метрики картки, що
- * закривається (GET /cards/{cardId}/metric-blocks), і куди їх можна перенести
- * (решта активних карток власника, GET /cards). Сама картка зі списку цілей
- * виключена -- переносити метрику в картку, яку закриваєш, безглуздо.
- *
- * ЕКСПОРТОВАНО, А НЕ ПЕРЕДАНО В <App>: AppProps (src/app/App.tsx) поля під
- * закриття напрямку поки не має, а App.tsx -- поза скоупом цього фіксу. Щойно
- * App.tsx отримає `loadCloseCardOptions`/`onCloseCard` і прокине їх у
- * <LayoutBoard> (LayoutBoardProps їх уже приймає), ці дві функції під'єднаються
- * без жодної зміни -- і AC-12 стане досяжним користувачу.
+ * AC-12, SCR-04 -- що показати в діалозі архівування (CH-05/CH-06,
+ * docs/features/structure/changes.md): метрики картки, що архівується (GET
+ * /cards/{cardId}/metric-blocks), і куди їх можна перенести (решта активних
+ * карток власника, GET /cards). Сама картка зі списку цілей виключена --
+ * переносити метрику в картку, яку архівуєш, безглуздо. Сам ендпоінт НЕ
+ * структуроспецифічний -- та сама точка, що вже живить
+ * CardBack.transferTargetCards, тож назва функції лишається історичною
+ * (loadCloseCardOptions), перейменування поза межами CH-05/CH-06.
  */
 export async function loadCloseCardOptions(cardId: string): Promise<LayoutBoardCloseCardOptions> {
   const [blocksResponse, cards] = await Promise.all([
@@ -1061,34 +1058,6 @@ export async function loadCloseCardOptions(cardId: string): Promise<LayoutBoardC
       .filter((card) => card.id !== cardId)
       .map((card) => ({ cardId: card.id, cardTitle: card.name })),
   };
-}
-
-/**
- * AC-12 -- POST /api/v1/structure/layout/{cardId}/close (LayoutBoard.onCloseCard).
- * Код помилки прокидається як є: SCR-04 розрізняє саме за ним
- * `metric_block.name_collision` (409 -> поле "нова назва") від
- * `structure.metric_transfer_target_invalid` (422 -> банер).
- *
- * Експортовано з тієї ж причини, що loadCloseCardOptions вище.
- */
-export async function onCloseCard(input: {
-  cardId: string;
-  metricTransfers: CloseCardMetricTransferInput[];
-}): Promise<void> {
-  const response = await fetch(`/api/v1/structure/layout/${input.cardId}/close`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify({ metricTransfers: input.metricTransfers }),
-  });
-
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
-    throw new AppError(
-      body?.code ?? 'structure.close_failed',
-      body?.message ?? 'Не вдалося закрити напрямок',
-      response.status,
-    );
-  }
 }
 
 /**
@@ -1259,6 +1228,20 @@ async function loadAnalytics(): Promise<AnalyticsScreenState> {
     for (const cardId of flagUnmaintainedCards(maintenance)) unmaintainedIds.add(cardId);
   }
 
+  // CH-07 (structure/changes.md): лічильник дій -- ЛИШЕ для карток, які
+  // інакше лишились би в картці показників зовсім порожніми (немає ні
+  // відсотка, ні м'ячика стану trackingMode==='state'). Фільтр звужує список
+  // ДО мережевого запиту, не після -- одна GET .../entries на таку картку,
+  // не на кожну картку поспіль.
+  const cardsNeedingActionCount = cards.filter((card) => {
+    if (card.trackingMode === 'state') return false;
+    return (progressByCardId.get(card.id) ?? null) === null;
+  });
+  const actionCounts = await Promise.all(
+    cardsNeedingActionCount.map(async (card) => ({ id: card.id, actionCount: await fetchCardActionCount(card.id) })),
+  );
+  const actionCountByCardId = new Map(actionCounts.map((entry) => [entry.id, entry.actionCount]));
+
   // AnalyticsScreen.tsx ще не переведений на плоску модель (окремий,
   // паралельний worktree/агент, вимоги 14/15 -- щоб уникнути конфлікту дві
   // задачі свідомо лишились розділені) -- його AnalyticsScreenState.layoutMode
@@ -1300,6 +1283,10 @@ async function loadAnalytics(): Promise<AnalyticsScreenState> {
       unmaintained: unmaintainedIds.has(card.id),
       // CH-02: той самий принцип, що loadLayout -- власний канал.
       healthState: card.trackingMode === 'state' ? card.healthState : null,
+      // CH-07: обчислено вище лише для карток, яким справді бракує і
+      // відсотка, і м'ячика стану -- для решти null (не рахувалось, не
+      // потрібно).
+      actionCount: actionCountByCardId.get(card.id) ?? null,
     })),
   };
 }
@@ -1358,6 +1345,26 @@ async function fetchCardMaintenance(cardId: string): Promise<{ hasMetricBlock: b
     return { hasMetricBlock: blocks.length > 0, entryCount: page.items.length };
   } catch {
     return { hasMetricBlock: false, entryCount: 0 };
+  }
+}
+
+/**
+ * CH-07 (structure/changes.md, closes ISS-39-adjacent gap): для картки без
+ * жодного bounded-блоку (aggregateProgress===null, CardDetailDto не несе
+ * список блоків -- відома нестиковка ISS-39) єдине, з чого клієнт може
+ * скласти чесний лічильник, -- сирі записи. Сума amount УСІХ confirmed
+ * записів картки, по ВСІХ сторінках (collectAllPages, той самий підхід, що
+ * loadBack) -- не лише перша сторінка, як fetchCardMaintenance вище (там
+ * питання "нуль чи не нуль", тут -- "скільки саме"). Збій запиту -> 0, той
+ * самий принцип, що fetchCardMaintenance ("не звинувачуємо на здогад" --
+ * тут "не показуємо число на здогад", нуль замість краху picker'а).
+ */
+async function fetchCardActionCount(cardId: string): Promise<number> {
+  try {
+    const entries = await collectAllPages<EntryDto>((after) => fetchEntryPage(cardId, after));
+    return entries.reduce((sum, entry) => (entry.status === 'confirmed' ? sum + entry.amount : sum), 0);
+  } catch {
+    return 0;
   }
 }
 
@@ -1860,7 +1867,6 @@ createRoot(root).render(
       onDeleteConnection={onDeleteConnection}
       loadAnalytics={loadAnalytics}
       loadCloseCardOptions={loadCloseCardOptions}
-      onCloseCard={onCloseCard}
       loadChatHistory={loadChatHistory}
       loadChatOnboarding={loadChatOnboarding}
       loadActiveChatProposal={loadActiveChatProposal}

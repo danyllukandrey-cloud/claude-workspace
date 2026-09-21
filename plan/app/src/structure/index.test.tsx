@@ -1,33 +1,34 @@
 // Публічний вхід Структури (index.ts) -- правило залежностей (plan/app/CLAUDE.md):
 // решта проєкту імпортує Структуру ТІЛЬКИ звідси, ніколи напряму з ui/.
 //
-// Review 2026-09-11 (MUST-FIX 4): SCR-04 (CloseCardDialog) був написаний і
-// покритий власним тестом, але НЕ експортований з index.ts і не підключений
-// ніде -- 0 використань поза власним тестом, тож AC-12 ("система питає по
-// кожній метриці картки, що закривається, чи перенести її в іншу") був
-// недосяжний користувачу. Цей тест пінить саму досяжність: не "символ
-// експортовано", а що через публічні двері модуля приходить СПРАВЖНІЙ діалог
-// із рядками метрик, а не заглушка.
+// Review 2026-09-11 (MUST-FIX 4): SCR-04 (тепер LayoutBoardArchiveDialog, CH-05/CH-06)
+// був написаний і покритий власним тестом, але НЕ експортований з index.ts і
+// не підключений ніде -- 0 використань поза власним тестом, тож AC-12
+// ("система питає по кожній метриці картки, що архівується, чи перенести її
+// в іншу") був недосяжний користувачу. Цей тест пінить саму досяжність: не
+// "символ експортовано", а що через публічні двері модуля приходить
+// СПРАВЖНІЙ діалог із рядками метрик, а не заглушка.
 
 import { render, screen } from '@testing-library/react';
-import { CloseCardDialog } from './index';
+import { LayoutBoardArchiveDialog } from './index';
 
-test('публічний вхід Структури віддає робочий CloseCardDialog (SCR-04, AC-12)', () => {
+test('публічний вхід Структури віддає робочий LayoutBoardArchiveDialog (SCR-04, AC-12)', () => {
   render(
-    <CloseCardDialog
+    <LayoutBoardArchiveDialog
       cardTitle="Навчання (дубль)"
       metricBlocks={[
         { metricBlockId: 'mb-1', label: 'книги' },
         { metricBlockId: 'mb-2', label: 'курси' },
       ]}
       targetCards={[{ cardId: 'card-navchannia', cardTitle: 'Навчання' }]}
-      onClose={vi.fn().mockResolvedValue(undefined)}
-      onClosed={vi.fn()}
+      onTransferMetricBlock={vi.fn().mockResolvedValue(undefined)}
+      onArchive={vi.fn().mockResolvedValue(undefined)}
+      onArchived={vi.fn()}
       onCancel={vi.fn()}
     />,
   );
 
-  // Рядок на кожну метрику з перемикачем переносу -- саме те, чого вимагає AC-12.
+  // Рядок на кожну метрику з чекбоксом переносу -- саме те, чого вимагає AC-12.
   expect(screen.getByText('книги')).toBeTruthy();
   expect(screen.getByText('курси')).toBeTruthy();
   expect(screen.getAllByRole('checkbox')).toHaveLength(2);

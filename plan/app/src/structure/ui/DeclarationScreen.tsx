@@ -1,7 +1,7 @@
 // SCR-01 — Декларація (spec.md AC-09, AC-10).
 //
 // DI (plan/app/CLAUDE.md, той самий стиль, що CardDetailScreen/
-// ArchiveCardDialog): loadStructure/onSave — ін'єктовані пропи-функції,
+// LayoutBoardArchiveDialog): loadStructure/onSave — ін'єктовані пропи-функції,
 // жодного fetch() тут. Реальний HTTP-транспорт (ports/) підключає
 // викликач цього компонента.
 //
@@ -11,10 +11,17 @@
 // App.tsx архівному екрані — "Архів"/"Звіт"/"Назад"). Клік перемикає на
 // EDIT — той самий textarea, що був тут завжди, БЕЗ жодного налаштування
 // розкладки (LAYOUT_MODE_OPTIONS переїхав цілком на LayoutBoard.tsx,
-// "Конфігурація" — там і питання "де далі розкладати", не тут). У EDIT
-// та сама кнопка (той самий підпис "Змінити декларацію") діє як "Зберегти":
-// клік викликає onSave лише з полем declaration і повертає на VIEW зі
-// свіжим текстом.
+// "Конфігурація" — там і питання "де далі розкладати", не тут).
+//
+// CH-08 (docs/features/structure/changes.md): у EDIT кнопка збереження
+// має ІНШИЙ підпис -- "Декларувати" (не той самий "Змінити декларацію",
+// що у VIEW) -- клік викликає onSave лише з полем declaration і повертає
+// на VIEW зі свіжим текстом. Зліва від неї, лише в EDIT, з'являється
+// "На зад" -- той самий патерн, що CardFace.tsx/MetricBlockForm.tsx:
+// повертає на VIEW БЕЗ onSave і БЕЗ збереження чернетки (наступне
+// відкриття EDIT знову показує останній ЗБЕРЕЖЕНИЙ текст). Тому textarea
+// редагує окремий стан `draft`, не сам `declaration` -- інакше "На зад"
+// не мав би що відкидати.
 //
 // ConfirmDialog/hasArrangedCards тут більше немає — той сценарій
 // (AC-11/AC-11b) стосувався виключно зміни layoutMode, яка звідси пішла
@@ -66,7 +73,19 @@ export function DeclarationScreen({ loadStructure, onSave }: DeclarationScreenPr
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<ScreenMode>('view');
   const [declaration, setDeclaration] = useState('');
+  // CH-08: чернетка textarea -- окремо від збереженого `declaration`, щоб
+  // "На зад" мав що відкидати (VIEW завжди читає лише `declaration`).
+  const [draft, setDraft] = useState('');
   const [banner, setBanner] = useState<{ variant: 'success' | 'error' | 'info'; text: string } | null>(null);
+  // code-review 2026-09-21 (correctness): захист від "На зад" під час
+  // збереження, що вже в польоті -- той самий isSaving-підхід, що
+  // isSavingTracking (life-area-card CardBack.tsx) і archiving
+  // (LayoutBoardArchiveDialog.tsx нижче). Без нього клік "На зад" одразу після
+  // "Декларувати" (поки onSave ще не відповів) переключав екран на VIEW зі
+  // старим текстом, а щойно запит резолвився -- persist() мовчки
+  // перезаписував його чернеткою й показував банер "Збережено" на екрані,
+  // який користувач вважав незміненим.
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     loadStructure().then((state) => {
@@ -84,12 +103,23 @@ export function DeclarationScreen({ loadStructure, onSave }: DeclarationScreenPr
 
   const startEdit = (): void => {
     setBanner(null);
+    setDraft(declaration);
     setMode('edit');
   };
 
+  const cancelEdit = (): void => {
+    // CH-08: "На зад" відкидає чернетку -- onSave НІКОЛИ не викликається
+    // тут, `declaration` (останній збережений текст) не чіпаємо.
+    setBanner(null);
+    setMode('view');
+  };
+
   const persist = async (): Promise<void> => {
+    if (isSaving) return;
+    setIsSaving(true);
     try {
-      await onSave({ declaration });
+      await onSave({ declaration: draft });
+      setDeclaration(draft);
       setBanner({ variant: 'success', text: 'Збережено' });
       setMode('view');
     } catch (err: unknown) {
@@ -103,8 +133,11 @@ export function DeclarationScreen({ loadStructure, onSave }: DeclarationScreenPr
           variant: 'info',
           text: `Немає з'єднання -- зміни збережено локально й будуть синхронізовані пізніше (офлайн). ${message}`,
         });
+        setDeclaration(draft);
         setMode('view');
       }
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -141,10 +174,10 @@ export function DeclarationScreen({ loadStructure, onSave }: DeclarationScreenPr
           )
         ) : (
           <label className="flex flex-col gap-1.5 text-sm font-medium text-ink">
-            Картина світу, навіщо, пріоритет
+            Опишіть Вашу картину світу, як і ким Ви себе відчуваєте, або який шлях вибрали
             <textarea
-              value={declaration}
-              onChange={(event) => setDeclaration(event.target.value)}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
               rows={5}
               className="min-h-32 resize-y rounded-control border border-border bg-surface-solid px-3.5 py-2.5 font-sans text-sm font-normal italic text-ink placeholder:text-ink-faint focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
             />
@@ -157,9 +190,12 @@ export function DeclarationScreen({ loadStructure, onSave }: DeclarationScreenPr
       {/* Живе тестування (Андрій): "по середині" -- не зліва/справа, як
           Архів/Звіт/Назад в інших екранах цього ж застосунку -- тут навмисно
           left-1/2 -translate-x-1/2, той самий floating-патерн (absolute
-          відносно кореневого relative-контейнера, поверх контенту, z-20). */}
-      <div className="absolute bottom-4 left-1/2 z-20 -translate-x-1/2">
-        <Button label="Змінити декларацію" onClick={handleButtonClick} />
+          відносно кореневого relative-контейнера, поверх контенту, z-20).
+          CH-08: "На зад" -- сусід кнопки збереження в тому самому
+          floating-блоці, зліва (flex gap), лише в EDIT. */}
+      <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 gap-3">
+        {mode !== 'view' && <Button label="На зад" onClick={cancelEdit} disabled={isSaving} />}
+        <Button label={mode === 'view' ? 'Змінити декларацію' : 'Декларувати'} onClick={handleButtonClick} disabled={isSaving} />
       </div>
     </div>
   );

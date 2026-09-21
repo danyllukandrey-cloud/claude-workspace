@@ -110,13 +110,13 @@ function baseProps() {
     onCreateConnection: vi.fn().mockResolvedValue(undefined),
     onDeleteConnection: vi.fn().mockResolvedValue(undefined),
     loadAnalytics: vi.fn().mockResolvedValue({ layoutMode: null, average: null, excludedCount: 0, trendAvailable: true, cards: [] }),
-    // Review-fix 2026-09-11 (verify): LayoutBoard.loadCloseCardOptions/onCloseCard
-    // уже написані й протестовані (SCR-04), main.tsx їх уже експортує -- але App
-    // їх не приймав і не прокидав, тож LayoutBoard.canCloseCard завжди false і
-    // кнопка "Закрити напрямок" (AC-12) ніде не з'являлась. Той самий DI-стиль,
-    // що loadLayout/onMoveCard вище.
+    // Review-fix 2026-09-11 (verify): LayoutBoard.loadCloseCardOptions уже
+    // написаний і протестований (SCR-04), main.tsx його вже експортує -- App
+    // прокидає його в LayoutBoard разом з archiveCard/onTransferMetricBlock
+    // вище (CH-05/CH-06, docs/features/structure/changes.md -- більше не
+    // окремий структуроспецифічний onCloseCard). Той самий DI-стиль, що
+    // loadLayout/onMoveCard вище.
     loadCloseCardOptions: vi.fn().mockResolvedValue({ metricBlocks: [], targetCards: [] }),
-    onCloseCard: vi.fn().mockResolvedValue(undefined),
     // D-121: ChatPanel монтується ЗАВЖДИ (постійна, поза перемикачем
     // direction) -- тож ці три мають резолвитись одразу (не pending Promise)
     // у КОЖНОМУ тесті, не лише тих, що самі про Чат, інакше кожен тест
@@ -527,7 +527,7 @@ test('ISS-55 stage 3: розархівування картки в Архіві 
 });
 
 // ISS-56 (docs/ISSUES.md): CardFace отримав "Архівувати" в меню "..." ->
-// ArchiveCardDialog (T29) -> injected AppProps.archiveCard(cardId) (DELETE
+// LayoutBoardArchiveDialog (T29) -> injected AppProps.archiveCard(cardId) (DELETE
 // /cards/{cardId}, main.tsx) -> D-121: після успіху DeckFrontCard.onArchived
 // сигналить DeckScreen перезавантажити колоду (та сама "ремаунт
 // перезавантажує" ідіома, що раніше мав onBack у прибраному CardDetailScreen).
@@ -690,7 +690,7 @@ test('T24: клік "Декларація" в нав-меню перемикає
   expect(screen.queryByText('Тут ще немає жодної картки')).toBeNull();
 });
 
-test('AC-12 (review-fix 2026-09-11): на Схемі з loadCloseCardOptions/onCloseCard кнопка "Закрити напрямок" реально рендериться', async () => {
+test('AC-12/CH-05 (review-fix 2026-09-11): на Схемі з loadCloseCardOptions кнопка "Архівувати" реально рендериться', async () => {
   const props = validSessionProps();
   props.loadCards.mockResolvedValue([]);
   props.loadLayout.mockResolvedValue({
@@ -703,9 +703,9 @@ test('AC-12 (review-fix 2026-09-11): на Схемі з loadCloseCardOptions/onC
 
   fireEvent.click(await screen.findByRole('button', { name: 'Схема' }));
 
-  // LayoutBoard.tsx:124 canCloseCard = loadCloseCardOptions !== undefined && onCloseCard !== undefined --
-  // без прокидання цих двох пропів з App.tsx ця кнопка не існує, попри те, що SCR-04 повністю написаний.
-  expect(await screen.findByRole('button', { name: 'Закрити напрямок «Спорт»' })).toBeTruthy();
+  // LayoutBoard.tsx canArchiveCard = loadCloseCardOptions !== undefined && onArchiveCard !== undefined --
+  // App.tsx прокидає onArchiveCard=archiveCard (CH-05: той самий injected archiveCard, що колода).
+  expect(await screen.findByRole('button', { name: 'Архівувати «Спорт»' })).toBeTruthy();
 });
 
 test('T24: клік "Схема" в нав-меню перемикає екран на LayoutBoard (loadLayout)', async () => {

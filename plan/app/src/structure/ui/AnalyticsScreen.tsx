@@ -44,6 +44,27 @@
 //    карток" тепер на Схемі (structure/ui/LayoutBoard.tsx) і на Картках
 //    (life-area-card/ui/DeckScreen.tsx, CH-01 координовано), не тут. Кнопка
 //    "Звіт" лишається сама у плаваючій обгортці.
+//
+// CH-07 (docs/features/structure/changes.md): картка без жодного bounded-
+// блоку (лише ongoing-метрики чи взагалі без блоків) раніше лишалась у
+// картці показників зовсім порожньою — `progress===null` ховав і відсоток,
+// і смугу прогресу, а м'ячик стану (CH-02) з'являється лише для
+// trackingMode==='state'. Нове поле `actionCount` (main.tsx's loadAnalytics,
+// сума confirmed-записів картки, D-19 — та сама формула, що бекенд, не друга
+// копія) заповнює саме цю прогалину: рендериться замість відсотка, коли
+// відсотка нема, тож жодна картка не лишається без жодного числа чи м'ячика.
+//
+// CH-09 (docs/features/structure/changes.md): м'ячик стану (CH-02, той самий
+// `-right-1 -top-1` chip-gloss патерн, що LayoutBoard.tsx/CardFace.tsx)
+// навмисно floats ЗА межами `<li>`-картки, у службовому проміжку між
+// картками сітки. Для карток у першому рядку/останньому стовпчику той
+// проміжок збігався з краєм прокручуваного контейнера (`overflow-y-auto`,
+// а CSS сам звужує й overflow-x до 'auto' услід за overflow-y, коли інша
+// вісь лишається 'visible' — тож обрізало і зверху, і справа) — звідси
+// "наполовину обрізаний" м'ячик. Фікс — не рухати сам м'ячик (лишився б без
+// зсуву відносно решти карток, де він НЕ обрізаний), а дати прокручуваному
+// контейнеру `pt-1 pr-1` — рівно той самий запас, що `-top-1`/`-right-1`
+// забирають, тож overflow-бокс тепер включає його цілком.
 
 import { useEffect, useRef, useState } from 'react';
 import { Banner, Button, Spinner } from '../../shared/ui';
@@ -67,6 +88,14 @@ export interface AnalyticsScreenCard {
   unmaintained: boolean;
   /** CH-02: ненульове лише для карток у режимі "стан без вимірювань". */
   healthState: AnalyticsScreenCardHealthState | null;
+  /**
+   * CH-07: сума confirmed-записів картки (усі блоки-метрики разом) — лише
+   * коли `progress===null` І `healthState===null` (main.tsx's loadAnalytics
+   * рахує ЛИШЕ для таких карток, щоб не множити мережеві запити на
+   * порожньо). Інакше `null` — не рахувалось, бо вже є чим показати
+   * (відсоток чи м'ячик).
+   */
+  actionCount: number | null;
 }
 
 export interface AnalyticsScreenState {
@@ -103,6 +132,18 @@ function trendLabel(trend: AnalyticsTrend): string | null {
   if (trend === 'growing') return 'росте';
   if (trend === 'shrinking') return 'меншає';
   return null;
+}
+
+/**
+ * CH-07: "12 разів" / "1 раз" / "3 рази" — звичайна українська форма
+ * множини (не запозичена бібліотека заради трьох форм одного слова).
+ */
+function formatActionCount(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${count} раз`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${count} рази`;
+  return `${count} разів`;
 }
 
 // Спільний стиль заголовка зони -- той самий прийом, що
@@ -217,13 +258,22 @@ export function AnalyticsScreen({
             червоний, 30-70% жовтий, ≥70% зелений. */}
         <div className="flex min-h-0 flex-col gap-2 rounded-card border border-border bg-surface p-4 shadow-soft backdrop-blur-xl sm:p-5">
           <h2 className={ZONE_LABEL_CLASS}>Показники по картках</h2>
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          {/* CH-09: `pt-1 pr-1` -- запас під м'ячик стану (нижче, chip-gloss
+              `-right-1 -top-1`), що інакше обрізає overflow-y-auto для
+              першого рядка/останнього стовпчика сітки (докладніше -- коментар
+              CH-09 на початку файлу). */}
+          <div className="min-h-0 flex-1 overflow-y-auto pt-1 pr-1">
             {cards.length === 0 ? (
               <p className="px-2 py-8 text-center text-sm text-ink-muted">Немає карток з обчислюваним прогресом</p>
             ) : (
               <ul className="grid grid-cols-2 gap-2">
                 {cards.map((card) => {
                   const progressText = formatPercent(card.progress);
+                  // CH-07: лічильник -- ЛИШЕ коли нема відсотка (progress===null
+                  // покриває і "лише ongoing-блоки", і "взагалі без блоків").
+                  const actionCountText = progressText === null && card.actionCount !== null
+                    ? formatActionCount(card.actionCount)
+                    : null;
                   const trendText = trendAvailable ? trendLabel(card.trend) : null;
                   return (
                     <li
@@ -241,6 +291,12 @@ export function AnalyticsScreen({
                         <span className="truncate text-sm font-medium text-ink">{card.cardTitle}</span>
                         {progressText !== null && (
                           <span className="shrink-0 font-display text-sm font-bold text-ink">{progressText}</span>
+                        )}
+                        {/* CH-07: лічильник дій -- заміна відсотка для карток
+                            без жодного bounded-блоку, щоб картка не лишалась
+                            зовсім без числа (спец. §4). */}
+                        {actionCountText !== null && (
+                          <span className="shrink-0 font-display text-sm font-bold text-ink">{actionCountText}</span>
                         )}
                       </div>
                       {card.progress !== null && (

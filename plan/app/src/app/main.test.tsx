@@ -69,9 +69,6 @@ interface FakeServer {
   entryCountByCard: Record<string, number>;
   patchBodies: unknown[];
   historyAsOf: string[];
-  closeCalls: { cardId: string; body: unknown }[];
-  /** POST .../close відповідає 409 metric_block.name_collision (life-area-card AC-15). */
-  closeNameCollision?: boolean;
   /** T11 (life-plan-levels): пункти ПЛАНу, які віддає GET /plan-items (сторінками по `planPageSize`). */
   planItems: FakePlanItem[];
   /** Скільки пунктів вміщає одна сторінка -- щоб перевірити, що клієнт іде по курсору до кінця. */
@@ -100,7 +97,6 @@ function makeServer(overrides: Partial<FakeServer> = {}): FakeServer {
     entryCountByCard: {},
     patchBodies: [],
     historyAsOf: [],
-    closeCalls: [],
     planItems: [],
     planPageSize: 50,
     planCalls: [],
@@ -186,18 +182,6 @@ function fakeFetch(server: FakeServer): typeof fetch {
         has_prev: false,
         next_cursor: null,
       });
-    }
-
-    const closeCard = url.match(/^\/api\/v1\/structure\/layout\/([^/?]+)\/close$/);
-    if (closeCard) {
-      server.closeCalls.push({ cardId: closeCard[1], body: JSON.parse(String(init?.body ?? 'null')) });
-      if (server.closeNameCollision) {
-        return jsonResponse(
-          { code: 'metric_block.name_collision', message: 'У картці-призначенні вже є блок із такою назвою' },
-          409,
-        );
-      }
-      return jsonResponse(positionDto({ cardId: closeCard[1], x: null }));
     }
 
     if (url === '/api/v1/structure/connections' && method === 'GET') {
@@ -533,9 +517,16 @@ test('AC-06b: у розкладці без схеми пріоритету ро�
   for (const card of analytics.cards) expect(card.gap).toBeNull();
 });
 
-// --- AC-12: транспорт для SCR-04 "Закрити напрямок" --------------------------
+// --- AC-12: транспорт для "Архівування" (CH-05/CH-06) -------------------------
+//
+// CH-05 прибрала структуроспецифічний POST /structure/layout/{cardId}/close
+// (onCloseCard, main.tsx) повністю -- архівація тепер іде через ТОЙ САМИЙ
+// archiveCard/onTransferMetricBlock, що вже покриті тестами нижче для колоди
+// (ISS-56 "реальний DELETE /cards/{cardId}"/CH-03 "реальний POST
+// .../metric-blocks/transfer"). loadCloseCardOptions (GET .../metric-blocks,
+// не структуроспецифічний) лишається без змін.
 
-test('AC-12: loadCloseCardOptions віддає метрики картки, що закривається, і решту карток як цілі переносу', async () => {
+test('AC-12: loadCloseCardOptions віддає метрики картки, що архівується, і решту карток як цілі переносу', async () => {
   const server = makeServer({
     cards: [
       { id: 'card-a', name: 'Навчання (дубль)' },
@@ -549,36 +540,8 @@ test('AC-12: loadCloseCardOptions віддає метрики картки, що
   const options = await main.loadCloseCardOptions('card-a');
 
   expect(options.metricBlocks.map((block) => block.metricBlockId)).toEqual(['mb-1', 'mb-2']);
-  // Сама картка, що закривається, не може бути ціллю власного переносу.
+  // Сама картка, що архівується, не може бути ціллю власного переносу.
   expect(options.targetCards.map((card) => card.cardId)).toEqual(['card-b', 'card-c']);
-});
-
-test('AC-12: onCloseCard надсилає POST /structure/layout/{cardId}/close саме з обраними переносами', async () => {
-  const server = makeServer({ cards: [{ id: 'card-a', name: 'Навчання (дубль)' }] });
-  const main = await loadMainExports(server);
-
-  await main.onCloseCard({
-    cardId: 'card-a',
-    metricTransfers: [{ metricBlockId: 'mb-2', targetCardId: 'card-b', newLabel: 'курси (перенесено)' }],
-  });
-
-  expect(server.closeCalls).toEqual([
-    {
-      cardId: 'card-a',
-      body: { metricTransfers: [{ metricBlockId: 'mb-2', targetCardId: 'card-b', newLabel: 'курси (перенесено)' }] },
-    },
-  ]);
-});
-
-test('AC-12: 409 metric_block.name_collision доходить як помилка з code -- SCR-04 саме за ним показує поле нової назви', async () => {
-  const server = makeServer({ cards: [{ id: 'card-a', name: 'Навчання (дубль)' }], closeNameCollision: true });
-  const main = await loadMainExports(server);
-
-  // CloseCardDialog розпізнає саме `code` (duck-typing): без нього діалог
-  // показав би звичайний банер замість поля "нова назва".
-  await expect(
-    main.onCloseCard({ cardId: 'card-a', metricTransfers: [{ metricBlockId: 'mb-2', targetCardId: 'card-b' }] }),
-  ).rejects.toMatchObject({ code: 'metric_block.name_collision', httpStatus: 409 });
 });
 
 // --- T11 (life-plan-levels): чотири реальні виклики /api/v1/plan-items -------

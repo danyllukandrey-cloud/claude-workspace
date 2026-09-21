@@ -22,13 +22,12 @@ export type {
 // віддавався звідси й не підключався ніде -- AC-12 недосяжний користувачу. Типи
 // експортуються разом із компонентом: composition root (app/main.tsx) типізує
 // ними свої fetch-реалізації, LayoutBoard -- свої пропи.
-export { CloseCardDialog } from './ui/CloseCardDialog';
-export type {
-  CloseCardDialogProps,
-  CloseCardDialogMetricBlock,
-  CloseCardDialogTargetCard,
-  CloseCardMetricTransferInput,
-} from './ui/CloseCardDialog';
+//
+// CH-05/CH-06 (docs/features/structure/changes.md): CloseCardDialog.tsx ->
+// LayoutBoardArchiveDialog.tsx -- "Закрити напрямок" стало "Архівувати", разом із
+// файлом перейменовано й типи, що з нього виходять.
+export { LayoutBoardArchiveDialog } from './ui/LayoutBoardArchiveDialog';
+export type { LayoutBoardArchiveDialogProps, LayoutBoardArchiveDialogMetricBlock, LayoutBoardArchiveDialogTargetCard } from './ui/LayoutBoardArchiveDialog';
 
 export { AnalyticsScreen } from './ui/AnalyticsScreen';
 export type {
