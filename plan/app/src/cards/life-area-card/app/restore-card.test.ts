@@ -18,7 +18,7 @@ function makeArchivedCardRow(): CardRecord {
     name: 'Здоров’я',
     description: 'опис',
     status: 'archived',
-    trackingMode: 'metrics',
+    trackingMode: 'goals',
     healthState: null,
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),

@@ -140,6 +140,28 @@ export function DeckScreen({
       reload();
     });
 
+  /**
+   * CH-07 review-fix, ІТЕРАЦІЯ 2 (docs/features/life-area-card/changes.md):
+   * без цього `state.items` (звідки DeckFrontCard бере `cardName` для
+   * звороту -- CH-07's ArchiveCardDialog) лишався зі старою назвою після
+   * перейменування. Перша спроба викликала reload() (той самий підхід, що
+   * handleCreate/onArchived) -- але re-review знайшов, що це РЕГРЕСІЯ:
+   * reload() ставить status:'loading', DeckScreen повертає лише <Spinner/>,
+   * DeckGrid і DeckFrontCard РОЗМОНТОВУЮТЬСЯ -- користувач, що перейменував
+   * картку, лишаючись на її звороті чи з відкритою панеллю редагування
+   * метрики, втрачав це все заради миттєвого спалаху спінера. Патчимо
+   * `state.items` НА МІСЦІ (той самий текст, що бекенд уже підтвердив) --
+   * жодного 'loading', жодного ремонту.
+   */
+  const handleRename = (cardId: string, name: string): Promise<void> =>
+    onRename(cardId, name).then(() => {
+      setState((current) =>
+        current.status === 'loaded'
+          ? { status: 'loaded', items: current.items.map((item) => (item.id === cardId ? { ...item, name } : item)) }
+          : current,
+      );
+    });
+
   useEffect(() => {
     let cancelled = false;
     setState({ status: 'loading' });
@@ -259,9 +281,10 @@ export function DeckScreen({
         renderFront={(item) => (
           <DeckFrontCard
             cardId={item.id}
+            cardName={item.name}
             loadCard={loadCard}
             loadBack={loadBack}
-            onRename={onRename}
+            onRename={handleRename}
             onArchive={onArchive}
             onArchived={reload}
             onUpdateDescription={onUpdateDescription}

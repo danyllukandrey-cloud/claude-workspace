@@ -43,3 +43,4 @@
 | `1789479885297_create-structure-connection.sql` | `structure/migrations/backend/09_create_structure_connection.{up,down}.sql` | `431773757cc57b279916f80c3876c359f60210319299472104cc41f3634bc5ba` |
 | `1789841424996_add-card-tracking-mode.sql` | `life-area-card/migrations/09_add_card_tracking_mode.{up,down}.sql` | `dee106861ff6ee0061eab9cd03b27f38958b9c408ea77fc510846afea078bc7d` |
 | `1789912813806_create-plan-item.sql` | `life-plan-levels/migrations/01_create_plan_item.{up,down}.sql` | `f511aa875720bc53a5e3d2129fc7f35018ea6213155ff9196aa8809a8cc070cc` |
+| `1789981137560_expand-card-tracking-mode.sql` | `life-area-card/migrations/10_expand_card_tracking_mode.{up,down}.sql` | `abb1f8b4fe4fba8c799afe06c47ab6f04441b3aeaeaffa828b44be81845c9cb0` |

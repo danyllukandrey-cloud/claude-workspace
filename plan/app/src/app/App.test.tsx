@@ -567,7 +567,7 @@ test('ISS-60: створення блоку-метрики на передній
   fireEvent.click(await screen.findByRole('button', { name: 'Картки' }));
 
   fireEvent.click(await screen.findByRole('button', { name: /перегорнути/ }));
-  await screen.findByText('Ще немає жодної активної метрики');
+  await screen.findByRole('button', { name: /Історія записів/ });
 
   fireEvent.click(screen.getByRole('button', { name: '+ Додати блок-метрику' }));
   fireEvent.change(screen.getByLabelText('Що рахуємо/вимірюємо:'), { target: { value: 'Тренування' } });

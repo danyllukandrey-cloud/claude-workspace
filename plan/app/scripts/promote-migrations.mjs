@@ -81,6 +81,11 @@ const TO_PROMOTE = [
   // life-plan-levels T1: нова таблиця plan_item (три горизонти плану). Єдина
   // залежність -- FK на вже промоучений app_user, тож у самому кінці, як і 08/12/09.
   { slug: 'life-plan-levels', staged: '01_create_plan_item', name: 'create-plan-item' },
+  // CH-10 (docs/features/life-area-card/changes.md): tracking_mode
+  // 'metrics'/'state' -> 'state'/'ongoing'/'goals' -- лише звужує/розширює
+  // CHECK на вже наявній колонці (09 вище), жодних нових крос-фічевих
+  // залежностей, тож у самому кінці.
+  { slug: 'life-area-card', staged: '10_expand_card_tracking_mode', name: 'expand-card-tracking-mode' },
 ];
 
 function readReadme() {

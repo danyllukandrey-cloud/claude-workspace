@@ -26,7 +26,7 @@ test('loading: показує Spinner одразу після монтуванн
   expect(loadArchivedCards).toHaveBeenCalledTimes(1);
 });
 
-test('default: після резолву loadArchivedCards із картками рендерить DeckGrid (архів)', async () => {
+test('default: після резолву loadArchivedCards із картками рендерить сітку (CH-09, усі картки видно одразу)', async () => {
   const items = [
     { id: 'card-1', name: 'Читання' },
     { id: 'card-2', name: 'Медитація' },

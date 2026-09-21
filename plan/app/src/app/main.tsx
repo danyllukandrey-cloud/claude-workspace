@@ -110,8 +110,8 @@ const GOOGLE_LOAD_ERROR_MESSAGE = 'Не вдалося завантажити в
 interface CardDto {
   id: string;
   name: string;
-  /** CH-02 (docs/features/life-area-card/changes.md) -- "картка: стан без вимірювань". */
-  trackingMode: 'metrics' | 'state';
+  /** CH-02/CH-10 (docs/features/life-area-card/changes.md) -- "стан без вимірювань" / "постійний процес" / "з цілями та метриками". */
+  trackingMode: 'state' | 'ongoing' | 'goals';
   healthState: 'active' | 'critical' | 'paused' | null;
 }
 
@@ -125,8 +125,8 @@ interface CardDetailDto {
   description: string | null;
   aggregateProgress: number | null;
   dataWarning: string | null;
-  /** CH-02: те саме поле, що CardDto -- GET /cards/{id} несе його теж. */
-  trackingMode: 'metrics' | 'state';
+  /** CH-02/CH-10: те саме поле, що CardDto -- GET /cards/{id} несе його теж. */
+  trackingMode: 'state' | 'ongoing' | 'goals';
   healthState: 'active' | 'critical' | 'paused' | null;
 }
 
@@ -407,7 +407,7 @@ async function loadCard(cardId: string): Promise<CardFaceData> {
     // м'ячик стану просто не показується офлайн, деградує без крашу, той
     // самий "не блокуючий" дух, що й решта офлайн-фолбеків цього файлу.
     const cached = readCachedCardFace(storage, ownerUserId, cardId);
-    if (cached) return { ...cached, dataWarning: null, trackingMode: 'metrics', healthState: null };
+    if (cached) return { ...cached, dataWarning: null, trackingMode: 'goals', healthState: null };
     throw networkError;
   }
 
@@ -688,7 +688,7 @@ async function archiveCard(cardId: string): Promise<void> {
  */
 async function onUpdateTracking(
   cardId: string,
-  input: { trackingMode: 'metrics' | 'state'; healthState: 'active' | 'critical' | 'paused' | null },
+  input: { trackingMode: 'state' | 'ongoing' | 'goals'; healthState: 'active' | 'critical' | 'paused' | null },
 ): Promise<void> {
   const response = await fetch(`/api/v1/cards/${cardId}`, {
     method: 'PATCH',

@@ -34,8 +34,8 @@ export interface Db {
 }
 
 export type CardStatusRow = 'active' | 'archived';
-/** CH-02 (docs/features/life-area-card/changes.md) -- "картка: стан без вимірювань" vs звичайна метрична картка. */
-export type CardTrackingModeRow = 'metrics' | 'state';
+/** CH-02/CH-10 (docs/features/life-area-card/changes.md) -- "стан без вимірювань" / "постійний процес" (без цілі) / "з цілями та метриками". */
+export type CardTrackingModeRow = 'state' | 'ongoing' | 'goals';
 export type CardHealthStateRow = 'active' | 'critical' | 'paused';
 
 export interface CardRecord {
@@ -44,7 +44,7 @@ export interface CardRecord {
   name: string;
   description: string | null;
   status: CardStatusRow;
-  /** CH-02: за замовчуванням 'metrics' у БД (DEFAULT), тож рядки, застарілі за цю міграцію, читаються так само. */
+  /** CH-02/CH-10: за замовчуванням 'goals' у БД (DEFAULT), тож рядки, застарілі за цю міграцію, читаються так само. */
   trackingMode: CardTrackingModeRow;
   /** CH-02: ненульове лише коли trackingMode === 'state'. */
   healthState: CardHealthStateRow | null;
@@ -104,7 +104,7 @@ interface RawCardRow extends QueryResultRow {
   // CH-02: опційні -- тестові fixtures у репозиторії (десятки файлів, до цієї
   // зміни) конструюють "сирий рядок" вручну й не несуть цих двох полів;
   // toCardRecord() нижче дефолтить їх так само, як сама колонка в БД
-  // (DEFAULT 'metrics' / NULL), щоб не змушувати правити кожен fixture.
+  // (DEFAULT 'goals' / NULL), щоб не змушувати правити кожен fixture.
   tracking_mode?: CardTrackingModeRow;
   health_state?: CardHealthStateRow | null;
   created_at: Date;
@@ -118,7 +118,7 @@ function toCardRecord(row: RawCardRow): CardRecord {
     name: row.name,
     description: row.description,
     status: row.status,
-    trackingMode: row.tracking_mode ?? 'metrics',
+    trackingMode: row.tracking_mode ?? 'goals',
     healthState: row.health_state ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

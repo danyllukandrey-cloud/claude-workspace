@@ -675,8 +675,8 @@ components:
           description: "archived — м'яка архівація (AC-16), ніколи фізичне видалення"
         trackingMode:
           type: string
-          enum: [metrics, state]
-          description: "CH-02 — 'state' = «картка: стан без вимірювань» (кольоровий м'ячик замість блоків-метрик)"
+          enum: [state, ongoing, goals]
+          description: "CH-02/CH-10 — 'state' = «картка: стан без вимірювань» (кольоровий м'ячик замість блоків-метрик); 'ongoing' = «постійний процес» (блоки без цілі/дати); 'goals' = «з цілями та метриками» (блоки з ціллю+датою, колишній 'metrics')"
         healthState:
           type: [string, "null"]
           enum: [active, critical, paused, null]
@@ -708,8 +708,8 @@ components:
           description: "true = спроба перейти в стан «заповнена» (AC-03 перевіряє Опис)"
         trackingMode:
           type: string
-          enum: [metrics, state]
-          description: "CH-02 — 'state' вимагає healthState у ТОМУ Ж тілі; 'metrics' завжди скидає healthState на null"
+          enum: [state, ongoing, goals]
+          description: "CH-02/CH-10 — 'state' вимагає healthState у ТОМУ Ж тілі; 'ongoing'/'goals' завжди скидають healthState на null"
         healthState:
           type: [string, "null"]
           enum: [active, critical, paused, null]

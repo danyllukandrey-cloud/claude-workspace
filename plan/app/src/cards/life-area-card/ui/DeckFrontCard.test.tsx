@@ -16,7 +16,7 @@ const FACE_DATA: CardFaceData = {
   name: 'Спорт',
   description: 'Регулярні тренування',
   dataWarning: null,
-  trackingMode: 'metrics',
+  trackingMode: 'goals',
   healthState: null,
 };
 const BACK_DATA: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
@@ -24,6 +24,7 @@ const BACK_DATA: CardBackData = { metricBlocks: [], aggregateProgress: null, ent
 function baseProps() {
   return {
     cardId: 'card-1',
+    cardName: 'Спорт',
     loadCard: vi.fn().mockResolvedValue(FACE_DATA),
     loadBack: vi.fn().mockResolvedValue(BACK_DATA),
     onRename: vi.fn().mockResolvedValue(undefined),
@@ -50,7 +51,7 @@ test('клік "перегорнути →" на лицьовій стороні
 
   fireEvent.click(await screen.findByRole('button', { name: /перегорнути/ }));
 
-  expect(await screen.findByText('Ще немає жодної активної метрики')).toBeTruthy();
+  expect(await screen.findByRole('button', { name: /Історія записів/ })).toBeTruthy();
   expect(props.loadBack).toHaveBeenCalledWith('card-1');
   // Лицьова сторона (назва картки як CardFace її рендерить) більше не на екрані.
   expect(screen.queryByText('Спорт')).toBeNull();
@@ -61,7 +62,7 @@ test('клік "← перегорнути" на звороті перемика
   render(<DeckFrontCard {...props} />);
 
   fireEvent.click(await screen.findByRole('button', { name: /перегорнути/ }));
-  await screen.findByText('Ще немає жодної активної метрики');
+  await screen.findByRole('button', { name: /Історія записів/ });
 
   fireEvent.click(screen.getByRole('button', { name: /перегорнути/ }));
 
@@ -77,7 +78,7 @@ test('нова передня картка (ремонт через зміну k
   const { rerender } = render(<DeckFrontCard key="card-1" {...props} />);
 
   fireEvent.click(await screen.findByRole('button', { name: /перегорнути/ }));
-  await screen.findByText('Ще немає жодної активної метрики');
+  await screen.findByRole('button', { name: /Історія записів/ });
 
   const nextProps = { ...baseProps(), cardId: 'card-2', loadCard: vi.fn().mockResolvedValue({ ...FACE_DATA, name: 'Навчання' }) };
   rerender(<DeckFrontCard key="card-2" {...nextProps} />);
@@ -107,7 +108,12 @@ test('редагування Опису викликає injected onUpdateDescri
   fireEvent.change(screen.getByLabelText('Опис (навіщо)'), { target: { value: 'новий опис' } });
   fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
 
-  expect(onUpdateDescription).toHaveBeenCalledWith('card-1', { description: 'новий опис', markFilled: false });
+  // CH-06 (docs/features/life-area-card/changes.md): "Зберегти" тепер
+  // ланцюжком чекає onRename ДО onUpdateDescription (одна спільна форма) --
+  // на тік довше, ніж до CH-06, тож потрібен waitFor, не синхронний expect.
+  await vi.waitFor(() =>
+    expect(onUpdateDescription).toHaveBeenCalledWith('card-1', { description: 'новий опис', markFilled: true }),
+  );
 });
 
 test('onFlagEntry/onCreateMetricBlock, якщо передані, прокидаються в CardBack з cardId', async () => {
@@ -122,7 +128,7 @@ test('onFlagEntry/onCreateMetricBlock, якщо передані, прокида
   // Прокидання підтверджується непрямо (та сама поведінка, що
   // CardDetailScreen.test.tsx мав) -- власна поведінка CardBack уже покрита
   // CardBack.test.tsx ізольовано; тут важливе саме прокидання й cardId.
-  expect(await screen.findByText('Ще немає жодної активної метрики')).toBeTruthy();
+  expect(await screen.findByRole('button', { name: /Історія записів/ })).toBeTruthy();
   expect(screen.getByRole('button', { name: '+ Додати блок-метрику' })).toBeTruthy();
   expect(onFlagEntry).not.toHaveBeenCalled();
 });

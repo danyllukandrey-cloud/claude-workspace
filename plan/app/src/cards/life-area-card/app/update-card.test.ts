@@ -13,7 +13,7 @@ function cardRow(
     name: string;
     description: string | null;
     status: 'active' | 'archived';
-    tracking_mode: 'metrics' | 'state';
+    tracking_mode: 'state' | 'ongoing' | 'goals';
     health_state: 'active' | 'critical' | 'paused' | null;
   }> = {}
 ) {
@@ -23,7 +23,7 @@ function cardRow(
     name: overrides.name ?? 'Здоровʼя',
     description: overrides.description ?? null,
     status: overrides.status ?? 'active',
-    tracking_mode: overrides.tracking_mode ?? 'metrics',
+    tracking_mode: overrides.tracking_mode ?? 'goals',
     health_state: overrides.health_state ?? null,
     created_at: new Date('2026-01-01T00:00:00Z'),
     updated_at: new Date('2026-01-01T00:00:00Z'),
@@ -95,9 +95,17 @@ describe('updateCard', () => {
     expect(calls.some(([text]) => text.startsWith('INSERT INTO card_lifecycle_event'))).toBe(false);
   });
 
-  // AC-03 happy path: Опис уже збережений раніше -- markFilled проходить
-  // без потреби передавати Опис знову в цьому ж виклику.
-  it('accepts markFilled when the description was already saved earlier', async () => {
+  // AC-03: Опис уже збережений раніше -- markFilled проходить без потреби
+  // передавати Опис знову в цьому ж виклику (домен усе одно валідує проти
+  // current.description).
+  //
+  // Review-fix (CH-06, docs/features/life-area-card/changes.md): цей тест
+  // РАНІШЕ очікував INSERT INTO card_lifecycle_event навіть коли Опис УЖЕ
+  // був непорожнім ДО виклику -- та сама ситуація, яку guard нижче
+  // ("does not record... on an already-filled card") вважає "вже заповнена,
+  // не справжній перехід" для recordAction. insertLifecycleEvent мав той
+  // самий guard узгоджено -- тепер має (той самий review-fix).
+  it('accepts markFilled without inserting a duplicate lifecycle event when the description was already saved earlier', async () => {
     const db = fakeDb({
       current: cardRow({ description: 'Хочу бути активнішим' }),
       updated: cardRow({ description: 'Хочу бути активнішим' }),
@@ -107,7 +115,7 @@ describe('updateCard', () => {
 
     expect(result.description).toBe('Хочу бути активнішим');
     const calls = (db.query as ReturnType<typeof vi.fn>).mock.calls as [string, unknown[]?][];
-    expect(calls.some(([text]) => text.startsWith('INSERT INTO card_lifecycle_event'))).toBe(true);
+    expect(calls.some(([text]) => text.startsWith('INSERT INTO card_lifecycle_event'))).toBe(false);
   });
 
   // AC-03 happy path: Опис переданий у ТОМУ Ж виклику, що й markFilled.
@@ -152,7 +160,14 @@ describe('updateCard', () => {
   // Той самий фікс: повторний markFilled:true на вже заповненій картці (UI
   // дозволяє знову відкрити опис і ще раз натиснути "заповнено") НЕ мав би
   // писати другий, оманливий рядок у Лог дій -- реального переходу не було.
-  it('does not record an action log entry when markFilled is repeated on an already-filled card', async () => {
+  //
+  // Review-fix (CH-06, docs/features/life-area-card/changes.md): guard
+  // раніше стояв ЛИШЕ на recordAction -- сам card_lifecycle_event (append-
+  // only audit-журнал, spec.md §7 KPI) писав "filled" щоразу без нього.
+  // Рідкісний край-випадок до CH-06 (ручний чекбокс) -- CH-06 зробив
+  // markFilled похідним від "Опис непорожній", тож без guard тут кожне
+  // перейменування вже заповненої картки писало б повторний "filled".
+  it('does not record a lifecycle "filled" event or an action log entry when markFilled is repeated on an already-filled card', async () => {
     const db = fakeDb({
       current: cardRow({ description: 'Хочу бути активнішим' }),
       updated: cardRow({ description: 'Хочу бути активнішим' }),
@@ -162,6 +177,10 @@ describe('updateCard', () => {
     await updateCard(db, { ownerUserId: OWNER, cardId: CARD_ID, markFilled: true }, undefined, recordAction);
 
     expect(recordAction).not.toHaveBeenCalled();
+    // Лише SELECT (findCardById) + UPDATE card -- жоден INSERT INTO
+    // card_lifecycle_event не пішов (fakeDb кинув би на непередбачений
+    // запит, якби пішов якийсь інший; тут перевіряємо явно, що їх рівно 2).
+    expect(db.query).toHaveBeenCalledTimes(2);
   });
 
   // Non-disclosure (AC-04): чужа й неіснуюча картка виглядають однаково --
@@ -283,20 +302,40 @@ describe('updateCard', () => {
       expect(result.healthState).toBe('critical');
     });
 
-    it('switching back to metrics always clears healthState, even if one is passed', async () => {
+    it('switching to goals always clears healthState, even if one is passed', async () => {
       const db = fakeDb({
         current: cardRow({ tracking_mode: 'state', health_state: 'paused' }),
-        updated: cardRow({ tracking_mode: 'metrics', health_state: null }),
+        updated: cardRow({ tracking_mode: 'goals', health_state: null }),
       });
 
       const result = await updateCard(db, {
         ownerUserId: OWNER,
         cardId: CARD_ID,
-        trackingMode: 'metrics',
+        trackingMode: 'goals',
         healthState: 'active',
       });
 
-      expect(result.trackingMode).toBe('metrics');
+      expect(result.trackingMode).toBe('goals');
+      expect(result.healthState).toBeNull();
+    });
+
+    // CH-10 (docs/features/life-area-card/changes.md): третій режим --
+    // 'ongoing' -- той самий "завжди скидає healthState" гілка, окреме
+    // значення (не варіант 'goals').
+    it('switching to ongoing always clears healthState, even if one is passed', async () => {
+      const db = fakeDb({
+        current: cardRow({ tracking_mode: 'state', health_state: 'active' }),
+        updated: cardRow({ tracking_mode: 'ongoing', health_state: null }),
+      });
+
+      const result = await updateCard(db, {
+        ownerUserId: OWNER,
+        cardId: CARD_ID,
+        trackingMode: 'ongoing',
+        healthState: 'critical',
+      });
+
+      expect(result.trackingMode).toBe('ongoing');
       expect(result.healthState).toBeNull();
     });
   });

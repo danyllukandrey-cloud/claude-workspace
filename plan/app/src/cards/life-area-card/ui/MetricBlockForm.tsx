@@ -31,6 +31,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { Banner, Button, NumberField, TextField } from '../../../shared/ui';
+import type { CardTrackingMode } from '../domain/card';
 
 export interface MetricBlockFormValues {
   /** "Що рахуємо" -- обов'язкове. */
@@ -50,6 +51,30 @@ export interface MetricBlockFormProps {
   initialValues?: Partial<MetricBlockFormValues>;
   /** Створює блок-метрику; ін'єктується викликачем (DI) -- сама форма мережі не торкається. */
   onSubmit: (values: MetricBlockFormValues) => Promise<void>;
+  /**
+   * CH-10 (docs/features/life-area-card/changes.md, живе тестування
+   * 2026-09-21): режим картки визначає, ЯКІ поля форма взагалі показує --
+   * 'ongoing' ховає чекбокс "Постійний процес" (уже зайвий, картка й так
+   * каже, що процес постійний -- та сама назва в обох місцях плутала) і
+   * ціль/дату повністю, submit завжди шле isOngoing:true/targetCount:null/
+   * targetDate:null. 'goals' (за замовчуванням) -- повна форма, як і
+   * раніше. Картки в режимі 'state' сюди взагалі не доходять (CardBack.tsx
+   * не рендерить форму блоку-метрики в цьому режимі).
+   */
+  // Review-fix: перевикористовує CardTrackingMode (Exclude 'state') замість
+  // окремого локального union -- дві паралельні "мови" для того самого
+  // поняття (тут 'ongoing'/'goals', там 'state'/'ongoing'/'goals') інакше
+  // синхронізуються вручну без жодного зв'язку типів.
+  mode?: Exclude<CardTrackingMode, 'state'>;
+  /**
+   * Живе тестування 2026-09-21 (Андрій): без цього пропу нема способу
+   * вийти з форми СТВОРЕННЯ нового блоку без збереження -- лише
+   * "Зберегти". Опційний, той самий "без пропу афорданс не рендериться"
+   * принцип, що решта опційних дій цього продукту -- форма редагування
+   * наявного блоку вже має власне "Закрити" на рівні панелі (CardBack.tsx),
+   * цей проп їй не потрібен.
+   */
+  onCancel?: () => void;
 }
 
 const EMPTY_VALUES: MetricBlockFormValues = {
@@ -60,7 +85,13 @@ const EMPTY_VALUES: MetricBlockFormValues = {
   targetDate: null,
 };
 
-export function MetricBlockForm({ initialValues, onSubmit }: MetricBlockFormProps): JSX.Element {
+export function MetricBlockForm({ initialValues, onSubmit, mode = 'goals', onCancel }: MetricBlockFormProps): JSX.Element {
+  // CH-08 (docs/features/life-area-card/changes.md, живе тестування
+  // 2026-09-21): заголовок форми -- "Редагування" саме коли відкрито через
+  // олівець наявної метрики (initialValues переданий), "Новий блок-метрика"
+  // лише для справді нової.
+  const isEditing = initialValues !== undefined;
+  const isOngoingMode = mode === 'ongoing';
   const [label, setLabel] = useState(initialValues?.label ?? EMPTY_VALUES.label);
   const [unit, setUnit] = useState(initialValues?.unit ?? EMPTY_VALUES.unit);
   const [targetCount, setTargetCount] = useState<number | null>(
@@ -90,13 +121,11 @@ export function MetricBlockForm({ initialValues, onSubmit }: MetricBlockFormProp
     setSubmitError(undefined);
     setIsSubmitting(true);
     try {
-      await onSubmit({
-        label,
-        unit,
-        targetCount,
-        isOngoing,
-        targetDate: isOngoing ? null : targetDate,
-      });
+      await onSubmit(
+        isOngoingMode
+          ? { label, unit, targetCount: null, isOngoing: true, targetDate: null }
+          : { label, unit, targetCount, isOngoing, targetDate: isOngoing ? null : targetDate },
+      );
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : 'Не вдалось зберегти блок-метрику');
     } finally {
@@ -109,7 +138,9 @@ export function MetricBlockForm({ initialValues, onSubmit }: MetricBlockFormProp
       onSubmit={handleSubmit}
       className="flex flex-col gap-4 rounded-card border border-border bg-surface-solid p-4"
     >
-      <h2 className="font-display text-lg font-bold leading-relaxed text-ink">Новий блок-метрика</h2>
+      <h2 className="font-display text-lg font-bold leading-relaxed text-ink">
+        {isEditing ? 'Редагування' : 'Новий блок-метрика'}
+      </h2>
       {submitError && <Banner variant="error" text={submitError} />}
       {/* D-111 (docs/DECISIONS.md): порядок полів -- що рахуємо -> постійний
           процес одразу після -> одиниця -> ціль+дата в одному рядку. Живе
@@ -119,50 +150,71 @@ export function MetricBlockForm({ initialValues, onSubmit }: MetricBlockFormProp
       <TextField
         label="Що рахуємо/вимірюємо:"
         value={label}
-        onChange={setLabel}
+        // CH-08 (живе тестування 2026-09-21): помилка гасне одразу, як
+        // користувач почав виправляти поле -- раніше чекала наступного
+        // сабміту, тож лишалась червоною навіть коли текст уже введено.
+        onChange={(value) => {
+          setLabel(value);
+          if (labelError) setLabelError(undefined);
+        }}
         error={labelError}
         required
         hint="Наприклад: «тренування», «книги», «схудлі кілограми». Навіщо: це те, що агент бачитиме й пропонуватиме рахувати далі."
       />
-      <label className="flex items-center gap-2 text-sm font-medium text-ink">
-        <input
-          type="checkbox"
-          checked={isOngoing}
-          onChange={(event) => setIsOngoing(event.target.checked)}
-          className="h-4 w-4 rounded border-border"
-        />
-        Постійний процес з метриками (без дати)
-      </label>
+      {/* CH-10: чекбокс лише в режимі 'goals' -- у 'ongoing' картка вже сама
+          каже, що процес постійний (та сама назва зверху й тут плутала). */}
+      {!isOngoingMode && (
+        <label className="flex items-center gap-2 text-sm font-medium text-ink">
+          <input
+            type="checkbox"
+            checked={isOngoing}
+            onChange={(event) => setIsOngoing(event.target.checked)}
+            className="h-4 w-4 rounded border-border"
+          />
+          Постійний процес з метриками (без дати)
+        </label>
+      )}
       <TextField
         label="Одиниця:"
         value={unit}
-        onChange={setUnit}
+        // CH-08: той самий фікс, що поле вище -- помилка гасне одразу на вводі.
+        onChange={(value) => {
+          setUnit(value);
+          if (unitError) setUnitError(undefined);
+        }}
         error={unitError}
         required
         hint="Наприклад: «раз», «кг», «сторінка». Навіщо: одиниця показується поруч із кожним записом і ціллю."
       />
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="min-w-[140px] flex-1">
-          <NumberField
-            label="Ціль:"
-            value={targetCount}
-            onChange={setTargetCount}
-            hint="Наприклад: 12 (тренувань), 5 (кг). Навіщо: ціль визначає, коли прогрес по цьому блоку вважається завершеним."
-          />
-        </div>
-        {!isOngoing && (
-          <label className="flex min-w-[140px] flex-1 flex-col gap-1.5 text-sm font-medium text-ink">
-            До:
-            <input
-              type="date"
-              value={targetDate ?? ''}
-              onChange={(event) => setTargetDate(event.target.value === '' ? null : event.target.value)}
-              className="rounded-control border border-border bg-surface-solid px-3.5 py-2.5 text-sm font-normal text-ink focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
+      {/* CH-10: ціль/дата лише в режимі 'goals' -- 'ongoing' блоки за
+          визначенням без цілі й без кінцевої дати. */}
+      {!isOngoingMode && (
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[140px] flex-1">
+            <NumberField
+              label="Ціль:"
+              value={targetCount}
+              onChange={setTargetCount}
+              hint="Наприклад: 12 (тренувань), 5 (кг). Навіщо: ціль визначає, коли прогрес по цьому блоку вважається завершеним."
             />
-          </label>
-        )}
+          </div>
+          {!isOngoing && (
+            <label className="flex min-w-[140px] flex-1 flex-col gap-1.5 text-sm font-medium text-ink">
+              До:
+              <input
+                type="date"
+                value={targetDate ?? ''}
+                onChange={(event) => setTargetDate(event.target.value === '' ? null : event.target.value)}
+                className="rounded-control border border-border bg-surface-solid px-3.5 py-2.5 text-sm font-normal text-ink focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
+              />
+            </label>
+          )}
+        </div>
+      )}
+      <div className="flex items-center gap-3">
+        {onCancel && <Button label="На зад" type="button" onClick={onCancel} disabled={isSubmitting} />}
+        <Button label="Зберегти" type="submit" disabled={isSubmitting} />
       </div>
-      <Button label="Зберегти" type="submit" disabled={isSubmitting} />
     </form>
   );
 }

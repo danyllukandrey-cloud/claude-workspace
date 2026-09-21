@@ -17,7 +17,7 @@ import type { CardBackData, CardFaceData } from './types';
 // (+опційні onUpdateDescription/onFlagEntry/onCreateMetricBlock). baseProps()
 // нижче -- єдине місце, що їх задає, щоб не повторювати в кожному тесті.
 
-const FACE_DATA: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'metrics', healthState: null };
+const FACE_DATA: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'goals', healthState: null };
 const BACK_DATA: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
 
 function baseProps(overrides: Partial<Parameters<typeof DeckScreen>[0]> = {}) {
@@ -248,4 +248,52 @@ test('C14: стан помилки показує кнопку "Спробува
 
   expect(await screen.findByText('Тут ще немає жодної картки')).toBeTruthy();
   expect(loadCards).toHaveBeenCalledTimes(2);
+});
+
+// CH-07 review-fix (docs/features/life-area-card/changes.md): без reload()
+// після перейменування, `state.items` (звідки DeckFrontCard бере `cardName`
+// для CardBack's архівного діалогу, CH-07) лишався зі старою назвою --
+// createCard/onArchived уже мали "успіх -> reload()", rename не мав.
+
+// CH-07 review-fix, ІТЕРАЦІЯ 2: перша спроба цього фіксу викликала reload()
+// (як handleCreate/onArchived) -- повторний /code-review знайшов регресію:
+// reload() ставить 'loading', розмонтовуючи DeckGrid/DeckFrontCard, тож
+// користувач, що лишався на звороті чи з відкритою панеллю редагування
+// метрики, губив цей стан заради спалаху спінера. Патч state.items на місці
+// -- без 'loading', без ремонту -- перевіряємо саме це нижче.
+test('CH-07 review-fix: успішне перейменування оновлює кешовану назву (cardName у звороті) БЕЗ повторного loadCards чи спінера', async () => {
+  const items = [{ id: 'card-1', name: 'Спорт' }];
+  const loadCards = vi.fn().mockResolvedValue(items);
+  const onRename = vi.fn().mockResolvedValue(undefined);
+  const props = baseProps({ loadCards, onRename });
+
+  render(<DeckScreen {...props} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Меню картки' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Редагувати' }));
+  fireEvent.change(screen.getByLabelText('Назва'), { target: { value: 'Спорт і здоров’я' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+
+  expect(onRename).toHaveBeenCalledWith('card-1', 'Спорт і здоров’я');
+  await screen.findByRole('heading', { name: 'Спорт і здоров’я' });
+  // Жодного повторного GET /cards -- лише перший, початковий.
+  expect(loadCards).toHaveBeenCalledTimes(1);
+  // Спінер (повний ремонт) не з'являвся в процесі -- картка лишалась на екрані.
+  expect(screen.queryByRole('status')).toBeNull();
+});
+
+test('CH-06 review-fix: збереження без зміни назви (лише Опис) НЕ викликає onRename', async () => {
+  const items = [{ id: 'card-1', name: 'Спорт' }];
+  const onRename = vi.fn().mockResolvedValue(undefined);
+  const onUpdateDescription = vi.fn().mockResolvedValue(undefined);
+  const props = baseProps({ loadCards: vi.fn().mockResolvedValue(items), onRename, onUpdateDescription });
+
+  render(<DeckScreen {...props} />);
+
+  fireEvent.click(await screen.findByText('опис'));
+  fireEvent.change(screen.getByLabelText('Опис (навіщо)'), { target: { value: 'новий опис' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+
+  await vi.waitFor(() => expect(onUpdateDescription).toHaveBeenCalledWith('card-1', { description: 'новий опис', markFilled: true }));
+  expect(onRename).not.toHaveBeenCalled();
 });
