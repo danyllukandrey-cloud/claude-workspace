@@ -19,7 +19,6 @@ import type {
 import { AnalyticsScreen, DeclarationScreen, LayoutBoard } from '../structure';
 import type {
   AnalyticsScreenState,
-  CloseCardMetricTransferInput,
   DeclarationScreenState,
   LayoutBoardCloseCardOptions,
   LayoutBoardState,
@@ -130,13 +129,11 @@ export interface AppProps {
   loadAnalytics: () => Promise<AnalyticsScreenState>;
   /**
    * AC-12 -- GET /api/v1/cards/{cardId}/metric-blocks (LayoutBoard.loadCloseCardOptions).
-   * Опційне, як і в LayoutBoard: без нього кнопка "Закрити напрямок" не рендериться
+   * Опційне, як і в LayoutBoard: без нього дія "Архівувати" на чипі не рендериться
    * (review-fix 2026-09-11 -- до цього фіксу пропс узагалі не доходив до App, тож
    * SCR-04 був написаний і протестований, але недосяжний користувачу).
    */
   loadCloseCardOptions?: (cardId: string) => Promise<LayoutBoardCloseCardOptions>;
-  /** AC-12 -- POST /api/v1/structure/layout/{cardId}/close (LayoutBoard.onCloseCard). */
-  onCloseCard?: (input: { cardId: string; metricTransfers: CloseCardMetricTransferInput[] }) => Promise<void>;
 
   // --- Агент (T29, contracts/openapi.yaml) -------------------------------
   /** GET /api/v1/messages (ChatPanel.loadHistory). */
@@ -267,7 +264,6 @@ export function App({
   onDeleteConnection,
   loadAnalytics,
   loadCloseCardOptions,
-  onCloseCard,
   loadChatHistory,
   loadChatOnboarding,
   loadActiveChatProposal,
@@ -548,7 +544,14 @@ export function App({
               // структурно сумісне з обома вужчими сигнатурами -- AppProps коментар вище).
               onSaveLayoutMode={onSaveDeclaration}
               loadCloseCardOptions={loadCloseCardOptions}
-              onCloseCard={onCloseCard}
+              // CH-05 (structure/changes.md): "Архівувати" на чипі картки --
+              // ТОЙ САМИЙ archiveCard, що вже архівує з колоди (onArchive
+              // нижче на DeckScreen) -- жодного структуроспецифічного close
+              // більше немає, D-103 (archive-card.ts) сам закриває позицію.
+              onArchiveCard={archiveCard}
+              // CH-06: перенесення метрики перед архівацією -- той самий
+              // injected onTransferMetricBlock, що CardBack.tsx вже використовує.
+              onTransferMetricBlock={onTransferMetricBlock}
               // CH-01 (structure): "Архів карток" біля "Конфігурація" --
               // openArchive вище, той самий shared callback, що DeckScreen
               // нижче отримує для свого дубля кнопки.
