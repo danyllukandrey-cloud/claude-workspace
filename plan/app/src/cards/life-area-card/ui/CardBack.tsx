@@ -21,6 +21,7 @@ import { EntryHistoryList } from './EntryHistoryList';
 import { MetricBlockCard } from './MetricBlockCard';
 import { MetricBlockForm } from './MetricBlockForm';
 import type { MetricBlockFormValues } from './MetricBlockForm';
+import { patchIfLoaded } from './state-utils';
 import type { CardBackData, MetricBlockTransferTargetCard, MetricBlockViewModel } from './types';
 import type { CardTrackingMode, CardHealthState } from '../domain/card';
 
@@ -190,6 +191,25 @@ export function CardBack({
   // вона від НАЙОСТАННІШОГО виклику -- застаріла (out-of-order) відповідь,
   // що прийшла пізніше свіжішої, ігнорується, а не переписує стан.
   const refreshRequestIdRef = useRef(0);
+  // code-review 2026-09-21 (conventions): click-outside-close для меню
+  // "..." -- той самий підхід (дві ref, `mousedown`-listener лише поки
+  // меню відкрите), що вже є на шестерні верхнього бару (App.tsx, задача
+  // 9). Раніше цього меню тут не було -- клік будь-де поза ним не закривав
+  // його, на відміну від шестерні.
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    function handleClickOutside(event: MouseEvent): void {
+      const target = event.target as Node;
+      if (menuRef.current?.contains(target)) return;
+      if (menuButtonRef.current?.contains(target)) return;
+      setIsMenuOpen(false);
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isMenuOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -222,9 +242,17 @@ export function CardBack({
    * встиг стартувати (запобігає застарілій out-of-order відповіді
    * переписати свіжішу).
    */
-  const refresh = (): void => {
+  // code-review 2026-09-21 (correctness): тіло винесено з `refresh()` в
+  // окрему функцію, що ПОВЕРТАЄ Promise -- більшість викликів (створення
+  // блоку, запис тощо) не потребують чекати завершення (fire-and-forget,
+  // `refresh()` нижче лишається саме такою для них). Але
+  // `handleUpdateTracking` (нижче) мусить ЧЕКАТИ, поки свіжі дані реально
+  // прийдуть, перш ніж знову дозволити клік по радіо-кнопках -- без цього
+  // `isSavingTracking` знімався б одразу, як перезавантаження лише
+  // ЗАПУЩЕНО, а не завершено.
+  const refreshAsync = (): Promise<void> => {
     const requestId = ++refreshRequestIdRef.current;
-    loadBack()
+    return loadBack()
       .then((result) => {
         if (refreshRequestIdRef.current !== requestId) return; // застаріла -- ігноруємо
         setData(result);
@@ -235,6 +263,10 @@ export function CardBack({
         if (refreshRequestIdRef.current !== requestId) return;
         setRefreshError(err instanceof Error ? err.message : FALLBACK_ERROR_TEXT);
       });
+  };
+
+  const refresh = (): void => {
+    void refreshAsync();
   };
 
   if (state === 'loading') {
@@ -257,14 +289,16 @@ export function CardBack({
   // показуємо "Режим картки" одразу (не за меню), і вже під ним -- залежно
   // від вибору -- або мячики (state), або "+ Додати" (ongoing/goals).
   const hasNoMetrics = data.metricBlocks.length === 0;
-  // Review-fix (живе тестування 2026-09-21): 'state' -- ЗАВЖДИ показуємо
-  // пікер, незалежно від isEditingBack/hasNoMetrics. Без цього картка, що
-  // вже в режимі "стан" МАЄ старі блоки (перемкнули раніше, в іншій
-  // сесії) -- при звичайному відкритті (isEditingBack скидається на
-  // false при кожному новому loadBack) показувала б порожньо: метрик-
-  // секція вже не рендериться в 'state' (нижче), а пікер теж не рендерився
-  // без явного відкриття меню. У режимі "стан" пікер сам Є єдиним вмістом.
-  const showTrackingModePicker = isEditingBack || hasNoMetrics || trackingMode === 'state';
+  // code-review 2026-09-21 (readability): три причини нижче зводяться до
+  // ОДНОГО правила -- показуємо пікер, коли користувач сам його попросив
+  // (userRequestedEdit), АБО коли немає жодного ОСМИСЛЕНОГО способу
+  // показати щось інше замість нього (nothingElseToShow): порожня картка ще
+  // не має блоків, а картка в режимі "стан" НІКОЛИ не показує блоки взагалі
+  // (метрик-секція нижче в цьому режимі не рендериться) -- в обох випадках
+  // пікер сам Є єдиним вмістом звороту, ховати його за "..." нема сенсу.
+  const userRequestedEdit = isEditingBack;
+  const nothingElseToShow = hasNoMetrics || trackingMode === 'state';
+  const showTrackingModePicker = userRequestedEdit || nothingElseToShow;
 
   const handleFlagEntry = (entryId: string): void => {
     if (!onFlagEntry || isFlaggingEntry) return;
@@ -310,10 +344,15 @@ export function CardBack({
     setTrackingError(null);
     setIsSavingTracking(true);
     onUpdateTracking(input)
-      .then(async () => {
+      .then(() => {
+        // code-review 2026-09-21 (correctness): від цієї точки сам ПЕРЕХІД
+        // РЕЖИМУ вже збережений на сервері -- будь-яка помилка нижче
+        // (очищення блоків, перезавантаження) стосується вже ІНШОГО кроку й
+        // не повинна показуватись під фразою "не вдалося зберегти режим
+        // картки" (раніше показувала, бо весь ланцюжок ділив один .catch()).
         if (input.trackingMode === 'ongoing' && onUpdateMetricBlock) {
           const blocksToStrip = data.metricBlocks.filter((block) => block.settings?.isOngoing !== true);
-          await Promise.all(
+          return Promise.all(
             blocksToStrip.map((block) =>
               onUpdateMetricBlock(block.id, {
                 label: block.label,
@@ -323,21 +362,25 @@ export function CardBack({
                 targetDate: null,
               }),
             ),
-          );
+          )
+            .catch((err: unknown) => {
+              setTrackingError(
+                err instanceof Error
+                  ? `Режим картки збережено, але не вдалося очистити частину метрик: ${err.message}`
+                  : 'Режим картки збережено, але не вдалося очистити частину метрик.',
+              );
+            })
+            .then(() => refreshAsync()); // блоки могли змінитись вище -- потрібен справжній refetch, не локальний патч
         }
-        if (input.trackingMode === 'ongoing') {
-          // Блоки могли щойно змінитись вище (stripped) -- потрібен
-          // справжній refetch, локального патча тут не досить.
-          refresh();
-        } else {
-          // Review-fix: локальний патч замість повного refresh() -- input уже
-          // несе точну нову пару trackingMode/healthState (сервер підтвердив),
-          // жодне інше поле CardBackData від режиму не залежить (метрики й
-          // агрегат рахуються незалежно, лише візуально притлумлюються тут же).
-          // Той самий "не перезавантажуй, патч того, що вже знаєш" підхід, що
-          // CardFace.saveEdit і DeckScreen.handleRename вже мають у цьому diff.
-          setData((prev) => (prev ? { ...prev, trackingMode: input.trackingMode, healthState: input.healthState } : prev));
-        }
+        // Review-fix: локальний патч замість повного refresh() -- input уже
+        // несе точну нову пару trackingMode/healthState (сервер підтвердив),
+        // жодне інше поле CardBackData від режиму не залежить (метрики й
+        // агрегат рахуються незалежно, лише візуально притлумлюються тут же).
+        // Той самий "не перезавантажуй, патч того, що вже знаєш" підхід, що
+        // CardFace.saveEdit і DeckScreen.handleRename вже мають у цьому diff
+        // -- спільний guard винесено в state-utils.ts (code-review 2026-09-21).
+        patchIfLoaded(setData, { trackingMode: input.trackingMode, healthState: input.healthState });
+        return undefined;
       })
       .catch((err: unknown) => {
         setTrackingError(err instanceof Error ? err.message : 'Не вдалося зберегти режим картки');
@@ -425,6 +468,11 @@ export function CardBack({
 
   function startArchive(): void {
     setIsMenuOpen(false);
+    // code-review 2026-09-21 (correctness): скидаємо isEditingBack -- без
+    // цього повторне відкриття "..." -> "Архівувати" ПІД ЧАС відкритої
+    // панелі "Режим картки" лишало цю панель відкритою й ПІСЛЯ скасування
+    // архівації, хоча користувач цього не просив.
+    setIsEditingBack(false);
     setIsArchiving(true);
   }
 
@@ -475,16 +523,21 @@ export function CardBack({
           вертикальний простір з кнопкою, `relative` тут лишається лише
           точкою відліку для випадного меню. */}
       <div className="relative flex justify-end">
-        <button
-          type="button"
-          aria-label="Меню картки"
-          onClick={toggleMenu}
-          className="shrink-0 rounded-control px-2 py-1 text-lg font-bold leading-none text-ink-muted transition-colors hover:bg-border hover:text-ink"
-        >
-          ...
-        </button>
+        {/* `contents` -- div існує лише як носій ref для click-outside, не
+            бере участі в розкладці (той самий трюк, що App.tsx, задача 9). */}
+        <div ref={menuButtonRef} className="contents">
+          <button
+            type="button"
+            aria-label="Меню картки"
+            onClick={toggleMenu}
+            className="shrink-0 rounded-control px-2 py-1 text-lg font-bold leading-none text-ink-muted transition-colors hover:bg-border hover:text-ink"
+          >
+            ...
+          </button>
+        </div>
         {isMenuOpen && (
           <div
+            ref={menuRef}
             role="menu"
             // Живе тестування 2026-09-21: `z-10` (був раніше на батьківському
             // `absolute`-контейнері) загубився, коли той контейнер став
@@ -641,11 +694,25 @@ export function CardBack({
                 // порівняння з 'state' тут неможливим.
                 <MetricBlockForm
                   onSubmit={handleCreateMetricBlock}
-                  mode={trackingMode === 'ongoing' ? 'ongoing' : 'goals'}
+                  // code-review 2026-09-21 (simplification): `trackingMode`
+                  // тут уже звужений компілятором до 'ongoing'|'goals' (той
+                  // самий факт, що коментар вище про 'state' підтверджує) --
+                  // передавати напряму, без повторного вибору тернарним
+                  // оператором в кожному з двох місць виклику форми.
+                  mode={trackingMode}
                   onCancel={() => setIsCreatingBlock(false)}
                 />
               ) : (
-                <Button label="+ Додати блок-метрику" onClick={() => setIsCreatingBlock(true)} />
+                // code-review 2026-09-21 (race-condition): заблоковано під
+                // час isSavingTracking -- перехід картки на "постійний
+                // процес" очищає ціль/дату з блоків, ЩО ІСНУВАЛИ на момент
+                // кліку (handleUpdateTracking вище); без цього нова метрика,
+                // створена саме в цю мить, уникала б очищення.
+                <Button
+                  label="+ Додати блок-метрику"
+                  onClick={() => setIsCreatingBlock(true)}
+                  disabled={isSavingTracking}
+                />
               ))}
 
             {data.metricBlocks.length > 0 && (
@@ -665,6 +732,10 @@ export function CardBack({
                 <div key={block.id} className="flex flex-col gap-2">
                   <MetricBlockCard
                     block={block}
+                    // code-review 2026-09-21: заблоковано під час
+                    // isSavingTracking -- той самий захист від застарілого
+                    // знімку блоків, що на кнопці "+" вище.
+                    disabled={isSavingTracking}
                     onDelete={onArchiveMetricBlock ? () => setPendingDeleteBlock(block) : undefined}
                     onEdit={
                       onUpdateMetricBlock || onTransferMetricBlock
@@ -682,7 +753,12 @@ export function CardBack({
                         <h3 className="font-display text-sm font-bold leading-relaxed text-ink">
                           Редагування «{editingBlock.label}»
                         </h3>
-                        <Button label="Закрити" onClick={() => setEditingBlock(null)} />
+                        {/* code-review 2026-09-21: "Закрити редагування", не
+                            просто "Закрити" -- панель "Режим картки" вище
+                            може мати власну кнопку з тим самим текстом
+                            одночасно на екрані (обидві незалежні), однакові
+                            підписи плутали й людину, і пошук по ролі в тестах. */}
+                        <Button label="Закрити редагування" onClick={() => setEditingBlock(null)} />
                       </div>
 
                       {onUpdateMetricBlock && (
@@ -707,7 +783,10 @@ export function CardBack({
                           // Форма редагування більше не мусить сама
                           // "рятувати" ці дані -- на момент відкриття форми
                           // блок уже у формі, що відповідає картці.
-                          mode={trackingMode === 'ongoing' ? 'ongoing' : 'goals'}
+                          // code-review 2026-09-21 (simplification): напряму,
+                          // без повторного тернарного вибору -- той самий
+                          // резон, що на формі створення вище.
+                          mode={trackingMode}
                           onSubmit={handleSaveMetricBlockEdit}
                         />
                       )}

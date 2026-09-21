@@ -71,14 +71,14 @@ erDiagram
 | `name` | TEXT | NOT NULL | без назви картку не створюємо (AC-02) |
 | `description` | TEXT | NULL | Опис/«навіщо»; NULL, доки не заповнено (AC-03 блокує лише позначення «заповнена», не саме створення) |
 | `status` | TEXT | NOT NULL DEFAULT 'active', CHECK (`status` IN ('active','archived')) | видалення картки (AC-16) — м'яке, як `entry.status`: ніколи фізично не видаляємо, лише позначаємо. `archived`-картки не показуються в колоді |
-| `tracking_mode` | TEXT | NOT NULL DEFAULT 'metrics', CHECK (`tracking_mode` IN ('metrics','state')) | [CH-02](changes.md) — `'state'` означає «картка: стан без вимірювань» (AC-21/AC-22): метричні налаштування (блоки-метрики, цілі, частота) неактивні, прогрес не рахується взагалі, картку описує лише `health_state` |
+| `tracking_mode` | TEXT | NOT NULL DEFAULT 'goals', CHECK (`tracking_mode` IN ('state','ongoing','goals')) | [CH-02](changes.md) — `'state'` означає «картка: стан без вимірювань» (AC-21/AC-22): метричні налаштування (блоки-метрики, цілі, частота) неактивні, прогрес не рахується взагалі, картку описує лише `health_state`. [CH-10](changes.md) (2026-09-21) розвів колишній `'metrics'` на два окремі режими: `'ongoing'` — «постійний процес», блоки-метрики без цілі/дати; `'goals'` — «з цілями та метриками», блоки з ціллю/датою (те, чим `'metrics'` був раніше). Міграція [10_expand_card_tracking_mode](migrations/10_expand_card_tracking_mode.up.sql) перенесла наявні картки `'metrics'` → `'goals'` |
 | `health_state` | TEXT | NULL, CHECK (`health_state` IN ('active','critical','paused')) | [CH-02](changes.md) — ненульове лише коли `tracking_mode = 'state'` (CHECK `card_health_state_requires_state_tracking` забезпечує саме цю пару); `active` = використовується (зелений), `critical` = критично потребує відновлення (червоний), `paused` = на паузі (жовтий); показується м'ячиком на картці, в колоді і — координовано з `structure` CH-02 — на Схемі/Аналітиці |
 | `created_at` | timestamptz | NOT NULL DEFAULT now() | |
 | `updated_at` | timestamptz | NOT NULL DEFAULT now() | назва/Опис/статус можуть редагуватись |
 
 **Aggregate root:** root.
 **Access patterns:** список карток користувача (AC-04) → індекс на `owner_user_id`; список **активних** карток колоди (AC-16) → частковий індекс на `owner_user_id` де `status = 'active'`; список **архівованих** карток (AC-18, 2026-08-29) → частковий індекс на `owner_user_id` де `status = 'archived'`.
-**Constraints:** FK на `owner_user_id` — `<!-- TBD: додається окремою міграцією фічею, що володіє users -->`; CHECK на `tracking_mode`/`health_state` і на їхню взаємну пару (`card_health_state_requires_state_tracking`, [migrations/09_add_card_tracking_mode.up.sql](migrations/09_add_card_tracking_mode.up.sql)).
+**Constraints:** FK на `owner_user_id` — `<!-- TBD: додається окремою міграцією фічею, що володіє users -->`; CHECK на `tracking_mode`/`health_state` і на їхню взаємну пару (`card_health_state_requires_state_tracking`), уведені в [migrations/09_add_card_tracking_mode.up.sql](migrations/09_add_card_tracking_mode.up.sql), розширені до 3 значень `tracking_mode` в [migrations/10_expand_card_tracking_mode.up.sql](migrations/10_expand_card_tracking_mode.up.sql).
 
 ### `metric_block`
 

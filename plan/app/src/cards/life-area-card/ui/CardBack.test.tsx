@@ -739,6 +739,120 @@ test('CH-12: перемикання на "постійний процес" НЕ 
   expect(onUpdateMetricBlock).not.toHaveBeenCalled();
 });
 
+// code-review 2026-09-21 (correctness): якщо режим картки вже реально
+// зберігся на сервері, а лише ОЧИЩЕННЯ одного з блоків провалилось --
+// помилка не повинна звинувачувати сам перехід режиму (раніше весь
+// ланцюжок ділив один .catch(), тож будь-яка помилка нижче показувалась
+// під фразою "не вдалося зберегти режим картки", хоча режим уже змінився).
+test('CH-12 review-fix: провал очищення ОДНОГО блоку після успішного переходу режиму не показує "не вдалося зберегти режим картки"', async () => {
+  const okBlock = metricBlock({ id: 'mb1', settings: { targetCount: 10, isOngoing: false, targetDate: '2026-12-31' } });
+  const data: CardBackData = {
+    metricBlocks: [okBlock],
+    aggregateProgress: 0.5,
+    entries: [],
+    trackingMode: 'goals',
+    healthState: null,
+  };
+  const onUpdateTracking = vi.fn().mockResolvedValue(undefined);
+  const onUpdateMetricBlock = vi.fn().mockRejectedValue(new Error('Мережа недоступна'));
+  render(
+    <CardBack
+      cardName="Картка"
+      loadBack={() => Promise.resolve(data)}
+      onFlip={vi.fn()}
+      onUpdateTracking={onUpdateTracking}
+      onUpdateMetricBlock={onUpdateMetricBlock}
+    />,
+  );
+
+  await openBackEdit();
+  fireEvent.click(screen.getByRole('radio', { name: 'Картка: постійний процес' }));
+
+  const banner = await screen.findByText(/Режим картки збережено, але не вдалося очистити частину метрик/);
+  expect(banner.getAttribute('data-variant')).toBe('error');
+  expect(screen.queryByText('Не вдалося зберегти режим картки')).toBeNull();
+});
+
+// code-review 2026-09-21 (race-condition): без цього захисту нова метрика,
+// створена ПІД ЧАС переходу картки на "постійний процес", уникала б
+// очищення цілі/дати -- знімок блоків для очищення береться один раз, на
+// момент кліку.
+test('CH-12 review-fix: "+ Додати блок-метрику" і олівець редагування заблоковані під час переходу режиму', async () => {
+  const block = metricBlock({ settings: { targetCount: 10, isOngoing: false, targetDate: '2026-12-31' } });
+  const data: CardBackData = {
+    metricBlocks: [block],
+    aggregateProgress: 0.5,
+    entries: [],
+    trackingMode: 'goals',
+    healthState: null,
+  };
+  const onUpdateTracking = vi.fn().mockReturnValue(new Promise(() => {})); // навмисно ніколи не резолвиться -- перевіряємо стан "у польоті"
+  render(
+    <CardBack
+      cardName="Картка"
+      loadBack={() => Promise.resolve(data)}
+      onFlip={vi.fn()}
+      onUpdateTracking={onUpdateTracking}
+      onUpdateMetricBlock={vi.fn()}
+      onCreateMetricBlock={vi.fn()}
+    />,
+  );
+
+  await openBackEdit();
+  fireEvent.click(screen.getByRole('radio', { name: 'Картка: постійний процес' }));
+
+  await vi.waitFor(() => expect(onUpdateTracking).toHaveBeenCalled());
+  expect(screen.getByRole('button', { name: '+ Додати блок-метрику' }).hasAttribute('disabled')).toBe(true);
+  expect(screen.getByRole('button', { name: 'Редагувати метрику «Тренування»' }).hasAttribute('disabled')).toBe(true);
+});
+
+// code-review 2026-09-21 (correctness): повторне відкриття "..." ->
+// "Архівувати" ПІД ЧАС відкритої панелі "Режим картки" не повинно лишати цю
+// панель відкритою й ПІСЛЯ скасування архівації -- користувач цього не просив.
+test('CH-12 review-fix: скасування архівації, розпочатої з відкритої панелі "Режим картки", закриває й панель', async () => {
+  const data: CardBackData = {
+    metricBlocks: [metricBlock()],
+    aggregateProgress: 0.5,
+    entries: [],
+    trackingMode: 'goals',
+    healthState: null,
+  };
+  render(
+    <CardBack
+      cardName="Картка"
+      loadBack={() => Promise.resolve(data)}
+      onFlip={vi.fn()}
+      onUpdateTracking={vi.fn()}
+      onArchive={vi.fn()}
+    />,
+  );
+
+  await openBackEdit();
+  expect(await screen.findByText('Картка: стан без вимірювань')).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Меню картки' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Архівувати' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Скасувати' }));
+
+  expect(screen.queryByText('Картка: стан без вимірювань')).toBeNull();
+});
+
+// code-review 2026-09-21 (conventions): click-outside-close -- той самий
+// підхід, що вже є на шестерні верхнього бару (App.tsx) і на лицевій
+// частині картки (CardFace.tsx); раніше цього меню тут не мало жодного
+// способу закритись, крім повторного кліку на "...".
+test('CH-12 review-fix: клік поза меню "..." закриває його', async () => {
+  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={vi.fn()} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Меню картки' }));
+  expect(screen.getByRole('menuitem', { name: 'Редагування' })).toBeTruthy();
+
+  fireEvent.mouseDown(document.body);
+
+  expect(screen.queryByRole('menuitem', { name: 'Редагування' })).toBeNull();
+});
+
 test('CH-10: форма нового блоку-метрики в режимі "постійний процес" не показує чекбокс/ціль/дату', async () => {
   const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'ongoing', healthState: null };
   render(
@@ -973,14 +1087,17 @@ test('CH-03: "Перенести" неактивна, поки не обрано
   expect(screen.getByRole('button', { name: 'Перенести' }).hasAttribute('disabled')).toBe(true);
 });
 
-test('CH-03: "Закрити" ховає панель редагування без виклику жодної дії', async () => {
+test('CH-03: "Закрити редагування" ховає панель редагування без виклику жодної дії', async () => {
   const data: CardBackData = { metricBlocks: [metricBlock()], aggregateProgress: 0.5, entries: [] };
   const onUpdateMetricBlock = vi.fn();
   render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateMetricBlock={onUpdateMetricBlock} />);
 
   await screen.findByText('Тренування');
   fireEvent.click(screen.getByRole('button', { name: 'Редагувати метрику «Тренування»' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Закрити' }));
+  // code-review 2026-09-21: перейменовано з "Закрити" на "Закрити
+  // редагування" -- уникнути двох кнопок з однаковим текстом, коли водночас
+  // відкрита й ця панель, і панель "Режим картки".
+  fireEvent.click(screen.getByRole('button', { name: 'Закрити редагування' }));
 
   expect(screen.queryByText('Редагування «Тренування»')).toBeNull();
   expect(onUpdateMetricBlock).not.toHaveBeenCalled();

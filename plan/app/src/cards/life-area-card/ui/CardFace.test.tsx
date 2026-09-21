@@ -115,6 +115,33 @@ test('CH-06 editing: без onUpdateDescription форма показує лиш
   // Без onUpdateDescription клік по Опису теж нічого не відкриває (перевірено окремим тестом нижче).
 });
 
+// code-review 2026-09-21 (correctness): раніше onUpdateDescription летів
+// НАВІТЬ коли Опис не чіпали (лише Назву) -- зайвий запит, і `null` ("опис
+// ще не заповнений") мовчки перетворювався на порожній рядок.
+test('code-review: збереження лише Назви (Опис не чіпали) НЕ викликає onUpdateDescription', async () => {
+  const data: CardFaceData = { name: 'Спорт', description: null, dataWarning: null, trackingMode: 'goals', healthState: null };
+  const onRename = vi.fn().mockResolvedValue(undefined);
+  const onUpdateDescription = vi.fn().mockResolvedValue(undefined);
+  render(
+    <CardFace
+      loadCard={() => Promise.resolve(data)}
+      onFlip={vi.fn()}
+      onRename={onRename}
+      onArchive={vi.fn()}
+      onArchived={vi.fn()}
+      onUpdateDescription={onUpdateDescription}
+    />,
+  );
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Меню картки' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Редагувати' }));
+  fireEvent.change(screen.getByLabelText('Назва'), { target: { value: 'Спорт і здоров’я' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+
+  await vi.waitFor(() => expect(onRename).toHaveBeenCalledWith('Спорт і здоров’я'));
+  expect(onUpdateDescription).not.toHaveBeenCalled();
+});
+
 test('CH-06 editing: "Зберегти" викликає onRename і onUpdateDescription({description, markFilled: true}) для непорожнього тексту', async () => {
   const data: CardFaceData = { name: 'Спорт', description: 'старий опис', dataWarning: null, trackingMode: 'goals', healthState: null };
   const onRename = vi.fn().mockResolvedValue(undefined);
@@ -209,6 +236,11 @@ test('CH-06 review-fix: onRename ОК, onUpdateDescription reject -- назва 
   fireEvent.click(await screen.findByRole('button', { name: 'Меню картки' }));
   fireEvent.click(screen.getByRole('menuitem', { name: 'Редагувати' }));
   fireEvent.change(screen.getByLabelText('Назва'), { target: { value: 'Спорт і здоров’я' } });
+  // code-review 2026-09-21: descriptionChanged-guard тепер пропускає виклик
+  // onUpdateDescription, коли Опис не чіпали -- щоб цей тест і далі
+  // перевіряв "reject опису не губить уже застосоване перейменування",
+  // Опис тут теж міняємо, інакше мок reject ніколи не спрацював би.
+  fireEvent.change(screen.getByLabelText('Опис (навіщо)'), { target: { value: 'новий опис' } });
   fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
 
   const banner = await screen.findByText('Мережа недоступна');
@@ -356,4 +388,20 @@ test('SCR-02: відкрите меню/чернетка редагування 
   // Нова картка -- стара чернетка/режим редагування не мають лишитись поверх неї.
   expect(await screen.findByRole('heading', { name: 'Навчання' })).toBeTruthy();
   expect(screen.queryByLabelText('Назва')).toBeNull();
+});
+
+// code-review 2026-09-21 (conventions): click-outside-close -- той самий
+// підхід, що вже є на шестерні верхнього бару (App.tsx) і на звороті картки
+// (CardBack.tsx); раніше цього меню тут не мало жодного способу закритись,
+// крім повторного кліку на "...".
+test('code-review: клік поза меню "..." закриває його', async () => {
+  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'goals', healthState: null };
+  render(<CardFace loadCard={() => Promise.resolve(data)} onFlip={vi.fn()} onRename={vi.fn()} onArchive={vi.fn()} onArchived={vi.fn()} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Меню картки' }));
+  expect(screen.getByRole('menuitem', { name: 'Редагувати' })).toBeTruthy();
+
+  fireEvent.mouseDown(document.body);
+
+  expect(screen.queryByRole('menuitem', { name: 'Редагувати' })).toBeNull();
 });

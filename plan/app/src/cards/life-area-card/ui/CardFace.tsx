@@ -27,9 +27,10 @@
 // ISS-41 (DoD дескоуплено, docs/ISSUES.md): буквальний DoD T37 вимагав
 // перевірити запис у Літопис Структури (structure AC-15) -- сервіс не існує
 // жодним рядком коду (ISS-28), тому тест і код нижче цього НЕ роблять.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Banner, Button, Spinner, TextField } from '../../../shared/ui';
 import { ArchiveCardDialog } from './ArchiveCardDialog';
+import { patchIfLoaded } from './state-utils';
 import type { CardFaceData } from './types';
 import type { CardHealthState } from '../domain/card';
 
@@ -99,6 +100,23 @@ export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived, on
   // (T29, фіксований контракт cardName/onArchive/onCancel). isArchiving --
   // незалежний від isEditing (обидва скидаються разом при новому loadCard).
   const [isArchiving, setIsArchiving] = useState(false);
+  // code-review 2026-09-21 (conventions): click-outside-close для меню
+  // "..." -- той самий підхід, що вже є на шестерні верхнього бару
+  // (App.tsx, задача 9) і на звороті картки (CardBack.tsx).
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    function handleClickOutside(event: MouseEvent): void {
+      const target = event.target as Node;
+      if (menuRef.current?.contains(target)) return;
+      if (menuButtonRef.current?.contains(target)) return;
+      setIsMenuOpen(false);
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isMenuOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -183,6 +201,11 @@ export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived, on
     // означав зайву (хай і тепер безпечну) роботу на рівень вище без причини.
     const nameChanged = draftName !== data.name;
     const renamePromise = nameChanged ? onRename(draftName) : Promise.resolve();
+    // code-review 2026-09-21 (correctness): той самий guard, що nameChanged
+    // вище -- без нього кожне збереження (навіть суто заради виправлення
+    // назви) повторно слало Опис на сервер, і `null` ("опис ще не
+    // заповнений") мовчки перетворювався на порожній рядок.
+    const descriptionChanged = draftDescription !== (data.description ?? '');
 
     renamePromise
       .then(() => {
@@ -191,16 +214,16 @@ export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived, on
         // reject показував би повний провал, хоча назва вже реально
         // змінилась на бекенді (data.name лишався б застарілим).
         if (nameChanged) {
-          setData((prev) => (prev ? { ...prev, name: draftName } : prev));
+          patchIfLoaded(setData, { name: draftName });
         }
         // TODO(ISS-28): коли зʼявиться сервіс Літопису Структури (structure
         // AC-15), тут піде виклик запису події перейменування. Сервіс ще не
         // існує жодним рядком коду -- виклику навмисно немає (ISS-41).
-        if (!onUpdateDescription) return undefined;
+        if (!onUpdateDescription || !descriptionChanged) return undefined;
         // CH-06: "заповнена" -- похідне від тексту, не окремий чекбокс:
         // непорожній збережений Опис і Є ознакою заповненості.
         return onUpdateDescription({ description: draftDescription, markFilled: draftDescription.trim() !== '' }).then(() => {
-          setData((prev) => (prev ? { ...prev, description: draftDescription } : prev));
+          patchIfLoaded(setData, { description: draftDescription });
         });
       })
       .then(() => {
@@ -262,16 +285,22 @@ export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived, on
               <h2 onClick={startEdit} className="cursor-pointer font-display text-xl font-bold leading-relaxed text-ink">
                 {data.name}
               </h2>
-              <button
-                type="button"
-                aria-label="Меню картки"
-                onClick={toggleMenu}
-                className="shrink-0 rounded-control px-2 py-1 text-lg font-bold leading-none text-ink-muted transition-colors hover:bg-border hover:text-ink"
-              >
-                ...
-              </button>
+              {/* `contents` -- div існує лише як носій ref для click-outside
+                  (той самий трюк, що App.tsx, задача 9), не бере участі в
+                  розкладці. */}
+              <div ref={menuButtonRef} className="contents">
+                <button
+                  type="button"
+                  aria-label="Меню картки"
+                  onClick={toggleMenu}
+                  className="shrink-0 rounded-control px-2 py-1 text-lg font-bold leading-none text-ink-muted transition-colors hover:bg-border hover:text-ink"
+                >
+                  ...
+                </button>
+              </div>
               {isMenuOpen && (
                 <div
+                  ref={menuRef}
                   role="menu"
                   className="absolute right-0 top-full z-10 mt-1 flex w-44 flex-col gap-0.5 rounded-control border border-border bg-surface-solid p-1.5 shadow-soft"
                 >
