@@ -155,4 +155,46 @@ describe('MetricBlockForm (SCR-05)', () => {
     fireEvent.focus(screen.getByLabelText('Ціль:'));
     expect(screen.getByRole('tooltip').textContent).toContain('Необовʼязково');
   });
+
+  // CH-10 (docs/features/life-area-card/changes.md, живе тестування
+  // 2026-09-21): mode='ongoing' -- картка сама каже "постійний процес",
+  // чекбокс/ціль/дата в самому блоці стають зайвими (той самий напис в двох
+  // місцях плутав).
+
+  it('CH-10: mode="goals" (за замовчуванням) показує чекбокс і ціль/дату', () => {
+    render(<MetricBlockForm onSubmit={vi.fn()} />);
+
+    expect(screen.getByLabelText('Постійний процес з метриками (без дати)')).toBeTruthy();
+    expect(screen.getByLabelText('Ціль:')).toBeTruthy();
+    expect(screen.getByLabelText('До:')).toBeTruthy();
+  });
+
+  it('CH-10: mode="ongoing" ховає чекбокс і ціль/дату повністю', () => {
+    render(<MetricBlockForm onSubmit={vi.fn()} mode="ongoing" />);
+
+    expect(screen.queryByLabelText('Постійний процес з метриками (без дати)')).toBeNull();
+    expect(screen.queryByLabelText('Ціль:')).toBeNull();
+    expect(screen.queryByLabelText('До:')).toBeNull();
+  });
+
+  it('CH-10: mode="ongoing" завжди шле isOngoing:true/targetCount:null/targetDate:null, незалежно від того, що було в initialValues', () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(
+      <MetricBlockForm
+        onSubmit={onSubmit}
+        mode="ongoing"
+        initialValues={{ label: 'Читання', unit: 'книга', targetCount: 12, targetDate: '2026-12-31' }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      label: 'Читання',
+      unit: 'книга',
+      targetCount: null,
+      isOngoing: true,
+      targetDate: null,
+    });
+  });
 });

@@ -19,7 +19,7 @@ export interface CardFaceData {
   description: string | null;
   /** AC-10: непорожнє лише коли агент справді запідозрив щось у даних картки. */
   dataWarning: string | null;
-  /** CH-02 (docs/features/life-area-card/changes.md): 'metrics' -- звичайна картка, 'state' -- "стан без вимірювань" (кольоровий м'ячик замість прогресу). */
+  /** CH-02/CH-10 (docs/features/life-area-card/changes.md): 'ongoing'/'goals' -- звичайна картка, 'state' -- "стан без вимірювань" (кольоровий м'ячик замість прогресу). */
   trackingMode: CardTrackingMode;
   /** CH-02: ненульове лише коли trackingMode === 'state' -- визначає колір м'ячика в правому верхньому кутку картки. */
   healthState: CardHealthState | null;
@@ -88,11 +88,12 @@ export interface CardBackData {
   entries: EntryViewModel[];
   pendingTransferCollision?: PendingTransferCollision | null;
   /**
-   * CH-02: той самий режим, що CardFaceData -- звідси керується
-   * "неактивність" налаштувань метрик нижче. Опційне (на відміну від
-   * CardFaceData, де це поле обов'язкове) -- десятки наявних тестових
-   * fixtures цього файлу передували CH-02; відсутнє поле трактується як
-   * 'metrics' (CardBack.tsx), той самий дефолт, що й у самій базі даних.
+   * CH-02/CH-10: той самий режим, що CardFaceData -- звідси керується
+   * "неактивність" налаштувань метрик нижче й видимість цілі/дати в формі
+   * блоку. Опційне (на відміну від CardFaceData, де це поле обов'язкове) --
+   * десятки наявних тестових fixtures цього файлу передували CH-02;
+   * відсутнє поле трактується як 'goals' (CardBack.tsx), той самий дефолт,
+   * що й у самій базі даних.
    */
   trackingMode?: CardTrackingMode;
   /** CH-02: ненульове лише коли trackingMode === 'state'. */

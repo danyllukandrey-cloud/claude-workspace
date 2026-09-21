@@ -168,16 +168,31 @@ export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived, on
   }
 
   function saveEdit(): void {
+    // Той самий guard, що startEdit -- саveEdit насправді недосяжний без
+    // data (форма редагування рендериться лише коли state === 'ready'), але
+    // TS не пронесе це звуження крізь окрему функцію без явної перевірки тут.
+    if (!data) return;
     setSaveError(undefined);
     setIsSaving(true);
 
-    onRename(draftName)
+    // Review-fix (CH-06): onRename викликаємо ЛИШЕ якщо назва реально
+    // змінилась -- раніше форма слала PATCH навіть коли користувач правив
+    // тільки Опис, назва лишалась тою самою. Зайвий запит сам по собі не
+    // ламав нічого напряму, але DeckScreen.tsx's handleRename (CH-07) на
+    // кожен успішний onRename оновлює кеш колоди -- зайвий виклик тут
+    // означав зайву (хай і тепер безпечну) роботу на рівень вище без причини.
+    const nameChanged = draftName !== data.name;
+    const renamePromise = nameChanged ? onRename(draftName) : Promise.resolve();
+
+    renamePromise
       .then(() => {
         // Review-fix (CH-06): застосовуємо УСПІШНЕ перейменування одразу,
         // не чекаючи опису нижче -- інакше onRename ОК + onUpdateDescription
         // reject показував би повний провал, хоча назва вже реально
         // змінилась на бекенді (data.name лишався б застарілим).
-        setData((prev) => (prev ? { ...prev, name: draftName } : prev));
+        if (nameChanged) {
+          setData((prev) => (prev ? { ...prev, name: draftName } : prev));
+        }
         // TODO(ISS-28): коли зʼявиться сервіс Літопису Структури (structure
         // AC-15), тут піде виклик запису події перейменування. Сервіс ще не
         // існує жодним рядком коду -- виклику навмисно немає (ISS-41).

@@ -245,10 +245,10 @@ export function CardBack({
     return <Banner variant="error" text={error} />;
   }
 
-  // CH-02: `trackingMode` опційне на CardBackData (десятки наявних тестових
-  // fixtures передували цю зміну) -- 'metrics' той самий дефолт, що й сама
-  // база даних (postgres-repo.ts card.tracking_mode DEFAULT 'metrics').
-  const trackingMode = data.trackingMode ?? 'metrics';
+  // CH-02/CH-10: `trackingMode` опційне на CardBackData (десятки наявних
+  // тестових fixtures передували цю зміну) -- 'goals' той самий дефолт, що
+  // й сама база даних (postgres-repo.ts card.tracking_mode DEFAULT 'goals').
+  const trackingMode = data.trackingMode ?? 'goals';
   const healthState = data.healthState ?? null;
 
   const handleFlagEntry = (entryId: string): void => {
@@ -462,7 +462,11 @@ export function CardBack({
         <ArchiveCardDialog cardName={cardName} onArchive={confirmArchive} onCancel={cancelArchive} />
       )}
 
-      <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
+      {/* Живе тестування 2026-09-21: "..." (absolute, правий верхній кут)
+          наїжджало на вміст під час скролу -- зона скролу починалась з
+          того самого верхнього краю. pt-8 -- висота самої кнопки-крапок
+          (px-2 py-1 text-lg), контент тепер стартує нижче неї. */}
+      <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-y-auto pt-8">
         {/* Review 2026-09-07 E (T52): фоновий refresh невдалий -- НЕблокуючий
             банер над уже показаними даними, не заміна всього екрана. */}
         {refreshError !== null && <Banner variant="error" text={refreshError} />}
@@ -477,8 +481,11 @@ export function CardBack({
               <legend className="px-1 text-xs font-bold uppercase tracking-wide text-ink-muted">Режим картки</legend>
               <Button label="Закрити" onClick={closeEditBack} />
             </div>
-            {/* Порядок навмисний (юзер-кейс CH-02): "стан без вимірювань" --
-                НАД "постійний процес з метриками (без дати)". */}
+            {/* CH-10 (живе тестування 2026-09-21): 3 варіанти замість 2 --
+                той самий напис "Постійний процес з метриками (без дати)"
+                одночасно позначав і режим картки тут, і чекбокс у формі
+                окремого блоку-метрики нижче, плутало. Порядок навмисний
+                (юзер-кейс CH-02/CH-10): стан -> постійний процес -> цілі. */}
             <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-ink">
               <input
                 type="radio"
@@ -510,11 +517,21 @@ export function CardBack({
               <input
                 type="radio"
                 name="cardTrackingMode"
-                checked={trackingMode === 'metrics'}
-                onChange={() => handleUpdateTracking({ trackingMode: 'metrics', healthState: null })}
+                checked={trackingMode === 'ongoing'}
+                onChange={() => handleUpdateTracking({ trackingMode: 'ongoing', healthState: null })}
                 className="h-4 w-4 accent-ink"
               />
-              Картка: постійний процес з метриками (без дати)
+              Картка: постійний процес
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-ink">
+              <input
+                type="radio"
+                name="cardTrackingMode"
+                checked={trackingMode === 'goals'}
+                onChange={() => handleUpdateTracking({ trackingMode: 'goals', healthState: null })}
+                className="h-4 w-4 accent-ink"
+              />
+              Картка: з цілями та метриками
             </label>
             {trackingError !== null && <Banner variant="error" text={trackingError} />}
           </fieldset>
@@ -555,7 +572,9 @@ export function CardBack({
           )}
           {onCreateMetricBlock &&
             (isCreatingBlock ? (
-              <MetricBlockForm onSubmit={handleCreateMetricBlock} />
+              // CH-10: режим картки визначає, ЯКІ поля форма показує --
+              // 'state' сюди не доходить (кнопка вище вже disabled).
+              <MetricBlockForm onSubmit={handleCreateMetricBlock} mode={trackingMode === 'ongoing' ? 'ongoing' : 'goals'} />
             ) : (
               <Button label="+ Додати блок-метрику" onClick={() => setIsCreatingBlock(true)} disabled={trackingMode === 'state'} />
             ))}
@@ -632,6 +651,7 @@ export function CardBack({
                   isOngoing: editingBlock.settings?.isOngoing ?? false,
                   targetDate: editingBlock.settings?.targetDate ?? null,
                 }}
+                mode={trackingMode === 'ongoing' ? 'ongoing' : 'goals'}
                 onSubmit={handleSaveMetricBlockEdit}
               />
             )}

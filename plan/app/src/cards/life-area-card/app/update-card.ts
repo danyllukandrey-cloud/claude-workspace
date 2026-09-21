@@ -28,7 +28,7 @@
 // чи поки composition root не готовий) use-case просто не робить цей крок --
 // не помилка, лише "Структура поки не підключена".
 
-import { markFilled, setTrackingModeMetrics, setTrackingModeState, isCardHealthState, CardValidationError } from '../domain/card';
+import { markFilled, setTrackingModeOngoing, setTrackingModeGoals, setTrackingModeState, isCardHealthState, CardValidationError } from '../domain/card';
 import type { Card, CardTrackingMode, CardHealthState } from '../domain/card';
 import { findCardById, updateCard as updateCardRow, insertLifecycleEvent } from '../infra/postgres-repo';
 import type { CardRecord, Db } from '../infra/postgres-repo';
@@ -44,11 +44,11 @@ export interface UpdateCardInput {
   /** true -- спробувати позначити картку "заповненою" (AC-03) у цьому ж виклику. */
   markFilled?: boolean;
   /**
-   * CH-02 (docs/features/life-area-card/changes.md): перемикає режим
+   * CH-02/CH-10 (docs/features/life-area-card/changes.md): перемикає режим
    * відстеження картки. 'state' вимагає healthState у ЦЬОМУ Ж виклику
-   * (domain/card.ts setTrackingModeState) -- 'metrics' завжди скидає
-   * healthState на null (setTrackingModeMetrics), незалежно від того, що
-   * передано в healthState.
+   * (domain/card.ts setTrackingModeState) -- 'ongoing'/'goals' завжди
+   * скидають healthState на null (setTrackingModeOngoing/setTrackingModeGoals),
+   * незалежно від того, що передано в healthState.
    */
   trackingMode?: CardTrackingMode;
   /** CH-02: обов'язкове, лише коли trackingMode === 'state' у цьому ж виклику. */
@@ -108,7 +108,7 @@ export async function updateCard(
     healthState: current.healthState,
   };
 
-  // CH-02: перемикання режиму ДО будь-якого запису в базу -- той самий
+  // CH-02/CH-10: перемикання режиму ДО будь-якого запису в базу -- той самий
   // принцип, що markFilled нижче: доменна валідація (тут -- "healthState
   // обов'язковий для 'state'") кидається раніше за repo.updateCard.
   if (input.trackingMode !== undefined) {
@@ -123,7 +123,8 @@ export async function updateCard(
       patch.trackingMode = switched.trackingMode;
       patch.healthState = switched.healthState;
     } else {
-      const switched = setTrackingModeMetrics(domainCard);
+      const switched =
+        input.trackingMode === 'ongoing' ? setTrackingModeOngoing(domainCard) : setTrackingModeGoals(domainCard);
       patch.trackingMode = switched.trackingMode;
       patch.healthState = switched.healthState;
     }
@@ -146,14 +147,18 @@ export async function updateCard(
     throw new AppError('card.not_found', 'Картку не знайдено', 404);
   }
 
-  if (input.markFilled) {
+  // Review-fix (CH-06, docs/features/life-area-card/changes.md): guard
+  // винесено з recordAction і застосовано ТУТ ТЕЖ, на сам lifecycle-запис --
+  // раніше guard стояв лише на recordAction нижче (коментар, що лишився,
+  // пояснює чому він узагалі з'явився), а insertLifecycleEvent (append-only
+  // audit-журнал, spec.md §7 KPI) писав "filled" щоразу, коли markFilled:true
+  // приходив у тілі -- рідкісний край-випадок до CH-06 (ручний чекбокс), але
+  // CH-06 зробив markFilled похідним від "Опис непорожній" і шле його на
+  // КОЖНЕ збереження форми, тож без guard тут повторний перехід писався б
+  // при кожному перейменуванні вже заповненої картки.
+  if (input.markFilled && !current.description) {
     await insertLifecycleEvent(db, { id: crypto.randomUUID(), cardId: input.cardId, transition: 'filled' });
-    // Лог дій (кінець-сесії ревю виявив): без цієї перевірки повторний
-    // markFilled:true на вже заповненій картці (UI дозволяє знову відкрити
-    // опис і ще раз натиснути "заповнено") писав би оманливий повторний
-    // рядок "Заповнено опис картки" -- реального переходу тут не було,
-    // current.description вже був непорожнім ДО цього виклику.
-    if (recordAction && !current.description) {
+    if (recordAction) {
       await recordAction(db, { ownerUserId: input.ownerUserId, action: `Заповнено опис картки «${updated.name}»` });
     }
   }

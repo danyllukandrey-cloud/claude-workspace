@@ -16,7 +16,7 @@ const FACE_DATA: CardFaceData = {
   name: 'Спорт',
   description: 'Регулярні тренування',
   dataWarning: null,
-  trackingMode: 'metrics',
+  trackingMode: 'goals',
   healthState: null,
 };
 const BACK_DATA: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };

@@ -62,7 +62,7 @@ describe('listCards', () => {
         name: 'Біг',
         description: null,
         status: 'archived',
-        trackingMode: 'metrics',
+        trackingMode: 'goals',
         healthState: null,
         createdAt: archivedRow.created_at,
         updatedAt: archivedRow.updated_at,

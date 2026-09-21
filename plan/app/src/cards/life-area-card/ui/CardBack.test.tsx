@@ -612,19 +612,21 @@ test('CH-02: без onUpdateTracking вибір режиму не рендери
   expect(screen.queryByText('Картка: стан без вимірювань')).toBeNull();
 });
 
-test('CH-02: "стан без вимірювань" рендериться НАД "постійний процес з метриками (без дати)"', async () => {
-  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'metrics', healthState: null };
+test('CH-10: 3 варіанти в порядку -- стан -> постійний процес -> з цілями та метриками', async () => {
+  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'goals', healthState: null };
   render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={vi.fn()} />);
 
   await openBackEdit();
   const stateOption = await screen.findByText('Картка: стан без вимірювань');
-  const metricsOption = screen.getByText('Картка: постійний процес з метриками (без дати)');
+  const ongoingOption = screen.getByText('Картка: постійний процес');
+  const goalsOption = screen.getByText('Картка: з цілями та метриками');
 
-  expect(stateOption.compareDocumentPosition(metricsOption) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(stateOption.compareDocumentPosition(ongoingOption) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(ongoingOption.compareDocumentPosition(goalsOption) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 test('CH-02: обрання "стан без вимірювань" викликає onUpdateTracking(state, active за замовчуванням)', async () => {
-  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'metrics', healthState: null };
+  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'goals', healthState: null };
   const onUpdateTracking = vi.fn().mockResolvedValue(undefined);
   render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={onUpdateTracking} />);
 
@@ -651,16 +653,66 @@ test('CH-02: у режимі "стан без вимірювань" показу
   expect(onUpdateTracking).toHaveBeenCalledWith({ trackingMode: 'state', healthState: 'critical' });
 });
 
-test('CH-02: перемикання назад на метричний режим викликає onUpdateTracking(metrics, null)', async () => {
+test('CH-10: перемикання зі стану на "постійний процес" викликає onUpdateTracking(ongoing, null)', async () => {
   const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'state', healthState: 'paused' };
   const onUpdateTracking = vi.fn().mockResolvedValue(undefined);
   render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={onUpdateTracking} />);
 
   await openBackEdit();
   await screen.findByText('Картка: стан без вимірювань');
-  fireEvent.click(screen.getByRole('radio', { name: 'Картка: постійний процес з метриками (без дати)' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'Картка: постійний процес' }));
 
-  expect(onUpdateTracking).toHaveBeenCalledWith({ trackingMode: 'metrics', healthState: null });
+  expect(onUpdateTracking).toHaveBeenCalledWith({ trackingMode: 'ongoing', healthState: null });
+});
+
+test('CH-10: перемикання зі стану на "з цілями та метриками" викликає onUpdateTracking(goals, null)', async () => {
+  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'state', healthState: 'paused' };
+  const onUpdateTracking = vi.fn().mockResolvedValue(undefined);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={onUpdateTracking} />);
+
+  await openBackEdit();
+  await screen.findByText('Картка: стан без вимірювань');
+  fireEvent.click(screen.getByRole('radio', { name: 'Картка: з цілями та метриками' }));
+
+  expect(onUpdateTracking).toHaveBeenCalledWith({ trackingMode: 'goals', healthState: null });
+});
+
+test('CH-10: форма нового блоку-метрики в режимі "постійний процес" не показує чекбокс/ціль/дату', async () => {
+  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'ongoing', healthState: null };
+  render(
+    <CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateMetricBlock={vi.fn()} />,
+  );
+
+  fireEvent.click(await screen.findByRole('button', { name: '+ Додати блок-метрику' }));
+
+  expect(screen.getByLabelText('Що рахуємо/вимірюємо:')).toBeTruthy();
+  expect(screen.getByLabelText('Одиниця:')).toBeTruthy();
+  expect(screen.queryByLabelText('Постійний процес з метриками (без дати)')).toBeNull();
+  expect(screen.queryByLabelText('Ціль:')).toBeNull();
+  expect(screen.queryByLabelText('До:')).toBeNull();
+});
+
+test('CH-10: форма нового блоку в режимі "постійний процес" шле isOngoing:true/targetCount:null/targetDate:null', async () => {
+  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'ongoing', healthState: null };
+  const onCreateMetricBlock = vi.fn().mockResolvedValue(undefined);
+  render(
+    <CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateMetricBlock={onCreateMetricBlock} />,
+  );
+
+  fireEvent.click(await screen.findByRole('button', { name: '+ Додати блок-метрику' }));
+  fireEvent.change(screen.getByLabelText('Що рахуємо/вимірюємо:'), { target: { value: 'Читання' } });
+  fireEvent.change(screen.getByLabelText('Одиниця:'), { target: { value: 'книга' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+
+  await vi.waitFor(() =>
+    expect(onCreateMetricBlock).toHaveBeenCalledWith({
+      label: 'Читання',
+      unit: 'книга',
+      targetCount: null,
+      isOngoing: true,
+      targetDate: null,
+    }),
+  );
 });
 
 test('CH-02: у режимі "стан без вимірювань" кнопка "+ Додати блок-метрику" стає СПРАВЖНЬО неактивною (disabled), клік нічого не робить', async () => {
@@ -835,7 +887,7 @@ test('CH-03: "Закрити" ховає панель редагування б�
 });
 
 test('CH-02: помилка збереження режиму показує Banner і не змінює поточний вибір', async () => {
-  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'metrics', healthState: null };
+  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'goals', healthState: null };
   const onUpdateTracking = vi.fn().mockRejectedValue(new Error('Не вдалося зберегти'));
   render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={onUpdateTracking} />);
 
@@ -852,7 +904,7 @@ test('CH-02: помилка збереження режиму показує Ban
 // "..." -> "Редагування"/"Архівувати", той самий патерн, що CardFace.tsx).
 
 test('CH-07: за замовчуванням "Режим картки" не видно, лише готові блоки й "Історія записів"', async () => {
-  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'metrics', healthState: null };
+  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'goals', healthState: null };
   render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={vi.fn()} />);
 
   await screen.findByText('Ще немає жодної активної метрики');
@@ -880,7 +932,7 @@ test('CH-07 review-fix: без onUpdateTracking пункт "Редагуванн
 });
 
 test('CH-07: "Редагування" відкриває "Режим картки", "Закрити" ховає його назад', async () => {
-  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'metrics', healthState: null };
+  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'goals', healthState: null };
   render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={vi.fn()} />);
 
   await openBackEdit();

@@ -13,7 +13,7 @@ test('SCR-02 loading: показує спінер, поки loadCard ще не �
 });
 
 test('SCR-02 default: показує назву й Опис, коли обидва заповнені', async () => {
-  const data: CardFaceData = { name: 'Спорт', description: 'Регулярні тренування для форми й енергії', dataWarning: null, trackingMode: 'metrics', healthState: null };
+  const data: CardFaceData = { name: 'Спорт', description: 'Регулярні тренування для форми й енергії', dataWarning: null, trackingMode: 'goals', healthState: null };
   render(<CardFace loadCard={() => Promise.resolve(data)} onFlip={vi.fn()} onRename={vi.fn()} onArchive={vi.fn()} onArchived={vi.fn()} />);
 
   expect(await screen.findByText('Спорт')).toBeTruthy();
@@ -22,7 +22,7 @@ test('SCR-02 default: показує назву й Опис, коли обидв
 });
 
 test('SCR-02 empty-description: показує підказку, коли Опис ще не заповнено', async () => {
-  const data: CardFaceData = { name: 'Спорт', description: null, dataWarning: null, trackingMode: 'metrics', healthState: null };
+  const data: CardFaceData = { name: 'Спорт', description: null, dataWarning: null, trackingMode: 'goals', healthState: null };
   render(<CardFace loadCard={() => Promise.resolve(data)} onFlip={vi.fn()} onRename={vi.fn()} onArchive={vi.fn()} onArchived={vi.fn()} />);
 
   expect(await screen.findByText('Опис ще не заповнено')).toBeTruthy();
@@ -33,7 +33,7 @@ test('SCR-02 warning: показує Banner, коли агент позначи�
     name: 'Спорт',
     description: 'Регулярні тренування',
     dataWarning: 'Щось на цій картці виглядає некоректно — розберемось разом?',
-    trackingMode: 'metrics',
+    trackingMode: 'goals',
     healthState: null,
   };
   render(<CardFace loadCard={() => Promise.resolve(data)} onFlip={vi.fn()} onRename={vi.fn()} onArchive={vi.fn()} onArchived={vi.fn()} />);
@@ -56,7 +56,7 @@ test('SCR-02 error: показує Banner помилки, коли loadCard ві
 // патерн (chip-gloss), що EntryHistoryList.tsx's STATUS_DOT.
 
 test('CH-02: metrics-картка не показує жодного м\'ячика стану', async () => {
-  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'metrics', healthState: null };
+  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'goals', healthState: null };
   render(<CardFace loadCard={() => Promise.resolve(data)} onFlip={vi.fn()} onRename={vi.fn()} onArchive={vi.fn()} onArchived={vi.fn()} />);
 
   await screen.findByText('Спорт');
@@ -75,7 +75,7 @@ test.each([
 });
 
 test('SCR-02: клік "перегорнути" викликає onFlip', async () => {
-  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'metrics', healthState: null };
+  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'goals', healthState: null };
   const onFlip = vi.fn();
   render(<CardFace loadCard={() => Promise.resolve(data)} onFlip={onFlip} onRename={vi.fn()} onArchive={vi.fn()} onArchived={vi.fn()} />);
 
@@ -89,7 +89,7 @@ test('SCR-02: клік "перегорнути" викликає onFlip', async 
 // (Назва + Опис) -> "На зад" (відкидає) / "Зберегти" (зберігає обидва поля).
 
 test('CH-06 editing: меню "..." -> "Редагувати" показує форму з поточними Назвою і Описом', async () => {
-  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'metrics', healthState: null };
+  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'goals', healthState: null };
   render(<CardFace loadCard={() => Promise.resolve(data)} onFlip={vi.fn()} onRename={vi.fn()} onArchive={vi.fn()} onArchived={vi.fn()} onUpdateDescription={vi.fn()} />);
 
   fireEvent.click(await screen.findByRole('button', { name: 'Меню картки' }));
@@ -104,7 +104,7 @@ test('CH-06 editing: меню "..." -> "Редагувати" показує ф�
 });
 
 test('CH-06 editing: без onUpdateDescription форма показує лише Назву', async () => {
-  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'metrics', healthState: null };
+  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'goals', healthState: null };
   render(<CardFace loadCard={() => Promise.resolve(data)} onFlip={vi.fn()} onRename={vi.fn()} onArchive={vi.fn()} onArchived={vi.fn()} />);
 
   fireEvent.click(await screen.findByRole('button', { name: 'Меню картки' }));
@@ -116,7 +116,7 @@ test('CH-06 editing: без onUpdateDescription форма показує лиш
 });
 
 test('CH-06 editing: "Зберегти" викликає onRename і onUpdateDescription({description, markFilled: true}) для непорожнього тексту', async () => {
-  const data: CardFaceData = { name: 'Спорт', description: 'старий опис', dataWarning: null, trackingMode: 'metrics', healthState: null };
+  const data: CardFaceData = { name: 'Спорт', description: 'старий опис', dataWarning: null, trackingMode: 'goals', healthState: null };
   const onRename = vi.fn().mockResolvedValue(undefined);
   const onUpdateDescription = vi.fn().mockResolvedValue(undefined);
   render(
@@ -144,7 +144,7 @@ test('CH-06 editing: "Зберегти" викликає onRename і onUpdateDes
 });
 
 test('CH-06 editing: збережений порожній Опис -- markFilled: false (заповненість похідна від тексту, не окремий чекбокс)', async () => {
-  const data: CardFaceData = { name: 'Спорт', description: 'старий опис', dataWarning: null, trackingMode: 'metrics', healthState: null };
+  const data: CardFaceData = { name: 'Спорт', description: 'старий опис', dataWarning: null, trackingMode: 'goals', healthState: null };
   const onUpdateDescription = vi.fn().mockResolvedValue(undefined);
   render(
     <CardFace
@@ -166,7 +166,7 @@ test('CH-06 editing: збережений порожній Опис -- markFille
 });
 
 test('CH-06 editing: "На зад" відкидає чернетку без виклику onRename/onUpdateDescription', async () => {
-  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'metrics', healthState: null };
+  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'goals', healthState: null };
   const onRename = vi.fn();
   const onUpdateDescription = vi.fn();
   render(
@@ -192,7 +192,7 @@ test('CH-06 editing: "На зад" відкидає чернетку без ви
 });
 
 test('CH-06 review-fix: onRename ОК, onUpdateDescription reject -- назва все одно застосована (не загублена)', async () => {
-  const data: CardFaceData = { name: 'Спорт', description: 'старий опис', dataWarning: null, trackingMode: 'metrics', healthState: null };
+  const data: CardFaceData = { name: 'Спорт', description: 'старий опис', dataWarning: null, trackingMode: 'goals', healthState: null };
   const onRename = vi.fn().mockResolvedValue(undefined);
   const onUpdateDescription = vi.fn().mockRejectedValue(new Error('Мережа недоступна'));
   render(
@@ -220,7 +220,7 @@ test('CH-06 review-fix: onRename ОК, onUpdateDescription reject -- назва 
 });
 
 test('CH-06 editing error: відхилений onRename показує Banner і лишає форму відкритою', async () => {
-  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'metrics', healthState: null };
+  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'goals', healthState: null };
   const onRename = vi.fn().mockRejectedValue(new Error('network down'));
   render(<CardFace loadCard={() => Promise.resolve(data)} onFlip={vi.fn()} onRename={onRename} onArchive={vi.fn()} onArchived={vi.fn()} />);
 
@@ -235,7 +235,7 @@ test('CH-06 editing error: відхилений onRename показує Banner �
 });
 
 test('CH-05 editing: торкання самої назви теж запускає редагування (другий шлях входу)', async () => {
-  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'metrics', healthState: null };
+  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'goals', healthState: null };
   render(<CardFace loadCard={() => Promise.resolve(data)} onFlip={vi.fn()} onRename={vi.fn()} onArchive={vi.fn()} onArchived={vi.fn()} />);
 
   fireEvent.click(await screen.findByRole('heading', { name: 'Спорт' }));
@@ -245,7 +245,7 @@ test('CH-05 editing: торкання самої назви теж запуск�
 });
 
 test('CH-06 editing: торкання Опису теж запускає редагування, лише коли є onUpdateDescription', async () => {
-  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'metrics', healthState: null };
+  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'goals', healthState: null };
   render(
     <CardFace
       loadCard={() => Promise.resolve(data)}
@@ -263,7 +263,7 @@ test('CH-06 editing: торкання Опису теж запускає ред�
 });
 
 test('CH-06: без onUpdateDescription клік по Опису нічого не відкриває', async () => {
-  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'metrics', healthState: null };
+  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'goals', healthState: null };
   render(<CardFace loadCard={() => Promise.resolve(data)} onFlip={vi.fn()} onRename={vi.fn()} onArchive={vi.fn()} onArchived={vi.fn()} />);
 
   fireEvent.click(await screen.findByText('опис'));
@@ -280,7 +280,7 @@ test('CH-06: без onUpdateDescription клік по Опису нічого н
 // (новий проп -- сигнал батькові "картку архівовано, є куди піти").
 
 test('ISS-56 SCR-02 archive: меню "..." -> "Архівувати" показує ArchiveCardDialog з назвою картки', async () => {
-  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'metrics', healthState: null };
+  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'goals', healthState: null };
   render(
     <CardFace
       loadCard={() => Promise.resolve(data)}
@@ -298,7 +298,7 @@ test('ISS-56 SCR-02 archive: меню "..." -> "Архівувати" показ
 });
 
 test('ISS-56 SCR-02 archive: підтвердження в діалозі викликає injected onArchive і потім onArchived', async () => {
-  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'metrics', healthState: null };
+  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'goals', healthState: null };
   const onArchive = vi.fn().mockResolvedValue(undefined);
   const onArchived = vi.fn();
   render(
@@ -320,7 +320,7 @@ test('ISS-56 SCR-02 archive: підтвердження в діалозі вик
 });
 
 test('ISS-56 SCR-02 archive: "Скасувати" в діалозі закриває його без виклику onArchive/onArchived', async () => {
-  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'metrics', healthState: null };
+  const data: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'goals', healthState: null };
   const onArchive = vi.fn().mockResolvedValue(undefined);
   const onArchived = vi.fn();
   render(
@@ -343,8 +343,8 @@ test('ISS-56 SCR-02 archive: "Скасувати" в діалозі закрив
 });
 
 test('SCR-02: відкрите меню/чернетка редагування скидаються, коли loadCard проп змінився (нова картка)', async () => {
-  const first: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'metrics', healthState: null };
-  const second: CardFaceData = { name: 'Навчання', description: 'опис 2', dataWarning: null, trackingMode: 'metrics', healthState: null };
+  const first: CardFaceData = { name: 'Спорт', description: 'опис', dataWarning: null, trackingMode: 'goals', healthState: null };
+  const second: CardFaceData = { name: 'Навчання', description: 'опис 2', dataWarning: null, trackingMode: 'goals', healthState: null };
 
   const { rerender } = render(<CardFace loadCard={() => Promise.resolve(first)} onFlip={vi.fn()} onRename={vi.fn()} onArchive={vi.fn()} onArchived={vi.fn()} />);
 
