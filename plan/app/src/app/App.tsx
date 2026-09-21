@@ -98,7 +98,7 @@ export interface AppProps {
   /** Видаляє (архівує) блок-метрику обраної картки (DELETE /cards/{id}/metric-blocks/{metricBlockId}, CardBack.onArchiveMetricBlock). */
   archiveMetricBlock: (cardId: string, metricBlockId: string) => Promise<void>;
   /** CH-16 (docs/features/life-area-card/changes.md) -- швидкий запис "Додати"/"Відняти" прямо з картки (POST /cards/{id}/metric-blocks/{metricBlockId}/entries, CardBack.onCreateEntry). */
-  onCreateEntry: (cardId: string, metricBlockId: string, amount: number) => Promise<void>;
+  onCreateEntry: (cardId: string, metricBlockId: string, amount: number) => Promise<{ status: 'pending' | 'confirmed' }>;
   /** CH-02 (docs/features/life-area-card/changes.md) -- зберігає режим відстеження обраної картки (PATCH /cards/{id}, CardBack.onUpdateTracking). */
   onUpdateTracking: (cardId: string, input: { trackingMode: CardTrackingMode; healthState: CardHealthState | null }) => Promise<void>;
   /** CH-03 (docs/features/life-area-card/changes.md) -- зберігає перейменування/налаштування блоку-метрики (PATCH /cards/{cardId}/metric-blocks/{metricBlockId}, CardBack.onUpdateMetricBlock). */

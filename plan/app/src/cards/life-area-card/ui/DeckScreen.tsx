@@ -82,7 +82,7 @@ export interface DeckScreenProps {
   onCreateMetricBlock?: (cardId: string, values: MetricBlockFormValues) => Promise<void>;
   onArchiveMetricBlock?: (cardId: string, metricBlockId: string) => Promise<void>;
   /** CH-16: швидкий запис (додати/відняти) прямо з картки -- опційно, той самий DI-патерн, що решта дій вище. */
-  onCreateEntry?: (cardId: string, metricBlockId: string, amount: number) => Promise<void>;
+  onCreateEntry?: (cardId: string, metricBlockId: string, amount: number) => Promise<{ status: 'pending' | 'confirmed' }>;
   /** CH-02: зберігає режим відстеження картки -- опційно, той самий DI-патерн, що решта дій вище. */
   onUpdateTracking?: (cardId: string, input: { trackingMode: CardTrackingMode; healthState: CardHealthState | null }) => Promise<void>;
   /** CH-03: зберігає перейменування/налаштування блоку-метрики -- опційно, той самий DI-патерн, що решта дій вище. */

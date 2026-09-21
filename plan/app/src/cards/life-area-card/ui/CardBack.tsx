@@ -80,11 +80,16 @@ export interface CardBackProps {
    * CH-16 (docs/features/life-area-card/changes.md): швидкий запис прямо з
    * картки, без участі агента-чату -- позитивне число для "Додати", те саме
    * число зі знаком мінус для "Відняти" (той самий ендпоінт, що вже пише
-   * агент, POST .../entries; запис одразу confirmed, бо користувач сам
-   * вписав точне число). Опційний, той самий DI-патерн, що onCreateMetricBlock
-   * -- без пропу кнопка "+" на MetricBlockCard не рендериться взагалі.
+   * агент, POST .../entries). Опційний, той самий DI-патерн, що
+   * onCreateMetricBlock -- без пропу кнопка "+" на MetricBlockCard не
+   * рендериться взагалі.
+   *
+   * Review-fix (D-137): запис НЕ завжди confirmed -- AC-06 (конфлікт
+   * близьких за часом записів того самого блоку) лишається чинним і для
+   * цього каналу, тож повертає реальний `status`. `handleQuickAdjust`
+   * нижче показує окреме повідомлення, коли результат 'pending'.
    */
-  onCreateEntry?: (metricBlockId: string, amount: number) => Promise<void>;
+  onCreateEntry?: (metricBlockId: string, amount: number) => Promise<{ status: 'pending' | 'confirmed' }>;
   /**
    * CH-02 (docs/features/life-area-card/changes.md): зберігає режим
    * відстеження картки ("картка: стан без вимірювань" чи звичайний
@@ -129,6 +134,28 @@ type LoadState = 'loading' | 'ready' | 'error';
 
 const FALLBACK_ERROR_TEXT = 'Не вдалося завантажити картку';
 const FALLBACK_COLLISION_ERROR_TEXT = 'У картці вже є блок-метрика з такою назвою й одиницею';
+
+/**
+ * /simplify review-fix: спільний toggle-принцип для панелей блоку-метрики
+ * (редагування, швидке +/-) -- раніше onEdit і onQuickAdjust писали той самий
+ * "якщо вже відкрито для ЦЬОГО блоку -- згорнути, інакше скинути форму й
+ * відкрити" код двічі. Клік на ІНШИЙ тригер (не toggle, а onOpen) закриває
+ * ще й панель-сусідку через власний setCurrent, переданий викликом нижче --
+ * дві панелі одного блоку більше не можуть бути розкриті одночасно.
+ */
+function toggleBlockPanel<T extends { id: string }>(
+  current: T | null,
+  block: T,
+  setCurrent: (value: T | null) => void,
+  onOpen: () => void
+): void {
+  if (current?.id === block.id) {
+    setCurrent(null);
+    return;
+  }
+  onOpen();
+  setCurrent(block);
+}
 
 export function CardBack({
   cardName,
@@ -180,6 +207,11 @@ export function CardBack({
   const [quickAdjustAmount, setQuickAdjustAmount] = useState<number | null>(null);
   const [isQuickAdjusting, setIsQuickAdjusting] = useState(false);
   const [quickAdjustError, setQuickAdjustError] = useState<string | undefined>(undefined);
+  // Review-fix (D-137): непусте лише коли останній запис пішов на
+  // перевірку (AC-06) -- панель уже закрита (closeQuickAdjust), тож без
+  // цього окремого banner-стану користувач не дізнався б, чому число не
+  // змінилось одразу.
+  const [quickAdjustNotice, setQuickAdjustNotice] = useState<string | null>(null);
   // Review 2026-09-07, post-ship follow-up review (AC-12/E remainder):
   // handleFlagEntry нижче мав ТОЙ САМИЙ баг, що refresh() уже виправлено
   // (setState('error') на невдачі стирало всі дані) -- пропущено окремо,
@@ -436,12 +468,28 @@ export function CardBack({
       });
   };
 
+  // /simplify review-fix: один хелпер для ПОВНОГО скидання панелі
+  // "Додати/відняти" -- раніше три різні місця (toggle-close, кнопка
+  // "Закрити додавання", успішний handleQuickAdjust) вручну повторювали
+  // підмножини цих трьох setState-викликів.
+  const closeQuickAdjust = (): void => {
+    setAdjustingBlock(null);
+    setQuickAdjustAmount(null);
+    setQuickAdjustError(undefined);
+  };
+
   /**
    * CH-16 (docs/features/life-area-card/changes.md): "Додати"/"Відняти" --
    * той самий injected onCreateEntry (реальний виклик -- вже наявний
    * ендпоінт POST .../entries, той самий, що пише агент), лише зі знаком
    * `sign` перед введеним числом. Поле приймає лише ДОДАТНЄ число (сама
    * величина зміни) -- напрям задають дві окремі кнопки, не мінус у полі.
+   *
+   * Review-fix (D-137): AC-06 (конфлікт близьких за часом записів ТОГО
+   * САМОГО блоку) лишається чинним і для цього каналу -- два швидкі кліки
+   * поспіль підуть у "очікує перевірки", і показник не зміниться одразу.
+   * Панель однаково закривається (успіх є успіх), але quickAdjustNotice
+   * пояснює користувачу, чому число ще не оновилось.
    */
   const handleQuickAdjust = (sign: 1 | -1): void => {
     if (!onCreateEntry || !adjustingBlock || isQuickAdjusting) return;
@@ -452,16 +500,19 @@ export function CardBack({
     setQuickAdjustError(undefined);
     setIsQuickAdjusting(true);
     onCreateEntry(adjustingBlock.id, sign * quickAdjustAmount)
-      .then(() => {
-        setAdjustingBlock(null);
-        setQuickAdjustAmount(null);
-        setIsQuickAdjusting(false);
+      .then((result) => {
+        closeQuickAdjust();
+        setQuickAdjustNotice(
+          result.status === 'pending'
+            ? 'Запис прийнято, але пішов на перевірку -- ви щойно вже вносили дані для цієї метрики. Підтвердьте його в історії блоку, і показник оновиться.'
+            : null
+        );
         refresh();
       })
       .catch((err: unknown) => {
-        setIsQuickAdjusting(false);
         setQuickAdjustError(err instanceof Error ? err.message : 'Не вдалося зберегти запис');
-      });
+      })
+      .finally(() => setIsQuickAdjusting(false));
   };
 
   const handleCreateMetricBlock = (values: MetricBlockFormValues): Promise<void> => {
@@ -573,9 +624,14 @@ export function CardBack({
           justify-between розводить їх по краях). Порожній <span/>, коли
           кнопка не рендериться (той самий "завжди займай слот" прийом, що
           MetricBlockCard.tsx's quickAdjustSlot) -- інакше "..." стрибав би
-          вліво замість лишатись справа. */}
+          вліво замість лишатись справа.
+          Review-fix (code review PR #18): `!hasNoMetrics` додано -- без
+          цього кнопка знову випереджала "Режим картки" на порожній картці
+          (CH-11 review-fix вище прямо каже, чому це неправильно), бо
+          закріплений рядок рендериться ПЕРЕД пікером режиму в розмітці
+          незалежно від showTrackingModePicker. */}
       <div className="relative flex items-center justify-between gap-2">
-        {trackingMode !== 'state' && onCreateMetricBlock && !isCreatingBlock ? (
+        {trackingMode !== 'state' && onCreateMetricBlock && !isCreatingBlock && !hasNoMetrics ? (
           <Button label="+ Додати блок-метрику" onClick={() => setIsCreatingBlock(true)} disabled={isSavingTracking} />
         ) : (
           <span />
@@ -647,6 +703,10 @@ export function CardBack({
         {/* Review 2026-09-07 E (T52): фоновий refresh невдалий -- НЕблокуючий
             банер над уже показаними даними, не заміна всього екрана. */}
         {refreshError !== null && <Banner variant="error" text={refreshError} />}
+        {/* Review-fix (D-137): швидкий запис пішов на перевірку (AC-06) --
+            панель "Додати/відняти" уже закрилась (успіх є успіх), без цього
+            банера користувач не зрозумів би, чому показник не змінився. */}
+        {quickAdjustNotice !== null && <Banner variant="info" text={quickAdjustNotice} />}
 
         {/* CH-07: коли є хоч один блок-метрики, "Режим картки" -- налаштування,
             не показник, ховається за меню "..." (isEditingBack), замість
@@ -724,6 +784,18 @@ export function CardBack({
           </fieldset>
         )}
 
+        {/* Review-fix (code review PR #18, регресія CH-11): на порожній
+            картці (hasNoMetrics) кнопка більше НЕ дублюється закріпленим
+            верхнім рядком (там вона випереджала вибір режиму, той самий
+            баг, що CH-11 review-fix уже виправляв один раз) -- рендериться
+            тут, ПІД пікером, точно як описує CH-11 юзер-кейс ("під вибором
+            з'являється '+ Додати блок-метрику'"). Закріплення вгорі
+            повертається, щойно в картки є хоч один блок -- той самий
+            hasNoMetrics-перемикач, що й у верхньому рядку вище. */}
+        {hasNoMetrics && trackingMode !== 'state' && onCreateMetricBlock && !isCreatingBlock && (
+          <Button label="+ Додати блок-метрику" onClick={() => setIsCreatingBlock(true)} disabled={isSavingTracking} />
+        )}
+
         {/* AC-14/AC-15: перенос уже стався зовні -- тут лише пропозиція
             перейменувати, коли він зіткнувся з наявним блоком тієї ж картки. */}
         {data.pendingTransferCollision && (
@@ -797,36 +869,33 @@ export function CardBack({
                     onDelete={onArchiveMetricBlock ? () => setPendingDeleteBlock(block) : undefined}
                     onEdit={
                       onUpdateMetricBlock || onTransferMetricBlock
-                        ? () => {
-                            // Bug fix 2026-09-21 (живе тестування, Андрій):
-                            // повторний клік на олівець ЦЬОГО Ж блоку, поки
-                            // його панель редагування вже відкрита, згортає
-                            // її -- той самий перемикач (toggle), що кнопка
-                            // "Закрити редагування" нижче, не просто
-                            // переоткриває той самий стан.
-                            if (editingBlock?.id === block.id) {
-                              setEditingBlock(null);
-                              return;
-                            }
-                            setTransferTargetId('');
-                            setTransferError(undefined);
-                            setEditingBlock(block);
-                          }
+                        ? // Bug fix 2026-09-21 (живе тестування, Андрій):
+                          // повторний клік на олівець ЦЬОГО Ж блоку, поки
+                          // його панель редагування вже відкрита, згортає
+                          // її -- той самий перемикач (toggle), що кнопка
+                          // "Закрити редагування" нижче, не просто
+                          // переоткриває той самий стан. /simplify:
+                          // спільний toggleBlockPanel (onEdit/onQuickAdjust
+                          // писали цей код двічі); відкриття однієї панелі
+                          // закриває іншу, якщо вона була розкрита для
+                          // ЦЬОГО Ж блоку.
+                          () =>
+                            toggleBlockPanel(editingBlock, block, setEditingBlock, () => {
+                              setAdjustingBlock(null);
+                              setTransferTargetId('');
+                              setTransferError(undefined);
+                            })
                         : undefined
                     }
                     onQuickAdjust={
                       onCreateEntry
-                        ? () => {
-                            // Той самий toggle-принцип, що onEdit вище --
-                            // повторний клік на "+" ЦЬОГО Ж блоку згортає форму.
-                            if (adjustingBlock?.id === block.id) {
-                              setAdjustingBlock(null);
-                              return;
-                            }
-                            setQuickAdjustAmount(null);
-                            setQuickAdjustError(undefined);
-                            setAdjustingBlock(block);
-                          }
+                        ? () =>
+                            toggleBlockPanel(adjustingBlock, block, setAdjustingBlock, () => {
+                              setEditingBlock(null);
+                              setQuickAdjustAmount(null);
+                              setQuickAdjustError(undefined);
+                              setQuickAdjustNotice(null);
+                            })
                         : undefined
                     }
                   />
@@ -836,14 +905,12 @@ export function CardBack({
                         <h3 className="font-display text-sm font-bold leading-relaxed text-ink">
                           Додати/відняти «{adjustingBlock.label}»
                         </h3>
-                        <Button
-                          label="Закрити"
-                          onClick={() => {
-                            setAdjustingBlock(null);
-                            setQuickAdjustAmount(null);
-                            setQuickAdjustError(undefined);
-                          }}
-                        />
+                        {/* code-review (той самий принцип, що "Закрити
+                            редагування" нижче): панель "Режим картки" вище
+                            може мати власну кнопку "Закрити" одночасно на
+                            екрані -- однакові підписи плутають людину й
+                            пошук по ролі в тестах. */}
+                        <Button label="Закрити додавання" onClick={closeQuickAdjust} />
                       </div>
                       <NumberField
                         label="Число"

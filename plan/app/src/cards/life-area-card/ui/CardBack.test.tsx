@@ -1145,7 +1145,7 @@ test('CH-16: клік на "+" розгортає форму "Додати/ві�
 
 test('CH-16: "Додати" викликає onCreateEntry(metricBlockId, +число), форма закривається', async () => {
   const data: CardBackData = { metricBlocks: [metricBlock()], aggregateProgress: 0.5, entries: [] };
-  const onCreateEntry = vi.fn().mockResolvedValue(undefined);
+  const onCreateEntry = vi.fn().mockResolvedValue({ status: 'confirmed' });
   render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateEntry={onCreateEntry} />);
 
   await screen.findByText('Тренування');
@@ -1159,7 +1159,7 @@ test('CH-16: "Додати" викликає onCreateEntry(metricBlockId, +чи�
 
 test('CH-16: "Відняти" викликає onCreateEntry(metricBlockId, -число)', async () => {
   const data: CardBackData = { metricBlocks: [metricBlock()], aggregateProgress: 0.5, entries: [] };
-  const onCreateEntry = vi.fn().mockResolvedValue(undefined);
+  const onCreateEntry = vi.fn().mockResolvedValue({ status: 'confirmed' });
   render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateEntry={onCreateEntry} />);
 
   await screen.findByText('Тренування');
@@ -1168,6 +1168,106 @@ test('CH-16: "Відняти" викликає onCreateEntry(metricBlockId, -ч�
   fireEvent.click(screen.getByRole('button', { name: 'Відняти' }));
 
   expect(onCreateEntry).toHaveBeenCalledWith('mb1', -3);
+});
+
+// Review-fix (code review PR #18, знахідка #3): попередні тести перевіряли
+// лише аргументи виклику, не те, що показник РЕАЛЬНО змінюється на екрані.
+test('CH-16: після успішного "Додати" показник на екрані оновлюється (реальний refresh, не лише закриття форми)', async () => {
+  const before: CardBackData = { metricBlocks: [metricBlock({ progress: { kind: 'bounded', share: 0.5, overGoal: 0 } })], aggregateProgress: 0.5, entries: [] };
+  const after: CardBackData = { metricBlocks: [metricBlock({ progress: { kind: 'bounded', share: 0.8, overGoal: 0 } })], aggregateProgress: 0.8, entries: [] };
+  const loadBack = vi.fn().mockResolvedValueOnce(before).mockResolvedValueOnce(after);
+  const onCreateEntry = vi.fn().mockResolvedValue({ status: 'confirmed' });
+  render(<CardBack cardName="Картка" loadBack={loadBack} onFlip={vi.fn()} onCreateEntry={onCreateEntry} />);
+
+  await screen.findByText('50%');
+  fireEvent.click(screen.getByRole('button', { name: 'Додати або відняти показник «Тренування»' }));
+  fireEvent.change(screen.getByLabelText('Число'), { target: { value: '5' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Додати' }));
+
+  expect(await screen.findByText('80%')).toBeTruthy();
+  expect(loadBack).toHaveBeenCalledTimes(2);
+});
+
+// Review-fix (D-137, code review PR #18, знахідка #1): AC-06 лишається
+// чинним і для цього каналу -- запис може прийти 'pending', не лише
+// 'confirmed'. Панель однаково закривається, але користувач бачить, чому
+// показник не змінився одразу.
+test('CH-16: якщо запис іде на перевірку (AC-06, status="pending"), користувач бачить повідомлення про це', async () => {
+  const data: CardBackData = { metricBlocks: [metricBlock()], aggregateProgress: 0.5, entries: [] };
+  const onCreateEntry = vi.fn().mockResolvedValue({ status: 'pending' });
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateEntry={onCreateEntry} />);
+
+  await screen.findByText('Тренування');
+  fireEvent.click(screen.getByRole('button', { name: 'Додати або відняти показник «Тренування»' }));
+  fireEvent.change(screen.getByLabelText('Число'), { target: { value: '5' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Додати' }));
+
+  await waitFor(() => expect(screen.queryByText('Додати/відняти «Тренування»')).toBeNull());
+  expect(await screen.findByText(/пішов на перевірку/)).toBeTruthy();
+});
+
+test('CH-16: коли запис зараховується одразу (status="confirmed"), повідомлення про перевірку не з\'являється', async () => {
+  const data: CardBackData = { metricBlocks: [metricBlock()], aggregateProgress: 0.5, entries: [] };
+  const onCreateEntry = vi.fn().mockResolvedValue({ status: 'confirmed' });
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateEntry={onCreateEntry} />);
+
+  await screen.findByText('Тренування');
+  fireEvent.click(screen.getByRole('button', { name: 'Додати або відняти показник «Тренування»' }));
+  fireEvent.change(screen.getByLabelText('Число'), { target: { value: '5' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Додати' }));
+
+  await waitFor(() => expect(screen.queryByText('Додати/відняти «Тренування»')).toBeNull());
+  expect(screen.queryByText(/пішов на перевірку/)).toBeNull();
+});
+
+test('CH-16: кнопка закриття панелі "Додати/відняти" каже "Закрити додавання", не просто "Закрити" (уникнути дубля з панеллю "Режим картки")', async () => {
+  const data: CardBackData = { metricBlocks: [metricBlock()], aggregateProgress: 0.5, entries: [] };
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateEntry={vi.fn()} />);
+
+  await screen.findByText('Тренування');
+  fireEvent.click(screen.getByRole('button', { name: 'Додати або відняти показник «Тренування»' }));
+
+  expect(screen.getByRole('button', { name: 'Закрити додавання' })).toBeTruthy();
+});
+
+test('CH-16: відкриття панелі "Додати/відняти" закриває вже відкриту панель редагування ТОГО САМОГО блоку', async () => {
+  const data: CardBackData = { metricBlocks: [metricBlock()], aggregateProgress: 0.5, entries: [] };
+  render(
+    <CardBack
+      cardName="Картка"
+      loadBack={() => Promise.resolve(data)}
+      onFlip={vi.fn()}
+      onCreateEntry={vi.fn()}
+      onUpdateMetricBlock={vi.fn()}
+    />,
+  );
+
+  await screen.findByText('Тренування');
+  fireEvent.click(screen.getByRole('button', { name: 'Редагувати метрику «Тренування»' }));
+  expect(screen.getByText('Редагування «Тренування»')).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Додати або відняти показник «Тренування»' }));
+  expect(screen.getByText('Додати/відняти «Тренування»')).toBeTruthy();
+  expect(screen.queryByText('Редагування «Тренування»')).toBeNull();
+});
+
+// Review-fix (code review PR #18, знахідка #4 -- регресія CH-11): кнопка
+// "+ Додати блок-метрику" не має випереджати вибір режиму картки на
+// порожній картці (той самий бар'єр, що CH-11 уже поставив один раз) --
+// закріплений верхній рядок ховає кнопку, поки блоків нема (hasNoMetrics),
+// вона з'являється ПІД пікером "Режим картки" замість цього, лише одна
+// кнопка видима одночасно (не дубль).
+test('CH-16: на порожній картці кнопка "+ Додати блок-метрику" йде ПІСЛЯ вибору режиму, не перед ним, і не дублюється', async () => {
+  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'goals', healthState: null };
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateMetricBlock={vi.fn()} onUpdateTracking={vi.fn()} />);
+
+  await screen.findByText('Режим картки');
+  const buttons = screen.getAllByRole('button', { name: '+ Додати блок-метрику' });
+  expect(buttons).toHaveLength(1);
+
+  const modePicker = screen.getByText('Режим картки');
+  const position = modePicker.compareDocumentPosition(buttons[0]);
+  expect(Boolean(position & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
 });
 
 test('CH-16: "Додати" без введеного числа показує помилку валідації, onCreateEntry не викликається', async () => {

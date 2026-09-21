@@ -765,8 +765,19 @@ async function archiveMetricBlock(cardId: string, metricBlockId: string): Promis
  * (entry-handlers.ts) -- жодного нового бекенду не треба, лише `amount` зі
  * знаком (додатне для "Додати", від'ємне для "Відняти" -- CardBack.tsx сам
  * рахує знак перед викликом).
+ *
+ * Review-fix (D-137): повертає реальний `status` відповіді, не глушить
+ * його -- AC-06 (конфлікт близьких за часом записів того самого блоку)
+ * лишається УНІВЕРСАЛЬНИМ правилом, застосовується і до цього каналу
+ * (spec.md §3, "не non-goal"), тож запис може прийти як 'pending', не
+ * лише 'confirmed'. CardBack.tsx сам вирішує, що показати користувачу в
+ * кожному з двох випадків.
  */
-async function onCreateEntry(cardId: string, metricBlockId: string, amount: number): Promise<void> {
+async function onCreateEntry(
+  cardId: string,
+  metricBlockId: string,
+  amount: number
+): Promise<{ status: 'pending' | 'confirmed' }> {
   const response = await fetch(`/api/v1/cards/${cardId}/metric-blocks/${metricBlockId}/entries`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -777,6 +788,9 @@ async function onCreateEntry(cardId: string, metricBlockId: string, amount: numb
     const body = (await response.json().catch(() => null)) as { message?: string } | null;
     throw new Error(body?.message ?? 'Не вдалося зберегти запис');
   }
+
+  const body = (await response.json()) as { status: 'pending' | 'confirmed' };
+  return { status: body.status };
 }
 
 /**
