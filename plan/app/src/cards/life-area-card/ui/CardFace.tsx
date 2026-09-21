@@ -2,10 +2,19 @@
 // попередження агента про підозрілі дані (AC-10), або стан
 // завантаження/помилки при відкритті картки.
 //
-// Стан "rename" (AC-19, T37) додано ПОВЕРХ наявного файлу (ISS-40,
-// docs/ISSUES.md) -- торкання назви АБО меню "..." -> "Перейменувати" --
-// обидва входи ведуть у ту саму inline-редаговану назву через TextField ->
-// Зберегти/Скасувати (screens.md SCR-02, AC-19 явно називає обидва шляхи).
+// CH-05/CH-06 (docs/features/life-area-card/changes.md, живе тестування
+// 2026-09-21): "Перейменувати" -> "Редагувати", і Назва+Опис редагуються
+// ОДНІЄЮ спільною формою (раніше -- два незалежні inline-стани: rename
+// торкався лише Назви, Опис відкривався ОКРЕМИМ кліком по своєму тексту --
+// "проміжний екран", де верхнє поле вже редаговане, а нижнє ще ні, читався
+// як зайвий крок). Обидва входи (меню "..." -> "Редагувати", клік на Назву
+// АБО на Опис) ведуть у той самий startEdit. "Скасувати"/"Скасувати" (два
+// незалежні набори кнопок) -- одна пара "На зад"/"Зберегти" на всю форму.
+// "Позначити заповненою" (окремий чекбокс) прибрано -- markFilled тепер
+// похідне від тексту (непорожній збережений Опис = заповнена), не ручний
+// перемикач: AC-03 (бекенд блокує markFilled без Опису) лишається чинним
+// сама по собі -- просто той стан, який AC-03 забороняв, тепер неможливо
+// навіть спробувати створити з UI.
 //
 // ISS-45/DI (plan/app/CLAUDE.md "Правило залежностей"): жодного fetch і
 // жодного імпорту з ../ports чи ../app цієї ж картки -- реального HTTP-
@@ -13,7 +22,7 @@
 // майбутня T30). `loadCard`/`onRename` -- ін'єктовані проп-функції, що
 // повертають Promise, той самий стиль DI, що вже в ../app/*.ts (callClaude,
 // closeStructurePosition як опційні параметри use-case). Компонент сам керує
-// локальним станом (loading/error/rename) навколо їхніх викликів.
+// локальним станом (loading/error/editing) навколо їхніх викликів.
 //
 // ISS-41 (DoD дескоуплено, docs/ISSUES.md): буквальний DoD T37 вимагав
 // перевірити запис у Літопис Структури (structure AC-15) -- сервіс не існує
@@ -46,8 +55,8 @@ export interface CardFaceProps {
   onFlip: () => void;
   /**
    * Зберігає нову назву картки (AC-19, PATCH /cards/{id} name -- T21,
-   * контракт уже готовий). Викликається лише з "Зберегти" в стані "rename";
-   * "Скасувати" відкидає чернетку без цього виклику.
+   * контракт уже готовий). Викликається лише з "Зберегти" в стані "editing";
+   * "На зад" відкидає чернетку без цього виклику.
    */
   onRename: (name: string) => Promise<void>;
   /**
@@ -59,10 +68,10 @@ export interface CardFaceProps {
   /** ISS-56: сигнал батькові -- картку архівовано, є куди піти (App повертає до Колоди). */
   onArchived: () => void;
   /**
-   * Review 2026-09-07 C10 (AC-03): зберігає Опис і/чи позначку "заповнена"
-   * (PATCH /cards/{id} description/markFilled -- update-card.ts, контракт
-   * уже готовий). Опційний, як onCreateMetricBlock в CardBack -- відсутній,
-   * афорданс редагування Опису не рендериться.
+   * Review 2026-09-07 C10 (AC-03): зберігає Опис і похідну ознаку
+   * "заповнена" (PATCH /cards/{id} description/markFilled -- update-card.ts,
+   * контракт уже готовий). Опційний, як onCreateMetricBlock в CardBack --
+   * відсутній, поле Опису в формі редагування не рендериться.
    */
   onUpdateDescription?: (input: { description: string; markFilled: boolean }) => Promise<void>;
 }
@@ -70,51 +79,41 @@ export interface CardFaceProps {
 type LoadState = 'loading' | 'ready' | 'error';
 
 const FALLBACK_ERROR_TEXT = 'Не вдалося завантажити картку';
-const RENAME_FAILED_MESSAGE = 'Не вдалося зберегти назву. Перевірте зв’язок і спробуйте ще раз.';
-const DESCRIPTION_FAILED_MESSAGE = 'Не вдалося зберегти опис. Перевірте зв’язок і спробуйте ще раз.';
+const SAVE_FAILED_MESSAGE = 'Не вдалося зберегти. Перевірте зв’язок і спробуйте ще раз.';
 
 export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived, onUpdateDescription }: CardFaceProps): JSX.Element {
   const [state, setState] = useState<LoadState>('loading');
   const [data, setData] = useState<CardFaceData | null>(null);
   const [error, setError] = useState<string>(FALLBACK_ERROR_TEXT);
 
-  // Меню "..." і стан "rename" -- незалежні від loading/ready/error вище:
-  // rename можливий лише коли картка вже завантажена (ready), тому
-  // isMenuOpen/isRenaming скидаються при кожному новому loadCard (ефект нижче).
+  // Меню "..." і стан "editing" -- незалежні від loading/ready/error вище:
+  // редагування можливе лише коли картка вже завантажена (ready), тому
+  // isMenuOpen/isEditing скидаються при кожному новому loadCard (ефект нижче).
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isRenaming, setIsRenaming] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [draftName, setDraftName] = useState('');
-  const [isSavingName, setIsSavingName] = useState(false);
-  const [renameError, setRenameError] = useState<string | undefined>(undefined);
+  const [draftDescription, setDraftDescription] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | undefined>(undefined);
   // ISS-56: другий пункт меню "..." -- "Архівувати" відкриває ArchiveCardDialog
   // (T29, фіксований контракт cardName/onArchive/onCancel). isArchiving --
-  // незалежний від isRenaming (обидва скидаються разом при новому loadCard).
+  // незалежний від isEditing (обидва скидаються разом при новому loadCard).
   const [isArchiving, setIsArchiving] = useState(false);
-  // Review 2026-09-07 C10 (AC-03): той самий inline-патерн, що rename вище.
-  const [isEditingDescription, setIsEditingDescription] = useState(false);
-  const [draftDescription, setDraftDescription] = useState('');
-  const [draftMarkFilled, setDraftMarkFilled] = useState(false);
-  const [isSavingDescription, setIsSavingDescription] = useState(false);
-  const [descriptionError, setDescriptionError] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
     setState('loading');
     // Реально скидаємо (не лише коментарем обіцяємо) -- інакше відкрите меню
-    // чи чернетка перейменування зі старої картки лишились би поверх нових
+    // чи чернетка редагування зі старої картки лишились би поверх нових
     // даних, якщо loadCard проп зміниться (наприклад, батько перемкнув
-    // картку) під час відкритого меню чи режиму rename.
+    // картку) під час відкритого меню чи режиму редагування.
     setIsMenuOpen(false);
-    setIsRenaming(false);
+    setIsEditing(false);
     setDraftName('');
-    setIsSavingName(false);
-    setRenameError(undefined);
-    setIsArchiving(false);
-    setIsEditingDescription(false);
     setDraftDescription('');
-    setDraftMarkFilled(false);
-    setIsSavingDescription(false);
-    setDescriptionError(undefined);
+    setIsSaving(false);
+    setSaveError(undefined);
+    setIsArchiving(false);
 
     loadCard()
       .then((result) => {
@@ -137,12 +136,13 @@ export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived, on
     setIsMenuOpen((prev) => !prev);
   }
 
-  function startRename(): void {
+  function startEdit(): void {
     if (!data) return;
     setDraftName(data.name);
-    setRenameError(undefined);
+    setDraftDescription(data.description ?? '');
+    setSaveError(undefined);
     setIsMenuOpen(false);
-    setIsRenaming(true);
+    setIsEditing(true);
   }
 
   function startArchive(): void {
@@ -161,64 +161,40 @@ export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived, on
     });
   }
 
-  function cancelRename(): void {
-    // AC-19: "Скасувати" відкидає чернетку -- onRename НІКОЛИ не викликається тут.
-    setIsRenaming(false);
-    setRenameError(undefined);
+  function cancelEdit(): void {
+    // CH-06: "На зад" відкидає чернетку -- ні onRename, ні onUpdateDescription НІКОЛИ не викликаються тут.
+    setIsEditing(false);
+    setSaveError(undefined);
   }
 
-  function saveRename(): void {
-    setRenameError(undefined);
-    setIsSavingName(true);
+  function saveEdit(): void {
+    setSaveError(undefined);
+    setIsSaving(true);
 
     onRename(draftName)
       .then(() => {
-        // Назва в колоді/картці оновлюється одразу з локального draftName --
-        // сервер уже підтвердив запис (PATCH /cards/{id}, T21).
+        // Review-fix (CH-06): застосовуємо УСПІШНЕ перейменування одразу,
+        // не чекаючи опису нижче -- інакше onRename ОК + onUpdateDescription
+        // reject показував би повний провал, хоча назва вже реально
+        // змінилась на бекенді (data.name лишався б застарілим).
         setData((prev) => (prev ? { ...prev, name: draftName } : prev));
-        setIsSavingName(false);
-        setIsRenaming(false);
         // TODO(ISS-28): коли зʼявиться сервіс Літопису Структури (structure
         // AC-15), тут піде виклик запису події перейменування. Сервіс ще не
         // існує жодним рядком коду -- виклику навмисно немає (ISS-41).
+        if (!onUpdateDescription) return undefined;
+        // CH-06: "заповнена" -- похідне від тексту, не окремий чекбокс:
+        // непорожній збережений Опис і Є ознакою заповненості.
+        return onUpdateDescription({ description: draftDescription, markFilled: draftDescription.trim() !== '' }).then(() => {
+          setData((prev) => (prev ? { ...prev, description: draftDescription } : prev));
+        });
       })
-      .catch((err: unknown) => {
-        setRenameError(err instanceof Error ? err.message : RENAME_FAILED_MESSAGE);
-        setIsSavingName(false);
-      });
-  }
-
-  function startEditDescription(): void {
-    if (!data || !onUpdateDescription) return;
-    setDraftDescription(data.description ?? '');
-    setDraftMarkFilled(false);
-    setDescriptionError(undefined);
-    setIsMenuOpen(false);
-    setIsEditingDescription(true);
-  }
-
-  function cancelEditDescription(): void {
-    // AC-19-подібно: "Скасувати" відкидає чернетку -- onUpdateDescription НІКОЛИ не викликається тут.
-    setIsEditingDescription(false);
-    setDescriptionError(undefined);
-  }
-
-  function saveDescription(): void {
-    if (!onUpdateDescription) return;
-    setDescriptionError(undefined);
-    setIsSavingDescription(true);
-
-    onUpdateDescription({ description: draftDescription, markFilled: draftMarkFilled })
       .then(() => {
-        setData((prev) => (prev ? { ...prev, description: draftDescription } : prev));
-        setIsSavingDescription(false);
-        setIsEditingDescription(false);
+        setIsSaving(false);
+        setIsEditing(false);
       })
       .catch((err: unknown) => {
-        // AC-03: сервер (update-card.ts) кидає пояснення "потрібен короткий
-        // опис 'навіщо'" саме тут -- показуємо його як є, не вигадуємо своє.
-        setDescriptionError(err instanceof Error ? err.message : DESCRIPTION_FAILED_MESSAGE);
-        setIsSavingDescription(false);
+        setSaveError(err instanceof Error ? err.message : SAVE_FAILED_MESSAGE);
+        setIsSaving(false);
       });
   }
 
@@ -251,21 +227,24 @@ export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived, on
         />
       )}
       <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
-        {isRenaming ? (
+        {isEditing ? (
           <div className="flex flex-col gap-3">
             <TextField label="Назва" value={draftName} onChange={setDraftName} />
+            {onUpdateDescription && (
+              <TextField label="Опис (навіщо)" value={draftDescription} onChange={setDraftDescription} />
+            )}
             <div className="flex justify-end gap-3">
-              <Button label="Скасувати" onClick={cancelRename} disabled={isSavingName} />
-              <Button label="Зберегти" onClick={saveRename} disabled={isSavingName} />
+              <Button label="На зад" onClick={cancelEdit} disabled={isSaving} />
+              <Button label="Зберегти" onClick={saveEdit} disabled={isSaving} />
             </div>
-            {renameError && <Banner variant="error" text={renameError} />}
+            {saveError && <Banner variant="error" text={saveError} />}
           </div>
         ) : (
           <>
-            {/* AC-19: "торкається назви АБО обирає «Перейменувати» в меню" --
-                обидва входи ведуть у той самий startRename. */}
+            {/* CH-05/AC-19: "торкається назви АБО обирає «Редагувати» в меню" --
+                обидва входи ведуть у той самий startEdit. */}
             <div className="relative flex items-start justify-between gap-3">
-              <h2 onClick={startRename} className="cursor-pointer font-display text-xl font-bold leading-relaxed text-ink">
+              <h2 onClick={startEdit} className="cursor-pointer font-display text-xl font-bold leading-relaxed text-ink">
                 {data.name}
               </h2>
               <button
@@ -284,10 +263,10 @@ export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived, on
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={startRename}
+                    onClick={startEdit}
                     className="w-full rounded-control px-3 py-2 text-left text-sm font-medium text-ink transition-colors hover:bg-border"
                   >
-                    Перейменувати
+                    Редагувати
                   </button>
                   <button
                     type="button"
@@ -311,36 +290,25 @@ export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived, on
             разом, тон без вердикту (design-system.md, D-42/D-60). */}
         {data.dataWarning && <Banner variant="info" text={data.dataWarning} />}
 
-        {isEditingDescription ? (
-          <div className="flex flex-col gap-3">
-            <TextField label="Опис (навіщо)" value={draftDescription} onChange={setDraftDescription} />
-            <label className="flex items-center gap-2 text-sm font-medium text-ink">
-              <input
-                type="checkbox"
-                checked={draftMarkFilled}
-                onChange={(event) => setDraftMarkFilled(event.target.checked)}
-                className="h-4 w-4 rounded border-border"
-              />
-              Позначити заповненою
-            </label>
-            <div className="flex justify-end gap-3">
-              <Button label="Скасувати" onClick={cancelEditDescription} disabled={isSavingDescription} />
-              <Button label="Зберегти" onClick={saveDescription} disabled={isSavingDescription} />
-            </div>
-            {descriptionError && <Banner variant="error" text={descriptionError} />}
-          </div>
-        ) : hasDescription ? (
-          <p onClick={startEditDescription} className="cursor-pointer text-sm italic text-ink-muted">
-            {data.description}
-          </p>
-        ) : (
-          <p onClick={startEditDescription} className="cursor-pointer text-sm italic text-ink-faint">
-            Опис ще не заповнено
-          </p>
-        )}
+        {!isEditing &&
+          (hasDescription ? (
+            <p
+              onClick={onUpdateDescription ? startEdit : undefined}
+              className={`text-sm italic text-ink-muted${onUpdateDescription ? ' cursor-pointer' : ''}`}
+            >
+              {data.description}
+            </p>
+          ) : (
+            <p
+              onClick={onUpdateDescription ? startEdit : undefined}
+              className={`text-sm italic text-ink-faint${onUpdateDescription ? ' cursor-pointer' : ''}`}
+            >
+              Опис ще не заповнено
+            </p>
+          ))}
       </div>
 
-      {!isRenaming && !isEditingDescription && (
+      {!isEditing && (
         <button
           type="button"
           onClick={onFlip}

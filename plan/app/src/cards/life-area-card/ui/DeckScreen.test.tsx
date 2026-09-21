@@ -249,3 +249,25 @@ test('C14: стан помилки показує кнопку "Спробува
   expect(await screen.findByText('Тут ще немає жодної картки')).toBeTruthy();
   expect(loadCards).toHaveBeenCalledTimes(2);
 });
+
+// CH-07 review-fix (docs/features/life-area-card/changes.md): без reload()
+// після перейменування, `state.items` (звідки DeckFrontCard бере `cardName`
+// для CardBack's архівного діалогу, CH-07) лишався зі старою назвою --
+// createCard/onArchived уже мали "успіх -> reload()", rename не мав.
+
+test('CH-07 review-fix: успішне перейменування перезавантажує loadCards (щоб cardName у звороті теж оновився)', async () => {
+  const items = [{ id: 'card-1', name: 'Спорт' }];
+  const loadCards = vi.fn().mockResolvedValue(items);
+  const onRename = vi.fn().mockResolvedValue(undefined);
+  const props = baseProps({ loadCards, onRename });
+
+  render(<DeckScreen {...props} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Меню картки' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Редагувати' }));
+  fireEvent.change(screen.getByLabelText('Назва'), { target: { value: 'Спорт і здоров’я' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+
+  expect(onRename).toHaveBeenCalledWith('card-1', 'Спорт і здоров’я');
+  await vi.waitFor(() => expect(loadCards).toHaveBeenCalledTimes(2));
+});

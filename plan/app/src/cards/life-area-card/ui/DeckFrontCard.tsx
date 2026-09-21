@@ -25,6 +25,13 @@ import type { CardTrackingMode, CardHealthState } from '../domain/card';
 
 export interface DeckFrontCardProps {
   cardId: string;
+  /**
+   * CH-07 (docs/features/life-area-card/changes.md): назва картки -- потрібна
+   * ЗАРАНІШЕ, ніж CardBack сам щось завантажить (ArchiveCardDialog з меню
+   * звороту підставляє її в текст підтвердження). DeckScreen.tsx уже тримає
+   * її в DeckGridItem.name -- жодного нового мережевого виклику не треба.
+   */
+  cardName: string;
   /** Завантажує дані лицьової сторони цієї картки. */
   loadCard: (cardId: string) => Promise<CardFaceData>;
   /** Завантажує дані звороту цієї картки. */
@@ -62,6 +69,7 @@ type Side = 'face' | 'back';
 
 export function DeckFrontCard({
   cardId,
+  cardName,
   loadCard,
   loadBack,
   onRename,
@@ -101,6 +109,7 @@ export function DeckFrontCard({
       }
       back={
         <CardBack
+          cardName={cardName}
           loadBack={loadFrontBack}
           onFlip={() => setSide('face')}
           onFlagEntry={onFlagEntry ? (entryId) => onFlagEntry(cardId, entryId) : undefined}
@@ -110,6 +119,8 @@ export function DeckFrontCard({
           onUpdateMetricBlock={onUpdateMetricBlock ? (metricBlockId, values) => onUpdateMetricBlock(cardId, metricBlockId, values) : undefined}
           onTransferMetricBlock={onTransferMetricBlock ? (metricBlockId, targetCardId) => onTransferMetricBlock(cardId, metricBlockId, targetCardId) : undefined}
           transferTargetCards={transferTargetCards}
+          onArchive={() => onArchive(cardId)}
+          onArchived={onArchived}
         />
       }
     />

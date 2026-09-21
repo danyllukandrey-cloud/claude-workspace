@@ -140,6 +140,18 @@ export function DeckScreen({
       reload();
     });
 
+  /**
+   * CH-07 review fix (docs/features/life-area-card/changes.md): без reload()
+   * тут `state.items` (звідки DeckFrontCard бере `cardName` для звороту --
+   * CH-07's ArchiveCardDialog) лишався зі старою назвою після перейменування
+   * -- той самий "успіх мутації -> reload()" підхід, що вже має handleCreate
+   * вище й onArchived нижче, лише раніше пропущений саме для rename.
+   */
+  const handleRename = (cardId: string, name: string): Promise<void> =>
+    onRename(cardId, name).then(() => {
+      reload();
+    });
+
   useEffect(() => {
     let cancelled = false;
     setState({ status: 'loading' });
@@ -259,9 +271,10 @@ export function DeckScreen({
         renderFront={(item) => (
           <DeckFrontCard
             cardId={item.id}
+            cardName={item.name}
             loadCard={loadCard}
             loadBack={loadBack}
-            onRename={onRename}
+            onRename={handleRename}
             onArchive={onArchive}
             onArchived={reload}
             onUpdateDescription={onUpdateDescription}

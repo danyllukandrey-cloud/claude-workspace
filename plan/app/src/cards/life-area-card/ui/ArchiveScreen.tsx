@@ -23,7 +23,6 @@
 // самий стиль DI, що вже в DeckScreen.tsx/CardFace.tsx цього ж репозиторію.
 import { useEffect, useState } from 'react';
 import { Banner, Button, CardShell, EmptyState, Spinner } from '../../../shared/ui';
-import { DeckGrid } from './DeckGrid';
 import type { DeckGridItem } from './DeckGrid';
 import type { EntryViewModel } from './types';
 
@@ -220,20 +219,26 @@ export function ArchiveScreen({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 p-4 pb-20">
+    <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4 pb-20">
       <h1 className="font-display text-xl font-bold leading-relaxed text-ink">Архів карток</h1>
-      <DeckGrid
-        items={items}
-        renderFront={(item) => (
+      {/* CH-09 (docs/features/life-area-card/changes.md, живе тестування
+          2026-09-21): сітка, не колода DeckGrid -- усі картки архіву видно
+          одразу (той самий принцип, що базове розташування нових карток на
+          Схемі, structure/LayoutBoard.tsx: рядками знизу, не стосом з
+          перегортанням). DeckGrid лишається лише для активної колоди
+          (DeckScreen.tsx) -- там перегортання самé по собі бажане. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {items.map((item) => (
           <button
+            key={item.id}
             type="button"
             onClick={() => handleOpen(item.id)}
-            className="absolute inset-0 flex items-start overflow-hidden rounded-card border border-border bg-surface-solid p-5 text-left font-display text-lg font-semibold text-ink shadow-soft transition-transform hover:-translate-y-0.5 break-words"
+            className="aspect-square overflow-hidden rounded-card border border-border bg-surface-solid p-3.5 text-left font-display text-sm font-semibold text-ink shadow-soft transition-transform hover:-translate-y-0.5 break-words"
           >
             {item.name}
           </button>
-        )}
-      />
+        ))}
+      </div>
     </div>
   );
 }

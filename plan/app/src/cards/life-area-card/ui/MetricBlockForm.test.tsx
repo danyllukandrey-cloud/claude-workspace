@@ -96,6 +96,54 @@ describe('MetricBlockForm (SCR-05)', () => {
     expect(idxUnit).toBeLessThan(idxTarget);
   });
 
+  // CH-08 (docs/features/life-area-card/changes.md, живе тестування
+  // 2026-09-21): заголовок форми -- "Новий блок-метрика" за замовчуванням,
+  // "Редагування" коли форма відкрита через олівець наявного блоку
+  // (initialValues переданий -- єдиний реальний виклик із initialValues,
+  // CardBack.tsx's handleSaveMetricBlockEdit; "prefilled з підказки агента"
+  // вище лишається теоретичною можливістю компонента, ще не підключеною
+  // жодним реальним викликачем).
+
+  it('CH-08: заголовок "Новий блок-метрика" за замовчуванням', () => {
+    render(<MetricBlockForm onSubmit={vi.fn()} />);
+
+    expect(screen.getByRole('heading', { name: 'Новий блок-метрика' })).toBeTruthy();
+  });
+
+  it('CH-08: заголовок "Редагування", коли форма відкрита з initialValues', () => {
+    render(<MetricBlockForm onSubmit={vi.fn()} initialValues={{ label: 'тренування', unit: 'раз' }} />);
+
+    expect(screen.getByRole('heading', { name: 'Редагування' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Новий блок-метрика' })).toBeNull();
+  });
+
+  it('CH-08: помилка "Вкажіть, що рахуємо" гасне одразу на вводі тексту, не чекає наступного сабміту', () => {
+    render(<MetricBlockForm onSubmit={vi.fn()} />);
+    // Референс на поле ДО сабміту -- після сабміту помилка стає частиною
+    // тексту того самого <label>, і getByLabelText точним співпадінням уже
+    // не знайде поле за старим підписом (текст лейбла тепер довший).
+    const labelField = screen.getByLabelText('Що рахуємо/вимірюємо:');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+    expect(screen.getByText('Вкажіть, що рахуємо')).toBeTruthy();
+
+    fireEvent.change(labelField, { target: { value: 'т' } });
+
+    expect(screen.queryByText('Вкажіть, що рахуємо')).toBeNull();
+  });
+
+  it('CH-08: помилка "Вкажіть одиницю" гасне одразу на вводі тексту (той самий фікс, друге поле)', () => {
+    render(<MetricBlockForm onSubmit={vi.fn()} />);
+    const unitField = screen.getByLabelText('Одиниця:');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+    expect(screen.getByText('Вкажіть одиницю')).toBeTruthy();
+
+    fireEvent.change(unitField, { target: { value: 'р' } });
+
+    expect(screen.queryByText('Вкажіть одиницю')).toBeNull();
+  });
+
   // D-112 (docs/DECISIONS.md): "Що рахуємо"/"Одиниця" обовʼязкові, "Ціль" -- ні.
   it('D-112: поля мають хмаринки-підказки з правильною позначкою обовʼязковості', () => {
     render(<MetricBlockForm onSubmit={vi.fn()} />);

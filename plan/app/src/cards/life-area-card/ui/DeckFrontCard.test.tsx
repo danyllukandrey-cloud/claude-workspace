@@ -24,6 +24,7 @@ const BACK_DATA: CardBackData = { metricBlocks: [], aggregateProgress: null, ent
 function baseProps() {
   return {
     cardId: 'card-1',
+    cardName: 'Спорт',
     loadCard: vi.fn().mockResolvedValue(FACE_DATA),
     loadBack: vi.fn().mockResolvedValue(BACK_DATA),
     onRename: vi.fn().mockResolvedValue(undefined),
@@ -107,7 +108,12 @@ test('редагування Опису викликає injected onUpdateDescri
   fireEvent.change(screen.getByLabelText('Опис (навіщо)'), { target: { value: 'новий опис' } });
   fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
 
-  expect(onUpdateDescription).toHaveBeenCalledWith('card-1', { description: 'новий опис', markFilled: false });
+  // CH-06 (docs/features/life-area-card/changes.md): "Зберегти" тепер
+  // ланцюжком чекає onRename ДО onUpdateDescription (одна спільна форма) --
+  // на тік довше, ніж до CH-06, тож потрібен waitFor, не синхронний expect.
+  await vi.waitFor(() =>
+    expect(onUpdateDescription).toHaveBeenCalledWith('card-1', { description: 'новий опис', markFilled: true }),
+  );
 });
 
 test('onFlagEntry/onCreateMetricBlock, якщо передані, прокидаються в CardBack з cardId', async () => {

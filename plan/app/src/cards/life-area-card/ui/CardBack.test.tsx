@@ -19,14 +19,23 @@ function makeEntry(overrides: Partial<EntryViewModel> = {}): EntryViewModel {
   };
 }
 
+// CH-07 (docs/features/life-area-card/changes.md): "Режим картки" переїхав
+// за меню "..." -> "Редагування" -- більше не видимий одразу. Тести CH-02,
+// написані до CH-07, відкривають цей режим тим самим шляхом, що живий
+// користувач.
+async function openBackEdit(): Promise<void> {
+  fireEvent.click(await screen.findByRole('button', { name: 'Меню картки' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Редагування' }));
+}
+
 test('SCR-03 loading: показує спінер, поки loadBack ще не завершився', () => {
-  render(<CardBack loadBack={() => new Promise<CardBackData>(() => {})} onFlip={vi.fn()} />);
+  render(<CardBack cardName="Картка" loadBack={() => new Promise<CardBackData>(() => {})} onFlip={vi.fn()} />);
 
   expect(screen.getByRole('status')).toBeTruthy();
 });
 
 test('SCR-03 error: показує Banner, коли loadBack відхилено', async () => {
-  render(<CardBack loadBack={() => Promise.reject(new Error('Мережева помилка'))} onFlip={vi.fn()} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.reject(new Error('Мережева помилка'))} onFlip={vi.fn()} />);
 
   const banner = await screen.findByText('Мережева помилка');
   expect(banner.getAttribute('data-variant')).toBe('error');
@@ -40,7 +49,7 @@ test('SCR-03 default: показує частку виконання по бло
     aggregateProgress: 0.5,
     entries: [],
   };
-  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
 
   // MetricBlockCard (задача 6): назва зліва, відсоток -- окремим кружечком
   // справа, тому це вже два різні DOM-вузли, не один текстовий рядок.
@@ -58,7 +67,7 @@ test('SCR-03 capped: лічильник понад ціль показує 100% 
     aggregateProgress: 1,
     entries: [],
   };
-  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
 
   expect(await screen.findByText('Тренування')).toBeTruthy();
   expect(screen.getByText('100%')).toBeTruthy();
@@ -71,7 +80,7 @@ test('SCR-03 ongoing: постійний процес показує накоп�
     aggregateProgress: null,
     entries: [],
   };
-  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
 
   expect(await screen.findByText('Біг')).toBeTruthy();
   expect(screen.getByText('40 км')).toBeTruthy();
@@ -82,7 +91,7 @@ test('SCR-03 ongoing: постійний процес показує накоп�
 
 test('SCR-03 declarative: без жодного блоку-метрики показує порожній стан', async () => {
   const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
-  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
 
   expect(await screen.findByText('Ще немає жодної активної метрики')).toBeTruthy();
   expect(screen.getByText('Додайте блок-метрику, щоб почати відстежувати прогрес')).toBeTruthy();
@@ -96,7 +105,7 @@ test('SCR-03 pending-entry: блок із записом, що очікує пе
     aggregateProgress: 0.5,
     entries: [],
   };
-  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
 
   expect(await screen.findByText('Запис очікує перевірки агента')).toBeTruthy();
 });
@@ -107,7 +116,7 @@ test('SCR-03 history-expanded: розгортає історію записів 
     aggregateProgress: null,
     entries: [makeEntry({ id: 'e1', recordedAtLabel: '27.08', summary: '+1 тренування' })],
   };
-  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
 
   await screen.findByText('Ще немає жодної активної метрики');
   expect(screen.queryByText('+1 тренування')).toBeNull();
@@ -130,7 +139,7 @@ test('C11-remainder: без onFlagEntry кнопка "виправити" НЕ �
     aggregateProgress: null,
     entries: [makeEntry({ id: 'e1', status: 'confirmed', summary: '+1 тренування' })],
   };
-  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
 
   fireEvent.click(await screen.findByRole('button', { name: /Історія записів/ }));
   await screen.findByText('+1 тренування');
@@ -151,7 +160,7 @@ test('SCR-03 AC-12: клік "виправити" в історії виклик
   };
   const onFlagEntry = vi.fn().mockResolvedValue(corrected);
 
-  render(<CardBack loadBack={() => Promise.resolve(initial)} onFlip={vi.fn()} onFlagEntry={onFlagEntry} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(initial)} onFlip={vi.fn()} onFlagEntry={onFlagEntry} />);
 
   fireEvent.click(await screen.findByRole('button', { name: /Історія записів/ }));
   fireEvent.click(await screen.findByRole('button', { name: 'виправити' }));
@@ -179,7 +188,7 @@ test('живе тестування: після успішного "виправ
   };
   const onFlagEntry = vi.fn().mockResolvedValue(corrected);
 
-  render(<CardBack loadBack={() => Promise.resolve(initial)} onFlip={vi.fn()} onFlagEntry={onFlagEntry} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(initial)} onFlip={vi.fn()} onFlagEntry={onFlagEntry} />);
 
   fireEvent.click(await screen.findByRole('button', { name: /Історія записів/ }));
   expect(screen.queryByText(/напишіть агенту в чаті/i)).toBeNull();
@@ -205,7 +214,7 @@ test('T52-remainder: невдалий onFlagEntry НЕ стирає вже за�
   };
   const onFlagEntry = vi.fn().mockRejectedValue(new Error('Мережа впала'));
 
-  render(<CardBack loadBack={() => Promise.resolve(initial)} onFlip={vi.fn()} onFlagEntry={onFlagEntry} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(initial)} onFlip={vi.fn()} onFlagEntry={onFlagEntry} />);
 
   await screen.findByText('Тренування');
   fireEvent.click(screen.getByRole('button', { name: /Історія записів/ }));
@@ -231,7 +240,7 @@ test('T52-remainder: подвійний клік "виправити" (поки 
     }),
   );
 
-  render(<CardBack loadBack={() => Promise.resolve(initial)} onFlip={vi.fn()} onFlagEntry={onFlagEntry} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(initial)} onFlip={vi.fn()} onFlagEntry={onFlagEntry} />);
 
   fireEvent.click(await screen.findByRole('button', { name: /Історія записів/ }));
   const flagButton = await screen.findByRole('button', { name: 'виправити' });
@@ -266,7 +275,7 @@ test('SCR-03 transfer-collision: пропонує перейменувати б�
   } satisfies CardBackData);
 
   render(
-    <CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onRenameTransferredBlock={onRenameTransferredBlock} />,
+    <CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onRenameTransferredBlock={onRenameTransferredBlock} />,
   );
 
   const input = await screen.findByLabelText('Нова назва блоку-метрики');
@@ -286,7 +295,7 @@ test('SCR-03 transfer-collision: пропонує перейменувати б�
 test('SCR-03: клік "← перегорнути" викликає onFlip', async () => {
   const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
   const onFlip = vi.fn();
-  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={onFlip} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={onFlip} />);
 
   fireEvent.click(await screen.findByRole('button', { name: /перегорнути/ }));
 
@@ -308,7 +317,7 @@ test('SCR-03: клік "← перегорнути" викликає onFlip', as
 test('D-111: порожній стан -- порядок "+ Додати блок-метрику" -> "Ще немає..." -> "Історія записів" -> "← перегорнути"', async () => {
   const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
   const { container } = render(
-    <CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateMetricBlock={vi.fn()} />,
+    <CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateMetricBlock={vi.fn()} />,
   );
 
   await screen.findByText('Ще немає жодної активної метрики');
@@ -327,7 +336,7 @@ test('D-111: порожній стан -- порядок "+ Додати бло�
 
 test('ISS-60: без onCreateMetricBlock порожній стан не показує кнопку створення блоку', async () => {
   const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
-  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
 
   await screen.findByText('Ще немає жодної активної метрики');
   expect(screen.queryByRole('button', { name: '+ Додати блок-метрику' })).toBeNull();
@@ -336,7 +345,7 @@ test('ISS-60: без onCreateMetricBlock порожній стан не пока
 test('ISS-60: з onCreateMetricBlock порожній стан показує кнопку "+ Додати блок-метрику", клік відкриває MetricBlockForm', async () => {
   const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
   render(
-    <CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateMetricBlock={vi.fn()} />,
+    <CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateMetricBlock={vi.fn()} />,
   );
 
   await screen.findByText('Ще немає жодної активної метрики');
@@ -358,7 +367,7 @@ test('ISS-60: успішне збереження форми викликає on
   const loadBack = vi.fn().mockResolvedValueOnce(emptyData).mockResolvedValueOnce(filledData);
   const onCreateMetricBlock = vi.fn().mockResolvedValue(undefined);
 
-  render(<CardBack loadBack={loadBack} onFlip={vi.fn()} onCreateMetricBlock={onCreateMetricBlock} />);
+  render(<CardBack cardName="Картка" loadBack={loadBack} onFlip={vi.fn()} onCreateMetricBlock={onCreateMetricBlock} />);
 
   await screen.findByText('Ще немає жодної активної метрики');
   fireEvent.click(screen.getByRole('button', { name: '+ Додати блок-метрику' }));
@@ -395,7 +404,7 @@ test('A4: "+ Додати блок-метрику" видима і коли в �
     aggregateProgress: 0.5,
     entries: [],
   };
-  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateMetricBlock={vi.fn()} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateMetricBlock={vi.fn()} />);
 
   await screen.findByText('Тренування');
   expect(screen.getByText('50%')).toBeTruthy();
@@ -422,7 +431,7 @@ test('T52: невдалий фоновий refresh (після успішног�
   const loadBack = vi.fn().mockResolvedValueOnce(initial).mockRejectedValueOnce(new Error('Мережа впала'));
   const onCreateMetricBlock = vi.fn().mockResolvedValue(undefined);
 
-  render(<CardBack loadBack={loadBack} onFlip={vi.fn()} onCreateMetricBlock={onCreateMetricBlock} />);
+  render(<CardBack cardName="Картка" loadBack={loadBack} onFlip={vi.fn()} onCreateMetricBlock={onCreateMetricBlock} />);
 
   await screen.findByText('Тренування');
   expect(screen.getByText('50%')).toBeTruthy();
@@ -454,7 +463,7 @@ test('без onArchiveMetricBlock кнопка "×" не рендериться 
     aggregateProgress: 0.5,
     entries: [],
   };
-  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
 
   await screen.findByText('Тренування');
   expect(screen.queryByRole('button', { name: /Видалити метрику/ })).toBeNull();
@@ -468,7 +477,7 @@ test('з onArchiveMetricBlock клік "×" відкриває ArchiveMetricBloc
     aggregateProgress: 0.5,
     entries: [],
   };
-  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onArchiveMetricBlock={vi.fn()} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onArchiveMetricBlock={vi.fn()} />);
 
   await screen.findByText('Тренування');
   fireEvent.click(screen.getByRole('button', { name: 'Видалити метрику «Тренування»' }));
@@ -488,7 +497,7 @@ test('підтвердження видалення (ввід «видалити
   const loadBack = vi.fn().mockResolvedValueOnce(withBlock).mockResolvedValueOnce(afterArchive);
   const onArchiveMetricBlock = vi.fn().mockResolvedValue(undefined);
 
-  render(<CardBack loadBack={loadBack} onFlip={vi.fn()} onArchiveMetricBlock={onArchiveMetricBlock} />);
+  render(<CardBack cardName="Картка" loadBack={loadBack} onFlip={vi.fn()} onArchiveMetricBlock={onArchiveMetricBlock} />);
 
   await screen.findByText('Тренування');
   fireEvent.click(screen.getByRole('button', { name: 'Видалити метрику «Тренування»' }));
@@ -512,7 +521,7 @@ test('скасування діалогу видалення НЕ виклика
     entries: [],
   };
   const onArchiveMetricBlock = vi.fn().mockResolvedValue(undefined);
-  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onArchiveMetricBlock={onArchiveMetricBlock} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onArchiveMetricBlock={onArchiveMetricBlock} />);
 
   await screen.findByText('Тренування');
   fireEvent.click(screen.getByRole('button', { name: 'Видалити метрику «Тренування»' }));
@@ -532,7 +541,7 @@ test('невдалий onArchiveMetricBlock (404 card.not_found) показує 
     entries: [],
   };
   const onArchiveMetricBlock = vi.fn().mockRejectedValue(new Error('Метрику не знайдено'));
-  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onArchiveMetricBlock={onArchiveMetricBlock} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onArchiveMetricBlock={onArchiveMetricBlock} />);
 
   await screen.findByText('Тренування');
   fireEvent.click(screen.getByRole('button', { name: 'Видалити метрику «Тренування»' }));
@@ -563,7 +572,7 @@ test('T52: фоновий refresh ігнорує застарілу (out-of-orde
     .mockResolvedValueOnce(freshData); // refresh #2 -- issued пізніше, резолвиться одразу
   const onCreateMetricBlock = vi.fn().mockResolvedValue(undefined);
 
-  render(<CardBack loadBack={loadBack} onFlip={vi.fn()} onCreateMetricBlock={onCreateMetricBlock} />);
+  render(<CardBack cardName="Картка" loadBack={loadBack} onFlip={vi.fn()} onCreateMetricBlock={onCreateMetricBlock} />);
   await screen.findByText('Тренування');
   expect(screen.getByText('0%')).toBeTruthy();
 
@@ -597,7 +606,7 @@ test('T52: фоновий refresh ігнорує застарілу (out-of-orde
 
 test('CH-02: без onUpdateTracking вибір режиму не рендериться', async () => {
   const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
-  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
 
   await screen.findByText('Ще немає жодної активної метрики');
   expect(screen.queryByText('Картка: стан без вимірювань')).toBeNull();
@@ -605,8 +614,9 @@ test('CH-02: без onUpdateTracking вибір режиму не рендери
 
 test('CH-02: "стан без вимірювань" рендериться НАД "постійний процес з метриками (без дати)"', async () => {
   const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'metrics', healthState: null };
-  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={vi.fn()} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={vi.fn()} />);
 
+  await openBackEdit();
   const stateOption = await screen.findByText('Картка: стан без вимірювань');
   const metricsOption = screen.getByText('Картка: постійний процес з метриками (без дати)');
 
@@ -616,8 +626,9 @@ test('CH-02: "стан без вимірювань" рендериться НА�
 test('CH-02: обрання "стан без вимірювань" викликає onUpdateTracking(state, active за замовчуванням)', async () => {
   const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'metrics', healthState: null };
   const onUpdateTracking = vi.fn().mockResolvedValue(undefined);
-  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={onUpdateTracking} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={onUpdateTracking} />);
 
+  await openBackEdit();
   await screen.findByText('Картка: стан без вимірювань');
   fireEvent.click(screen.getByRole('radio', { name: 'Картка: стан без вимірювань' }));
 
@@ -627,8 +638,9 @@ test('CH-02: обрання "стан без вимірювань" виклик�
 test('CH-02: у режимі "стан без вимірювань" показує три варіанти й обрання іншого викликає onUpdateTracking', async () => {
   const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'state', healthState: 'active' };
   const onUpdateTracking = vi.fn().mockResolvedValue(undefined);
-  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={onUpdateTracking} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={onUpdateTracking} />);
 
+  await openBackEdit();
   await screen.findByText('Картка: стан без вимірювань');
   expect(screen.getByText('використовується')).toBeTruthy();
   expect(screen.getByText('критично потребує відновлення')).toBeTruthy();
@@ -642,8 +654,9 @@ test('CH-02: у режимі "стан без вимірювань" показу
 test('CH-02: перемикання назад на метричний режим викликає onUpdateTracking(metrics, null)', async () => {
   const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'state', healthState: 'paused' };
   const onUpdateTracking = vi.fn().mockResolvedValue(undefined);
-  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={onUpdateTracking} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={onUpdateTracking} />);
 
+  await openBackEdit();
   await screen.findByText('Картка: стан без вимірювань');
   fireEvent.click(screen.getByRole('radio', { name: 'Картка: постійний процес з метриками (без дати)' }));
 
@@ -655,6 +668,7 @@ test('CH-02: у режимі "стан без вимірювань" кнопка
   const onCreateMetricBlock = vi.fn();
   render(
     <CardBack
+      cardName="Картка"
       loadBack={() => Promise.resolve(data)}
       onFlip={vi.fn()}
       onUpdateTracking={vi.fn()}
@@ -662,8 +676,7 @@ test('CH-02: у режимі "стан без вимірювань" кнопка
     />,
   );
 
-  await screen.findByText('Картка: стан без вимірювань');
-  const addButton = screen.getByRole('button', { name: '+ Додати блок-метрику' });
+  const addButton = await screen.findByRole('button', { name: '+ Додати блок-метрику' });
   // pointer-events-none на предку -- візуальний шар (миша/дотик).
   expect(addButton.closest('[aria-disabled="true"]')).toBeTruthy();
   // Code review 2026-09-19: СПРАВЖНІЙ HTML disabled -- блокує й
@@ -686,6 +699,7 @@ test('CH-02: у режимі "стан без вимірювань" кнопки
   };
   render(
     <CardBack
+      cardName="Картка"
       loadBack={() => Promise.resolve(data)}
       onFlip={vi.fn()}
       onUpdateTracking={vi.fn()}
@@ -717,7 +731,7 @@ function metricBlock(overrides: Partial<import('./types').MetricBlockViewModel> 
 
 test('CH-03: без onUpdateMetricBlock/onTransferMetricBlock олівець на блоці не рендериться', async () => {
   const data: CardBackData = { metricBlocks: [metricBlock()], aggregateProgress: 0.5, entries: [] };
-  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
 
   await screen.findByText('Тренування');
   expect(screen.queryByRole('button', { name: /Редагувати метрику/ })).toBeNull();
@@ -726,7 +740,7 @@ test('CH-03: без onUpdateMetricBlock/onTransferMetricBlock олівець н�
 test('CH-03: клік по олівцю відкриває форму з попередньо заповненими label/unit/ціль', async () => {
   const data: CardBackData = { metricBlocks: [metricBlock()], aggregateProgress: 0.5, entries: [] };
   render(
-    <CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateMetricBlock={vi.fn()} />,
+    <CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateMetricBlock={vi.fn()} />,
   );
 
   await screen.findByText('Тренування');
@@ -742,7 +756,7 @@ test('CH-03: збереження форми редагування виклик
   const data: CardBackData = { metricBlocks: [metricBlock()], aggregateProgress: 0.5, entries: [] };
   const onUpdateMetricBlock = vi.fn().mockResolvedValue(undefined);
   const loadBack = vi.fn().mockResolvedValue(data);
-  render(<CardBack loadBack={loadBack} onFlip={vi.fn()} onUpdateMetricBlock={onUpdateMetricBlock} />);
+  render(<CardBack cardName="Картка" loadBack={loadBack} onFlip={vi.fn()} onUpdateMetricBlock={onUpdateMetricBlock} />);
 
   await screen.findByText('Тренування');
   fireEvent.click(screen.getByRole('button', { name: 'Редагувати метрику «Тренування»' }));
@@ -757,7 +771,7 @@ test('CH-03: збереження форми редагування виклик
 test('CH-03: без transferTargetCards секція перенесення не рендериться', async () => {
   const data: CardBackData = { metricBlocks: [metricBlock()], aggregateProgress: 0.5, entries: [] };
   render(
-    <CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onTransferMetricBlock={vi.fn()} />,
+    <CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onTransferMetricBlock={vi.fn()} />,
   );
 
   await screen.findByText('Тренування');
@@ -772,6 +786,7 @@ test('CH-03: обрання картки-цілі й "Перенести" вик
   const loadBack = vi.fn().mockResolvedValue(data);
   render(
     <CardBack
+      cardName="Картка"
       loadBack={loadBack}
       onFlip={vi.fn()}
       onTransferMetricBlock={onTransferMetricBlock}
@@ -792,6 +807,7 @@ test('CH-03: "Перенести" неактивна, поки не обрано
   const data: CardBackData = { metricBlocks: [metricBlock()], aggregateProgress: 0.5, entries: [] };
   render(
     <CardBack
+      cardName="Картка"
       loadBack={() => Promise.resolve(data)}
       onFlip={vi.fn()}
       onTransferMetricBlock={vi.fn()}
@@ -808,7 +824,7 @@ test('CH-03: "Перенести" неактивна, поки не обрано
 test('CH-03: "Закрити" ховає панель редагування без виклику жодної дії', async () => {
   const data: CardBackData = { metricBlocks: [metricBlock()], aggregateProgress: 0.5, entries: [] };
   const onUpdateMetricBlock = vi.fn();
-  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateMetricBlock={onUpdateMetricBlock} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateMetricBlock={onUpdateMetricBlock} />);
 
   await screen.findByText('Тренування');
   fireEvent.click(screen.getByRole('button', { name: 'Редагувати метрику «Тренування»' }));
@@ -821,11 +837,97 @@ test('CH-03: "Закрити" ховає панель редагування б�
 test('CH-02: помилка збереження режиму показує Banner і не змінює поточний вибір', async () => {
   const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'metrics', healthState: null };
   const onUpdateTracking = vi.fn().mockRejectedValue(new Error('Не вдалося зберегти'));
-  render(<CardBack loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={onUpdateTracking} />);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={onUpdateTracking} />);
 
+  await openBackEdit();
   await screen.findByText('Картка: стан без вимірювань');
   fireEvent.click(screen.getByRole('radio', { name: 'Картка: стан без вимірювань' }));
 
   const banner = await screen.findByText('Не вдалося зберегти');
   expect(banner.getAttribute('data-variant')).toBe('error');
+});
+
+// CH-07 (docs/features/life-area-card/changes.md): зворот тепер має два
+// режими -- перегляд (типовий, "Режим картки" НЕ видно) і редагування (меню
+// "..." -> "Редагування"/"Архівувати", той самий патерн, що CardFace.tsx).
+
+test('CH-07: за замовчуванням "Режим картки" не видно, лише готові блоки й "Історія записів"', async () => {
+  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'metrics', healthState: null };
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={vi.fn()} />);
+
+  await screen.findByText('Ще немає жодної активної метрики');
+  expect(screen.queryByText('Картка: стан без вимірювань')).toBeNull();
+  expect(screen.getByRole('button', { name: /Історія записів/ })).toBeTruthy();
+});
+
+test('CH-07: меню "..." показує "Редагування" лише коли onUpdateTracking переданий (нема чого показати без нього)', async () => {
+  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={vi.fn()} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Меню картки' }));
+
+  expect(screen.getByRole('menuitem', { name: 'Редагування' })).toBeTruthy();
+});
+
+test('CH-07 review-fix: без onUpdateTracking пункт "Редагування" не рендериться -- клік не мав би на що вплинути', async () => {
+  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Меню картки' }));
+
+  expect(screen.queryByRole('menuitem', { name: 'Редагування' })).toBeNull();
+  expect(screen.queryByRole('menuitem', { name: 'Архівувати' })).toBeNull();
+});
+
+test('CH-07: "Редагування" відкриває "Режим картки", "Закрити" ховає його назад', async () => {
+  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'metrics', healthState: null };
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={vi.fn()} />);
+
+  await openBackEdit();
+  expect(await screen.findByText('Картка: стан без вимірювань')).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Закрити' }));
+
+  expect(screen.queryByText('Картка: стан без вимірювань')).toBeNull();
+});
+
+test('CH-07: меню "..." -> "Архівувати" показує ArchiveCardDialog з назвою картки', async () => {
+  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
+  render(
+    <CardBack cardName="Кар'єра" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onArchive={vi.fn().mockResolvedValue(undefined)} onArchived={vi.fn()} />,
+  );
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Меню картки' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Архівувати' }));
+
+  expect(screen.getByText(/Архівувати картку «Кар'єра»\?/)).toBeTruthy();
+});
+
+test('CH-07: підтвердження архівації в діалозі викликає injected onArchive і потім onArchived', async () => {
+  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
+  const onArchive = vi.fn().mockResolvedValue(undefined);
+  const onArchived = vi.fn();
+  render(<CardBack cardName="Кар'єра" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onArchive={onArchive} onArchived={onArchived} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Меню картки' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Архівувати' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Архівувати' }));
+
+  expect(onArchive).toHaveBeenCalledTimes(1);
+  await vi.waitFor(() => expect(onArchived).toHaveBeenCalledTimes(1));
+});
+
+test('CH-07: "Скасувати" в діалозі архівації закриває його без виклику onArchive/onArchived', async () => {
+  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
+  const onArchive = vi.fn().mockResolvedValue(undefined);
+  const onArchived = vi.fn();
+  render(<CardBack cardName="Кар'єра" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onArchive={onArchive} onArchived={onArchived} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Меню картки' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Архівувати' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Скасувати' }));
+
+  expect(onArchive).not.toHaveBeenCalled();
+  expect(onArchived).not.toHaveBeenCalled();
+  expect(screen.queryByText(/Архівувати картку/)).toBeNull();
 });

@@ -15,6 +15,7 @@
 // historyExpanded/колізія перейменування) навколо їхнього виклику.
 import { useEffect, useRef, useState } from 'react';
 import { Banner, Button, EmptyState, Spinner, TextField } from '../../../shared/ui';
+import { ArchiveCardDialog } from './ArchiveCardDialog';
 import { ArchiveMetricBlockDialog } from './ArchiveMetricBlockDialog';
 import { EntryHistoryList } from './EntryHistoryList';
 import { MetricBlockCard } from './MetricBlockCard';
@@ -39,6 +40,13 @@ const HEALTH_STATE_DOT_CLASS: Record<CardHealthState, string> = {
 };
 
 export interface CardBackProps {
+  /**
+   * CH-07 (docs/features/life-area-card/changes.md): назва картки --
+   * CardBackData сама її не несе (лише метрики/історія/агрегат), а
+   * ArchiveCardDialog з меню звороту потребує її для тексту підтвердження.
+   * DeckFrontCard.tsx прокидає той самий DeckGridItem.name, що вже має.
+   */
+  cardName: string;
   /** Завантажує дані звороту картки (блоки-метрики, історія, агрегат). */
   loadBack: () => Promise<CardBackData>;
   /** Перегорнути картку назад на лицьову сторону (SCR-02). */
@@ -95,6 +103,16 @@ export interface CardBackProps {
    * виклику тут не потрібно.
    */
   transferTargetCards?: MetricBlockTransferTargetCard[];
+  /**
+   * CH-07 (docs/features/life-area-card/changes.md): підтверджує архівацію
+   * картки з меню "..." звороту -- той самий проп, що CardFace.onArchive
+   * (DeckFrontCard.tsx вже тримає готовий cardId-зв'язаний виклик, жодного
+   * нового бекенду не треба). Опційний -- без нього пункт "Архівувати" в
+   * меню звороту не рендериться.
+   */
+  onArchive?: () => Promise<void>;
+  /** CH-07: сигнал батькові -- картку архівовано, той самий проп, що CardFace.onArchived. */
+  onArchived?: () => void;
 }
 
 type LoadState = 'loading' | 'ready' | 'error';
@@ -103,6 +121,7 @@ const FALLBACK_ERROR_TEXT = 'Не вдалося завантажити карт
 const FALLBACK_COLLISION_ERROR_TEXT = 'У картці вже є блок-метрика з такою назвою й одиницею';
 
 export function CardBack({
+  cardName,
   loadBack,
   onFlip,
   onFlagEntry,
@@ -113,11 +132,21 @@ export function CardBack({
   onUpdateMetricBlock,
   onTransferMetricBlock,
   transferTargetCards,
+  onArchive,
+  onArchived,
 }: CardBackProps): JSX.Element {
   const [state, setState] = useState<LoadState>('loading');
   const [data, setData] = useState<CardBackData | null>(null);
   const [error, setError] = useState<string>(FALLBACK_ERROR_TEXT);
   const [historyExpanded, setHistoryExpanded] = useState(false);
+  // CH-07 (docs/features/life-area-card/changes.md): зворот тепер має два
+  // режими -- перегляд (типовий) і редагування самої картки (не метрик --
+  // ті редагуються через олівчик на MetricBlockCard, isEditingBack тут з
+  // цим не перетинається). Меню "..." -- той самий патерн (role="menu"), що
+  // CardFace.tsx, лише в правому верхньому кутку звороту, не лиця.
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isEditingBack, setIsEditingBack] = useState(false);
+  const [isArchiving, setIsArchiving] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [collisionError, setCollisionError] = useState<string | undefined>(undefined);
   const [isCreatingBlock, setIsCreatingBlock] = useState(false);
@@ -328,6 +357,39 @@ export function CardBack({
     });
   };
 
+  // CH-07: той самий "..." -> Редагування/Архівувати патерн, що CardFace.tsx.
+  function toggleMenu(): void {
+    setIsMenuOpen((prev) => !prev);
+  }
+
+  function startEditBack(): void {
+    setIsMenuOpen(false);
+    setIsEditingBack(true);
+  }
+
+  function closeEditBack(): void {
+    // Немає окремого "Зберегти" -- кожен вибір режиму картки зберігається
+    // одразу (handleUpdateTracking вище), той самий "автозбереження на
+    // клік" підхід, що радіо-кнопки й до цієї зміни мали.
+    setIsEditingBack(false);
+  }
+
+  function startArchive(): void {
+    setIsMenuOpen(false);
+    setIsArchiving(true);
+  }
+
+  function cancelArchive(): void {
+    setIsArchiving(false);
+  }
+
+  function confirmArchive(): Promise<void> {
+    if (!onArchive) return Promise.resolve();
+    return onArchive().then(() => {
+      onArchived?.();
+    });
+  }
+
   const handleConfirmRename = (): void => {
     if (!onRenameTransferredBlock || !data.pendingTransferCollision) return;
     setCollisionError(undefined);
@@ -349,21 +411,72 @@ export function CardBack({
     // розгортається, не кнопка-футер), КРІМ "← перегорнути" -- вона
     // сестринський елемент ПІСЛЯ обгортки, природно лишається внизу (flex-1
     // забирає решту висоти в сусіда), mt-auto їй більше не потрібен.
-    <div className="flex h-full flex-col gap-4">
+    <div className="relative flex h-full flex-col gap-4">
+      {/* CH-07 (docs/features/life-area-card/changes.md): "..." у правому
+          верхньому кутку звороту -- той самий патерн, що CardFace.tsx, лише
+          для НАЛАШТУВАНЬ самої картки (Режим картки), не для метрик (ті --
+          олівчик на MetricBlockCard). "Архівувати" -- лише коли onArchive
+          переданий (DeckFrontCard.tsx вже прокидає той самий, що на лиці). */}
+      <div className="absolute right-0 top-0 z-10">
+        <button
+          type="button"
+          aria-label="Меню картки"
+          onClick={toggleMenu}
+          className="shrink-0 rounded-control px-2 py-1 text-lg font-bold leading-none text-ink-muted transition-colors hover:bg-border hover:text-ink"
+        >
+          ...
+        </button>
+        {isMenuOpen && (
+          <div
+            role="menu"
+            className="absolute right-0 top-full mt-1 flex w-44 flex-col gap-0.5 rounded-control border border-border bg-surface-solid p-1.5 shadow-soft"
+          >
+            {/* Review-fix: без onUpdateTracking немає чого показати в панелі
+                редагування (єдиний її вміст зараз -- Режим картки) -- клік
+                мовчки нічого не робив би, той самий "без пропу афорданс не
+                рендериться" принцип, що вже застосований до "Архівувати". */}
+            {onUpdateTracking && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={startEditBack}
+                className="w-full rounded-control px-3 py-2 text-left text-sm font-medium text-ink transition-colors hover:bg-border"
+              >
+                Редагування
+              </button>
+            )}
+            {onArchive && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={startArchive}
+                className="w-full rounded-control px-3 py-2 text-left text-sm font-medium text-bad transition-colors hover:bg-bad/10"
+              >
+                Архівувати
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      {isArchiving && (
+        <ArchiveCardDialog cardName={cardName} onArchive={confirmArchive} onCancel={cancelArchive} />
+      )}
+
       <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
         {/* Review 2026-09-07 E (T52): фоновий refresh невдалий -- НЕблокуючий
             банер над уже показаними даними, не заміна всього екрана. */}
         {refreshError !== null && <Banner variant="error" text={refreshError} />}
 
-        {/* CH-02 (docs/features/life-area-card/changes.md): "картка: стан без
-            вимірювань" -- НА САМОМУ ПОЧАТКУ налаштування картки, ПЕРЕД будь-
-            яким метричним контентом (той самий "ПЕРЕД усім" принцип, що D-111
-            уже застосував до "+ Додати блок-метрику" нижче). Опційний, як і
-            решта дій цього компонента -- без onUpdateTracking вибір узагалі
-            не рендериться (лише поточний стан лишається видимим деінде). */}
-        {onUpdateTracking && (
+        {/* CH-07: перенесено з "завжди видимо" під режим "Редагування" --
+            зворот тепер має два режими (перегляд/редагування), Режим картки
+            -- налаштування, не показник, тож ховається за меню "...",
+            замість займати місце над блоками-метриками щоразу. */}
+        {isEditingBack && onUpdateTracking && (
           <fieldset className="m-0 flex flex-col gap-2 rounded-card border border-border bg-surface-solid p-3.5" disabled={isSavingTracking}>
-            <legend className="px-1 text-xs font-bold uppercase tracking-wide text-ink-muted">Режим картки</legend>
+            <div className="flex items-center justify-between gap-2">
+              <legend className="px-1 text-xs font-bold uppercase tracking-wide text-ink-muted">Режим картки</legend>
+              <Button label="Закрити" onClick={closeEditBack} />
+            </div>
             {/* Порядок навмисний (юзер-кейс CH-02): "стан без вимірювань" --
                 НАД "постійний процес з метриками (без дати)". */}
             <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-ink">

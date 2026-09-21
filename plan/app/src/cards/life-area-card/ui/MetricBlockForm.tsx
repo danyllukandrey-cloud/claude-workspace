@@ -61,6 +61,11 @@ const EMPTY_VALUES: MetricBlockFormValues = {
 };
 
 export function MetricBlockForm({ initialValues, onSubmit }: MetricBlockFormProps): JSX.Element {
+  // CH-08 (docs/features/life-area-card/changes.md, живе тестування
+  // 2026-09-21): заголовок форми -- "Редагування" саме коли відкрито через
+  // олівець наявної метрики (initialValues переданий), "Новий блок-метрика"
+  // лише для справді нової.
+  const isEditing = initialValues !== undefined;
   const [label, setLabel] = useState(initialValues?.label ?? EMPTY_VALUES.label);
   const [unit, setUnit] = useState(initialValues?.unit ?? EMPTY_VALUES.unit);
   const [targetCount, setTargetCount] = useState<number | null>(
@@ -109,7 +114,9 @@ export function MetricBlockForm({ initialValues, onSubmit }: MetricBlockFormProp
       onSubmit={handleSubmit}
       className="flex flex-col gap-4 rounded-card border border-border bg-surface-solid p-4"
     >
-      <h2 className="font-display text-lg font-bold leading-relaxed text-ink">Новий блок-метрика</h2>
+      <h2 className="font-display text-lg font-bold leading-relaxed text-ink">
+        {isEditing ? 'Редагування' : 'Новий блок-метрика'}
+      </h2>
       {submitError && <Banner variant="error" text={submitError} />}
       {/* D-111 (docs/DECISIONS.md): порядок полів -- що рахуємо -> постійний
           процес одразу після -> одиниця -> ціль+дата в одному рядку. Живе
@@ -119,7 +126,13 @@ export function MetricBlockForm({ initialValues, onSubmit }: MetricBlockFormProp
       <TextField
         label="Що рахуємо/вимірюємо:"
         value={label}
-        onChange={setLabel}
+        // CH-08 (живе тестування 2026-09-21): помилка гасне одразу, як
+        // користувач почав виправляти поле -- раніше чекала наступного
+        // сабміту, тож лишалась червоною навіть коли текст уже введено.
+        onChange={(value) => {
+          setLabel(value);
+          if (labelError) setLabelError(undefined);
+        }}
         error={labelError}
         required
         hint="Наприклад: «тренування», «книги», «схудлі кілограми». Навіщо: це те, що агент бачитиме й пропонуватиме рахувати далі."
@@ -136,7 +149,11 @@ export function MetricBlockForm({ initialValues, onSubmit }: MetricBlockFormProp
       <TextField
         label="Одиниця:"
         value={unit}
-        onChange={setUnit}
+        // CH-08: той самий фікс, що поле вище -- помилка гасне одразу на вводі.
+        onChange={(value) => {
+          setUnit(value);
+          if (unitError) setUnitError(undefined);
+        }}
         error={unitError}
         required
         hint="Наприклад: «раз», «кг», «сторінка». Навіщо: одиниця показується поруч із кожним записом і ціллю."
