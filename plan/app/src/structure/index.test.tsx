@@ -1,7 +1,7 @@
 // Публічний вхід Структури (index.ts) -- правило залежностей (plan/app/CLAUDE.md):
 // решта проєкту імпортує Структуру ТІЛЬКИ звідси, ніколи напряму з ui/.
 //
-// Review 2026-09-11 (MUST-FIX 4): SCR-04 (тепер ArchiveCardDialog, CH-05/CH-06)
+// Review 2026-09-11 (MUST-FIX 4): SCR-04 (тепер LayoutBoardArchiveDialog, CH-05/CH-06)
 // був написаний і покритий власним тестом, але НЕ експортований з index.ts і
 // не підключений ніде -- 0 використань поза власним тестом, тож AC-12
 // ("система питає по кожній метриці картки, що архівується, чи перенести її
@@ -10,11 +10,11 @@
 // СПРАВЖНІЙ діалог із рядками метрик, а не заглушка.
 
 import { render, screen } from '@testing-library/react';
-import { ArchiveCardDialog } from './index';
+import { LayoutBoardArchiveDialog } from './index';
 
-test('публічний вхід Структури віддає робочий ArchiveCardDialog (SCR-04, AC-12)', () => {
+test('публічний вхід Структури віддає робочий LayoutBoardArchiveDialog (SCR-04, AC-12)', () => {
   render(
-    <ArchiveCardDialog
+    <LayoutBoardArchiveDialog
       cardTitle="Навчання (дубль)"
       metricBlocks={[
         { metricBlockId: 'mb-1', label: 'книги' },

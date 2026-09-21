@@ -770,6 +770,51 @@ test('CH-10: перемикання на "Готово до розкладанн
   expect(screen.getByTestId('card-card-b').style.left).toBe('');
 });
 
+// code-review 2026-09-21 (correctness): перемикання ПІСЛЯ staging на
+// будь-який РЕАЛЬНИЙ режим мусить очистити клієнтську позначку
+// "невизначено" -- інакше картки, щойно розкладені сервером наново
+// (справжній x/y), і далі рахувались би застряглими в треї.
+test('CH-10 review-fix: перемикання зі staging на реальний режим повертає картки на канву, не лишає їх у треї', async () => {
+  const loadLayout = vi
+    .fn()
+    .mockResolvedValueOnce(baseState({ layoutMode: 'free' })) // початкове завантаження
+    .mockResolvedValueOnce(baseState({ layoutMode: 'staging' })) // після переходу в staging (сервер x/y не міняє)
+    .mockResolvedValueOnce(
+      baseState({
+        layoutMode: 'balance',
+        cards: [
+          { cardId: 'card-a', cardTitle: 'Картка A', x: 15, y: 25, healthState: null },
+          { cardId: 'card-b', cardTitle: 'Картка B', x: 55, y: 65, healthState: null },
+        ],
+      }),
+    ); // після переходу в balance -- сервер дав СПРАВЖНІ нові позиції
+  const props = { ...baseProps(), loadLayout };
+  render(<LayoutBoard {...props} />);
+
+  await screen.findByTestId('canvas');
+  fireEvent.click(screen.getByRole('button', { name: 'Конфігурація' }));
+  fireEvent.click(await screen.findByRole('radio', { name: 'Готово до розкладання' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Змінити' }));
+
+  const tray = await screen.findByTestId('unassigned-tray');
+  await waitFor(() => expect(tray.contains(screen.getByTestId('card-card-a'))).toBe(true));
+
+  fireEvent.click(screen.getByRole('button', { name: 'Конфігурація' }));
+  fireEvent.click(await screen.findByRole('radio', { name: 'Баланс навколо ядра' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Змінити' }));
+
+  await waitFor(() => expect(loadLayout).toHaveBeenCalledTimes(3));
+  // Трей більше НЕ рендериться взагалі -- жодної нерозкладеної картки й
+  // жодного активного драгу (showTray === false), тож `queryByTestId` тут
+  // -- сам факт відсутності контейнера трею, найпряміший доказ, що обидві
+  // картки повернулись на канву.
+  await waitFor(() => expect(screen.queryByTestId('unassigned-tray')).toBeNull());
+  expect(screen.getByTestId('card-card-a')).toBeTruthy();
+  expect(screen.getByTestId('card-card-b')).toBeTruthy();
+});
+
 // CH-02 (docs/features/structure/changes.md, скоординовано з life-area-card
 // CH-02): м'ячик стану на чипі картки -- власний канал (loadLayout), не
 // перевикористання UI картки.

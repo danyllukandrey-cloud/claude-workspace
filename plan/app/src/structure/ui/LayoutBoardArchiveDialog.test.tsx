@@ -10,10 +10,10 @@
 // fetch() у компоненті.
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { ArchiveCardDialog } from './ArchiveCardDialog';
-import type { ArchiveCardDialogProps } from './ArchiveCardDialog';
+import { LayoutBoardArchiveDialog } from './LayoutBoardArchiveDialog';
+import type { LayoutBoardArchiveDialogProps } from './LayoutBoardArchiveDialog';
 
-function baseProps(overrides: Partial<ArchiveCardDialogProps> = {}): ArchiveCardDialogProps {
+function baseProps(overrides: Partial<LayoutBoardArchiveDialogProps> = {}): LayoutBoardArchiveDialogProps {
   return {
     cardTitle: 'Навчання (дубль)',
     metricBlocks: [
@@ -34,7 +34,7 @@ function baseProps(overrides: Partial<ArchiveCardDialogProps> = {}): ArchiveCard
 
 test('default: показує чекбокс на кожну метрику й обидві кнопки дій', () => {
   const props = baseProps();
-  render(<ArchiveCardDialog {...props} />);
+  render(<LayoutBoardArchiveDialog {...props} />);
 
   expect(screen.getByText(/книги/)).toBeTruthy();
   expect(screen.getByText(/курси/)).toBeTruthy();
@@ -45,7 +45,7 @@ test('default: показує чекбокс на кожну метрику й �
 
 test('CH-06 п.2/3: чекбокс -> вибір картки-цілі -> "Перенести" зʼявляється лише після вибору й переносить ОДРАЗУ', async () => {
   const props = baseProps();
-  render(<ArchiveCardDialog {...props} />);
+  render(<LayoutBoardArchiveDialog {...props} />);
 
   const toggles = screen.getAllByRole('checkbox');
   fireEvent.click(toggles[1]); // "курси" -> хочу перенести
@@ -67,7 +67,7 @@ test('CH-06 п.2/3: чекбокс -> вибір картки-цілі -> "Пе�
 
 test('CH-06 п.4: зняв чекбокс -- форма скидається до вибору картки (select/кнопка зникають, обраний target очищається)', async () => {
   const props = baseProps();
-  render(<ArchiveCardDialog {...props} />);
+  render(<LayoutBoardArchiveDialog {...props} />);
 
   const toggles = screen.getAllByRole('checkbox');
   fireEvent.click(toggles[0]); // "книги"
@@ -86,7 +86,7 @@ test('CH-06 п.4: зняв чекбокс -- форма скидається д�
 
 test('перенесена метрика показує "Перенесено", чекбокс блокується, повторний "Перенести" неможливий', async () => {
   const props = baseProps();
-  render(<ArchiveCardDialog {...props} />);
+  render(<LayoutBoardArchiveDialog {...props} />);
 
   fireEvent.click(screen.getAllByRole('checkbox')[0]);
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'card-sport' } });
@@ -97,10 +97,35 @@ test('перенесена метрика показує "Перенесено",
   expect(screen.queryByRole('combobox')).toBeNull();
 });
 
+// code-review 2026-09-21 (correctness, підтверджено двома незалежними
+// перевірками): поки перенесення метрики ще в польоті, ні чекбокс ЦЬОГО
+// рядка, ні "Архівувати без перенесення" не мають бути клікабельними --
+// інакше можна або скасувати чекбокс так, що "Перенесено" все одно
+// зʼявиться пізніше (плутанина), або відправити архівацію картки, поки
+// перенесення метрики з неї ще летить (гонка запитів на сервер).
+test('CH-06 review-fix: під час перенесення в польоті чекбокс і "Архівувати без перенесення" заблоковані', async () => {
+  let resolveTransfer: (() => void) | undefined;
+  const onTransferMetricBlock = vi.fn(() => new Promise<void>((resolve) => { resolveTransfer = resolve; }));
+  const props = baseProps({ onTransferMetricBlock });
+  render(<LayoutBoardArchiveDialog {...props} />);
+
+  fireEvent.click(screen.getAllByRole('checkbox')[0]);
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'card-sport' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Перенести' }));
+
+  await screen.findByRole('button', { name: 'Переноситься…' });
+  expect((screen.getAllByRole('checkbox')[0] as HTMLInputElement).disabled).toBe(true);
+  expect(screen.getByRole('button', { name: 'Архівувати без перенесення' }).hasAttribute('disabled')).toBe(true);
+
+  resolveTransfer?.();
+  await screen.findByText('Перенесено');
+  expect(screen.getByRole('button', { name: 'Архівувати без перенесення' }).hasAttribute('disabled')).toBe(false);
+});
+
 test('помилка перенесення -- inline Banner у рядку, метрика лишається неперенесеною (можна повторити)', async () => {
   const onTransferMetricBlock = vi.fn().mockRejectedValue(new Error('Не вдалося перенести'));
   const props = baseProps({ onTransferMetricBlock });
-  render(<ArchiveCardDialog {...props} />);
+  render(<LayoutBoardArchiveDialog {...props} />);
 
   fireEvent.click(screen.getAllByRole('checkbox')[0]);
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'card-sport' } });
@@ -114,7 +139,7 @@ test('помилка перенесення -- inline Banner у рядку, ме
 
 test('empty: жодного блоку-метрики -- лише "Архівувати без перенесення" й "Скасувати", жодного рядка з чекбоксом', () => {
   const props = baseProps({ metricBlocks: [] });
-  render(<ArchiveCardDialog {...props} />);
+  render(<LayoutBoardArchiveDialog {...props} />);
 
   expect(screen.queryByRole('checkbox')).toBeNull();
   expect(screen.getByRole('button', { name: 'Архівувати без перенесення' })).toBeTruthy();
@@ -122,7 +147,7 @@ test('empty: жодного блоку-метрики -- лише "Архіву�
 
 test('CH-06 п.5: "Архівувати без перенесення" викликає onArchive без метрик-логіки, потім onArchived', async () => {
   const props = baseProps();
-  render(<ArchiveCardDialog {...props} />);
+  render(<LayoutBoardArchiveDialog {...props} />);
 
   fireEvent.click(screen.getByRole('button', { name: 'Архівувати без перенесення' }));
 
@@ -133,7 +158,7 @@ test('CH-06 п.5: "Архівувати без перенесення" викл�
 test('помилка архівації -- Banner variant="error", форма лишається доступною (не toast/alert)', async () => {
   const onArchive = vi.fn().mockRejectedValue(new Error('Не вдалося архівувати картку'));
   const props = baseProps({ onArchive });
-  render(<ArchiveCardDialog {...props} />);
+  render(<LayoutBoardArchiveDialog {...props} />);
 
   fireEvent.click(screen.getByRole('button', { name: 'Архівувати без перенесення' }));
 
@@ -145,7 +170,7 @@ test('помилка архівації -- Banner variant="error", форма л
 
 test('скасування викликає onCancel і НЕ викликає onArchive', () => {
   const props = baseProps();
-  render(<ArchiveCardDialog {...props} />);
+  render(<LayoutBoardArchiveDialog {...props} />);
 
   fireEvent.click(screen.getByRole('button', { name: 'Скасувати' }));
 
@@ -155,7 +180,7 @@ test('скасування викликає onCancel і НЕ викликає on
 
 test('без injected onTransferMetricBlock -- жодного чекбокса, лише назви метрик', () => {
   const props = baseProps({ onTransferMetricBlock: undefined });
-  render(<ArchiveCardDialog {...props} />);
+  render(<LayoutBoardArchiveDialog {...props} />);
 
   expect(screen.getByText(/книги/)).toBeTruthy();
   expect(screen.queryByRole('checkbox')).toBeNull();
@@ -164,7 +189,7 @@ test('без injected onTransferMetricBlock -- жодного чекбокса, 
 
 test('без жодної картки-цілі (targetCards порожній) -- теж жодного чекбокса', () => {
   const props = baseProps({ targetCards: [] });
-  render(<ArchiveCardDialog {...props} />);
+  render(<LayoutBoardArchiveDialog {...props} />);
 
   expect(screen.queryByRole('checkbox')).toBeNull();
 });

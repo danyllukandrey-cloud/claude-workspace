@@ -6,6 +6,15 @@
 // колоді, і з'являлась знову внизу Схеми при поверненні на вкладку, бо
 // closeCard і archiveCard були ДВОМА різними діями з різним станом).
 //
+// code-review 2026-09-21: файл/експорт ЩЕ РАЗ перейменовано з
+// "ArchiveCardDialog" на "LayoutBoardArchiveDialog" -- перша назва
+// збігалась дослівно з ІНШИМ, функціонально відмінним компонентом
+// (`plan/app/src/cards/life-area-card/ui/ArchiveCardDialog.tsx` -- простий
+// cardName/onArchive/onCancel-підтверджувач, без перенесення метрик).
+// Пошук/автоімпорт за назвою міг би сплутати два файли з різними формами
+// пропсів; префікс "LayoutBoard" одразу показує, звідки цей діалог
+// відкривається.
+//
 // CH-05 архітектура: "Архівувати" тепер викликає ТОЙ САМИЙ injected
 // `archiveCard`, що вже архівує картку з колоди (life-area-card
 // CardFace/CardBack "..." -> "Архівувати") -- той самий use-case (D-103,
@@ -31,21 +40,21 @@
 import { useState } from 'react';
 import { Banner, Button, Spinner } from '../../shared/ui';
 
-export interface ArchiveCardDialogMetricBlock {
+export interface LayoutBoardArchiveDialogMetricBlock {
   metricBlockId: string;
   label: string;
 }
 
-export interface ArchiveCardDialogTargetCard {
+export interface LayoutBoardArchiveDialogTargetCard {
   cardId: string;
   cardTitle: string;
 }
 
-export interface ArchiveCardDialogProps {
+export interface LayoutBoardArchiveDialogProps {
   /** Назва картки, що архівується -- лише для тексту діалогу (заголовок сторінки лишається "Архівування", CH-06 п.1). */
   cardTitle: string;
-  metricBlocks: ArchiveCardDialogMetricBlock[];
-  targetCards: ArchiveCardDialogTargetCard[];
+  metricBlocks: LayoutBoardArchiveDialogMetricBlock[];
+  targetCards: LayoutBoardArchiveDialogTargetCard[];
   /**
    * CH-06: переносить ОДИН блок-метрику одразу по кліку "Перенести" в його
    * рядку -- той самий injected onTransferMetricBlock, що вже працює на
@@ -69,23 +78,30 @@ interface RowState {
   error?: string;
 }
 
-function initialRows(metricBlocks: ArchiveCardDialogMetricBlock[]): Record<string, RowState> {
+function initialRows(metricBlocks: LayoutBoardArchiveDialogMetricBlock[]): Record<string, RowState> {
   return Object.fromEntries(
     metricBlocks.map((mb) => [mb.metricBlockId, { checked: false, targetCardId: '', transferring: false, transferred: false }])
   );
 }
 
-export function ArchiveCardDialog({
+export function LayoutBoardArchiveDialog({
   metricBlocks,
   targetCards,
   onTransferMetricBlock,
   onArchive,
   onArchived,
   onCancel,
-}: ArchiveCardDialogProps): JSX.Element {
+}: LayoutBoardArchiveDialogProps): JSX.Element {
   const [rows, setRows] = useState<Record<string, RowState>>(() => initialRows(metricBlocks));
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [archiving, setArchiving] = useState(false);
+  // code-review 2026-09-21 (correctness, підтверджено двома незалежними
+  // перевірками): чи є хоч один рядок, чиє перенесення зараз у польоті --
+  // гейтить і чекбокс ЦЬОГО рядка (не можна скасувати перенесення, що вже
+  // летить, лише щоб отримати "Перенесено" вже після скасування), і кнопку
+  // "Архівувати без перенесення" (не можна архівувати картку, поки метрика з
+  // неї ще переноситься -- обидва запити летять на сервер одночасно).
+  const anyRowTransferring = Object.values(rows).some((row) => row.transferring);
 
   const patchRow = (id: string, patch: Partial<RowState>): void =>
     setRows((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
@@ -145,6 +161,7 @@ export function ArchiveCardDialog({
       <button
         type="button"
         onClick={handleArchive}
+        disabled={anyRowTransferring}
         className="rounded-control border border-border bg-surface px-4 py-2.5 text-sm font-bold text-ink shadow-btn backdrop-blur-xl transition-colors enabled:hover:bg-border disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
       >
         Архівувати без перенесення
@@ -186,7 +203,7 @@ export function ArchiveCardDialog({
                     type="checkbox"
                     aria-label="Перенести"
                     checked={row.checked}
-                    disabled={row.transferred}
+                    disabled={row.transferred || row.transferring}
                     onChange={() => toggleChecked(mb.metricBlockId)}
                     className="h-4 w-4 accent-ink"
                   />

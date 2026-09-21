@@ -1,7 +1,7 @@
 // SCR-01 — Декларація (spec.md AC-09, AC-10).
 //
 // DI (plan/app/CLAUDE.md, той самий стиль, що CardDetailScreen/
-// ArchiveCardDialog): loadStructure/onSave — ін'єктовані пропи-функції,
+// LayoutBoardArchiveDialog): loadStructure/onSave — ін'єктовані пропи-функції,
 // жодного fetch() тут. Реальний HTTP-транспорт (ports/) підключає
 // викликач цього компонента.
 //
@@ -77,6 +77,15 @@ export function DeclarationScreen({ loadStructure, onSave }: DeclarationScreenPr
   // "На зад" мав що відкидати (VIEW завжди читає лише `declaration`).
   const [draft, setDraft] = useState('');
   const [banner, setBanner] = useState<{ variant: 'success' | 'error' | 'info'; text: string } | null>(null);
+  // code-review 2026-09-21 (correctness): захист від "На зад" під час
+  // збереження, що вже в польоті -- той самий isSaving-підхід, що
+  // isSavingTracking (life-area-card CardBack.tsx) і archiving
+  // (LayoutBoardArchiveDialog.tsx нижче). Без нього клік "На зад" одразу після
+  // "Декларувати" (поки onSave ще не відповів) переключав екран на VIEW зі
+  // старим текстом, а щойно запит резолвився -- persist() мовчки
+  // перезаписував його чернеткою й показував банер "Збережено" на екрані,
+  // який користувач вважав незміненим.
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     loadStructure().then((state) => {
@@ -106,6 +115,8 @@ export function DeclarationScreen({ loadStructure, onSave }: DeclarationScreenPr
   };
 
   const persist = async (): Promise<void> => {
+    if (isSaving) return;
+    setIsSaving(true);
     try {
       await onSave({ declaration: draft });
       setDeclaration(draft);
@@ -125,6 +136,8 @@ export function DeclarationScreen({ loadStructure, onSave }: DeclarationScreenPr
         setDeclaration(draft);
         setMode('view');
       }
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -181,8 +194,8 @@ export function DeclarationScreen({ loadStructure, onSave }: DeclarationScreenPr
           CH-08: "На зад" -- сусід кнопки збереження в тому самому
           floating-блоці, зліва (flex gap), лише в EDIT. */}
       <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 gap-3">
-        {mode !== 'view' && <Button label="На зад" onClick={cancelEdit} />}
-        <Button label={mode === 'view' ? 'Змінити декларацію' : 'Декларувати'} onClick={handleButtonClick} />
+        {mode !== 'view' && <Button label="На зад" onClick={cancelEdit} disabled={isSaving} />}
+        <Button label={mode === 'view' ? 'Змінити декларацію' : 'Декларувати'} onClick={handleButtonClick} disabled={isSaving} />
       </div>
     </div>
   );

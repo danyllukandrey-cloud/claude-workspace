@@ -69,9 +69,6 @@ interface FakeServer {
   entryCountByCard: Record<string, number>;
   patchBodies: unknown[];
   historyAsOf: string[];
-  closeCalls: { cardId: string; body: unknown }[];
-  /** POST .../close відповідає 409 metric_block.name_collision (life-area-card AC-15). */
-  closeNameCollision?: boolean;
   /** T11 (life-plan-levels): пункти ПЛАНу, які віддає GET /plan-items (сторінками по `planPageSize`). */
   planItems: FakePlanItem[];
   /** Скільки пунктів вміщає одна сторінка -- щоб перевірити, що клієнт іде по курсору до кінця. */
@@ -100,7 +97,6 @@ function makeServer(overrides: Partial<FakeServer> = {}): FakeServer {
     entryCountByCard: {},
     patchBodies: [],
     historyAsOf: [],
-    closeCalls: [],
     planItems: [],
     planPageSize: 50,
     planCalls: [],
@@ -186,18 +182,6 @@ function fakeFetch(server: FakeServer): typeof fetch {
         has_prev: false,
         next_cursor: null,
       });
-    }
-
-    const closeCard = url.match(/^\/api\/v1\/structure\/layout\/([^/?]+)\/close$/);
-    if (closeCard) {
-      server.closeCalls.push({ cardId: closeCard[1], body: JSON.parse(String(init?.body ?? 'null')) });
-      if (server.closeNameCollision) {
-        return jsonResponse(
-          { code: 'metric_block.name_collision', message: 'У картці-призначенні вже є блок із такою назвою' },
-          409,
-        );
-      }
-      return jsonResponse(positionDto({ cardId: closeCard[1], x: null }));
     }
 
     if (url === '/api/v1/structure/connections' && method === 'GET') {

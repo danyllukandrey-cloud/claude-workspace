@@ -48,7 +48,7 @@
 // (структуроспецифічний POST /structure/layout/{cardId}/close) прибрано
 // повністю -- дія на чипі картки тепер "Архівувати", той самий injected
 // archiveCard, що колода (life-area-card), і той самий injected
-// onTransferMetricBlock для перенесення метрик у ArchiveCardDialog.tsx.
+// onTransferMetricBlock для перенесення метрик у LayoutBoardArchiveDialog.tsx.
 //
 // CH-10 (docs/features/structure/changes.md): перемикання конфігурації на
 // "Готово до розкладання" переносить усі картки з канви в трей.
@@ -56,8 +56,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { Banner, Button, ConfirmDialog, EmptyState, Spinner } from '../../shared/ui';
-import { ArchiveCardDialog } from './ArchiveCardDialog';
-import type { ArchiveCardDialogMetricBlock, ArchiveCardDialogTargetCard } from './ArchiveCardDialog';
+import { LayoutBoardArchiveDialog } from './LayoutBoardArchiveDialog';
+import type { LayoutBoardArchiveDialogMetricBlock, LayoutBoardArchiveDialogTargetCard } from './LayoutBoardArchiveDialog';
 import type { LayoutMode } from '../domain/layout';
 import { clampPercent } from '../domain/layout';
 
@@ -108,9 +108,9 @@ export interface LayoutBoardConnection {
 
 /** Те, що SCR-04 (тепер "Архівування") має знати про картку, яку архівують (AC-12). */
 export interface LayoutBoardCloseCardOptions {
-  metricBlocks: ArchiveCardDialogMetricBlock[];
+  metricBlocks: LayoutBoardArchiveDialogMetricBlock[];
   /** Куди можна перенести метрику -- решта активних карток власника. */
-  targetCards: ArchiveCardDialogTargetCard[];
+  targetCards: LayoutBoardArchiveDialogTargetCard[];
 }
 
 export interface LayoutBoardState {
@@ -444,6 +444,16 @@ export function LayoutBoard({
               // невизначеними, щоб канва порожніла й користувач розкладав
               // наново (юзер-кейс п.3-4).
               setPendingUnassignedIds(new Set(loaded.cards.filter((card) => card.x !== null).map((card) => card.cardId)));
+            } else {
+              // code-review 2026-09-21 (correctness): БУДЬ-ЯКИЙ інший режим --
+              // сервер щойно віддав СПРАВЖНІ позиції (реальний авто-розклад
+              // нового режиму), тож жодна стара клієнтська позначка
+              // "невизначено" більше не актуальна. Без цього скидання картка,
+              // яку раніше перетягнули в трей (CH-04) чи яка лишилась
+              // позначеною після переходу в staging (CH-10), і далі рахувалась
+              // би "невизначеною" тут, хоча `loaded.cards` вже дає їй реальний
+              // x/y -- картка зависала б у треї попри те, що сервер її розклав.
+              setPendingUnassignedIds(new Set());
             }
           })
           .catch((err: unknown) => {
@@ -633,13 +643,20 @@ export function LayoutBoard({
    * курсором/пальцем, БЕЗ стиснення) чи збережена (стиснута по Y, CH-04
    * п.1, canvasScaleY вище -- інакше картка "відривалась" би від пальця під
    * час активного драгу).
+   *
+   * code-review 2026-09-21 (efficiency): `scaleY` -- параметр, не виклик
+   * `canvasScaleY()` тут -- значення однакове для ВСІХ карток і кінців
+   * зв'язків в межах одного рендеру (той самий `canvasRect`/`trayRect`),
+   * а сама функція робить 2 `getBoundingClientRect()`. Викликач рахує її
+   * РІВНО ОДИН раз на рендер і передає сюди готове число, замість 2*(N
+   * карток + 2*M кінців зв'язків) зайвих вимірювань DOM.
    */
-  function renderedPosition(card: LayoutBoardCard): { x: number; y: number } | null {
+  function renderedPosition(card: LayoutBoardCard, scaleY: number): { x: number; y: number } | null {
     if (draggingCardId === card.cardId && liveDragRef.current?.cardId === card.cardId) {
       return { x: liveDragRef.current.x, y: liveDragRef.current.y };
     }
     if (card.x === null || card.y === null) return null;
-    return { x: card.x, y: card.y * canvasScaleY() };
+    return { x: card.x, y: card.y * scaleY };
   }
 
   /**
@@ -685,6 +702,10 @@ export function LayoutBoard({
   const isEffectivelyUnassigned = (card: LayoutBoardCard): boolean => card.x === null || pendingUnassignedIds.has(card.cardId);
   const unassigned = state.cards.filter((card) => isEffectivelyUnassigned(card) && card.cardId !== draggingCardId);
   const canvasCards = state.cards.filter((card) => !isEffectivelyUnassigned(card) || card.cardId === draggingCardId);
+  // code-review 2026-09-21 (efficiency): рахуємо ОДИН раз на рендер, не в
+  // кожному виклику renderedPosition (дивись коментар там) -- значення
+  // однакове для всіх карток/зв'язків цього рендеру.
+  const scaleY = canvasScaleY();
 
   // CH-04: купка -- явна ціль перетягування, доступна ще ДО того, як у ній
   // щось лежить (п.2's "давало явний вибір визначено/невизначено") -- тому
@@ -761,8 +782,8 @@ export function LayoutBoard({
             const a = cardById.get(connection.cardIdA);
             const b = cardById.get(connection.cardIdB);
             if (!a || !b) return null;
-            const posA = renderedPosition(a);
-            const posB = renderedPosition(b);
+            const posA = renderedPosition(a, scaleY);
+            const posB = renderedPosition(b, scaleY);
             if (!posA || !posB) return null;
             // Живе тестування (Андрій): "При зєднання стрілкою стрілки самої
             // не видно" -- чип картки в DOM йде ПІСЛЯ svg-шару (рендериться
@@ -825,7 +846,7 @@ export function LayoutBoard({
         </svg>
 
         {canvasCards.map((card) => {
-          const pos = renderedPosition(card);
+          const pos = renderedPosition(card, scaleY);
           if (!pos) return null;
           return (
             <div
@@ -834,6 +855,17 @@ export function LayoutBoard({
                 if (el) cardElementsRef.current.set(card.cardId, el);
                 else cardElementsRef.current.delete(card.cardId);
               }}
+              // code-review 2026-09-21 (language-pitfall): `showTray` (і тому
+              // canvasScaleY()) стає true/<1 на ввесь час БУДЬ-ЯКОГО драгу,
+              // не лише переносу в трей -- щойно драг завершується (і трей
+              // ховається, бо нерозкладених нема), масштаб миттєво
+              // повертається до 1, і всі картки на канві "стрибають" в один
+              // кадр. Плавний перехід (transition) для карток, що ЗАРАЗ НЕ
+              // тягнуться, ховає цей стрибок за коротку анімацію; сама
+              // картка, що тягнеться, transition НЕ отримує -- інакше вона
+              // відставала б від пальця (той самий принцип "1:1 з курсором",
+              // що canvasScaleY вище вже враховує для неї окремо).
+              className={card.cardId === draggingCardId ? undefined : 'transition-all duration-150 ease-out'}
               style={{ position: 'absolute', left: `${pos.x}%`, top: `${pos.y}%`, transform: 'translate(-50%, -50%)' }}
             >
               {cardChip(card)}
@@ -890,7 +922,7 @@ export function LayoutBoard({
             {archiveOptions === null ? (
               <Spinner />
             ) : (
-              <ArchiveCardDialog
+              <LayoutBoardArchiveDialog
                 key={archivingCard.cardId}
                 cardTitle={archivingCard.cardTitle}
                 metricBlocks={archiveOptions.metricBlocks}

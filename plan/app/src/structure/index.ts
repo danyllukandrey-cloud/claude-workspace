@@ -24,10 +24,10 @@ export type {
 // ними свої fetch-реалізації, LayoutBoard -- свої пропи.
 //
 // CH-05/CH-06 (docs/features/structure/changes.md): CloseCardDialog.tsx ->
-// ArchiveCardDialog.tsx -- "Закрити напрямок" стало "Архівувати", разом із
+// LayoutBoardArchiveDialog.tsx -- "Закрити напрямок" стало "Архівувати", разом із
 // файлом перейменовано й типи, що з нього виходять.
-export { ArchiveCardDialog } from './ui/ArchiveCardDialog';
-export type { ArchiveCardDialogProps, ArchiveCardDialogMetricBlock, ArchiveCardDialogTargetCard } from './ui/ArchiveCardDialog';
+export { LayoutBoardArchiveDialog } from './ui/LayoutBoardArchiveDialog';
+export type { LayoutBoardArchiveDialogProps, LayoutBoardArchiveDialogMetricBlock, LayoutBoardArchiveDialogTargetCard } from './ui/LayoutBoardArchiveDialog';
 
 export { AnalyticsScreen } from './ui/AnalyticsScreen';
 export type {

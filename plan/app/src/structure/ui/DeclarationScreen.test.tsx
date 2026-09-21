@@ -2,7 +2,7 @@
 // -- default/empty/loading/edit/saved/offline-queued/error states
 // (spec.md AC-09, AC-10).
 //
-// DI style (plan/app/CLAUDE.md, matches CardDetailScreen/ArchiveCardDialog):
+// DI style (plan/app/CLAUDE.md, matches CardDetailScreen/LayoutBoardArchiveDialog):
 // loadStructure/onSave are injected props, no fetch() inside the component.
 //
 // Живе тестування (Андрій): екран має ДВА стани -- VIEW (read-only текст,
@@ -125,6 +125,30 @@ test('CH-08: "На зад" повертає на VIEW без onSave і відк�
   fireEvent.click(screen.getByRole('button', { name: 'Змінити декларацію' }));
   const textareaAgain = await screen.findByLabelText(TEXTAREA_LABEL);
   expect((textareaAgain as HTMLTextAreaElement).value).toBe('Навчання й здоров’я зараз важливіші за кар’єру.');
+});
+
+// code-review 2026-09-21 (correctness): без isSaving-гейту клік "На зад" ПІД
+// ЧАС того, як onSave ще в польоті, перемикав екран на VIEW, а щойно
+// збереження резолвилось -- persist() мовчки перезаписував текст чернеткою й
+// показував "Збережено" на екрані, який користувач щойно "скасував". Обидві
+// кнопки мають бути недоступні, поки збереження в польоті.
+test('CH-08 review-fix: "На зад" і кнопка збереження заблоковані, поки onSave у польоті', async () => {
+  let resolveSave: (() => void) | undefined;
+  const onSave = vi.fn(() => new Promise<void>((resolve) => { resolveSave = resolve; }));
+  const props = { ...baseProps(), onSave };
+  render(<DeclarationScreen {...props} />);
+
+  await screen.findByText('Навчання й здоров’я зараз важливіші за кар’єру.');
+  fireEvent.click(screen.getByRole('button', { name: 'Змінити декларацію' }));
+  fireEvent.change(await screen.findByLabelText(TEXTAREA_LABEL), { target: { value: 'новий текст' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Декларувати' }));
+
+  await waitFor(() => expect(onSave).toHaveBeenCalled());
+  expect(screen.getByRole('button', { name: 'На зад' }).hasAttribute('disabled')).toBe(true);
+  expect(screen.getByRole('button', { name: 'Декларувати' }).hasAttribute('disabled')).toBe(true);
+
+  resolveSave?.();
+  await screen.findByText('новий текст');
 });
 
 test('AC-10/CH-08: клік "Декларувати" в EDIT викликає onSave лише з declaration, показує Banner "saved" і повертає на VIEW', async () => {

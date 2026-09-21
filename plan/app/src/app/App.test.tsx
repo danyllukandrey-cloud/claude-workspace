@@ -527,7 +527,7 @@ test('ISS-55 stage 3: розархівування картки в Архіві 
 });
 
 // ISS-56 (docs/ISSUES.md): CardFace отримав "Архівувати" в меню "..." ->
-// ArchiveCardDialog (T29) -> injected AppProps.archiveCard(cardId) (DELETE
+// LayoutBoardArchiveDialog (T29) -> injected AppProps.archiveCard(cardId) (DELETE
 // /cards/{cardId}, main.tsx) -> D-121: після успіху DeckFrontCard.onArchived
 // сигналить DeckScreen перезавантажити колоду (та сама "ремаунт
 // перезавантажує" ідіома, що раніше мав onBack у прибраному CardDetailScreen).
