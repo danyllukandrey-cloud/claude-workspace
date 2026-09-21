@@ -781,7 +781,7 @@ test('T29+D-121+D-123: після входу видно і дефолтний е
   // D-123: ці 3 пункти більше не в нижньому нав-меню одразу -- за значком
   // шестерні (верхній бар) у меню, role="menu".
   fireEvent.click(await screen.findByRole('button', { name: 'Меню налаштувань' }));
-  expect(await screen.findByRole('menuitem', { name: 'Налаштування правил' })).toBeTruthy();
+  expect(await screen.findByRole('menuitem', { name: 'Планування правил спілкування з Агентом' })).toBeTruthy();
   expect(await screen.findByRole('menuitem', { name: 'Лог дій' })).toBeTruthy();
   expect(await screen.findByRole('menuitem', { name: 'Обліковий запис і дані' })).toBeTruthy();
 });
@@ -823,7 +823,7 @@ test('Задача 9: клік по самій шестерні, поки мен
   expect(screen.queryByRole('menu')).toBeNull();
 });
 
-test('T29+D-123: клік "Налаштування правил" у меню шестерні перемикає екран на RuleSettingsScreen (loadRules/loadRuleTargetCards)', async () => {
+test('T29+D-123: клік "Планування правил спілкування з Агентом" у меню шестерні перемикає екран на RuleSettingsScreen (loadRules/loadRuleTargetCards)', async () => {
   const props = validSessionProps();
   props.loadRuleTargetCards.mockResolvedValue([{ cardId: 'card-1', cardTitle: 'Спорт' }]);
   props.loadRules.mockResolvedValue([
@@ -832,8 +832,11 @@ test('T29+D-123: клік "Налаштування правил" у меню ш
 
   render(<App {...props} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Меню налаштувань' }));
-  fireEvent.click(await screen.findByRole('menuitem', { name: 'Налаштування правил' }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Планування правил спілкування з Агентом' }));
 
+  // agent CH-01: лише пункт МЕНЮ перейменовано -- сам екран
+  // (RuleSettingsScreen.tsx) лишає свій заголовок "Налаштування правил" без
+  // змін, це поза межами підтвердженого юзер-кейсу CH-01.
   expect(await screen.findByRole('heading', { name: 'Налаштування правил' })).toBeTruthy();
   await waitFor(() => expect(props.loadRules).toHaveBeenCalledWith(null));
   await waitFor(() => expect(props.loadRuleTargetCards).toHaveBeenCalledTimes(1));
