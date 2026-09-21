@@ -1259,6 +1259,20 @@ async function loadAnalytics(): Promise<AnalyticsScreenState> {
     for (const cardId of flagUnmaintainedCards(maintenance)) unmaintainedIds.add(cardId);
   }
 
+  // CH-07 (structure/changes.md): лічильник дій -- ЛИШЕ для карток, які
+  // інакше лишились би в картці показників зовсім порожніми (немає ні
+  // відсотка, ні м'ячика стану trackingMode==='state'). Фільтр звужує список
+  // ДО мережевого запиту, не після -- одна GET .../entries на таку картку,
+  // не на кожну картку поспіль.
+  const cardsNeedingActionCount = cards.filter((card) => {
+    if (card.trackingMode === 'state') return false;
+    return (progressByCardId.get(card.id) ?? null) === null;
+  });
+  const actionCounts = await Promise.all(
+    cardsNeedingActionCount.map(async (card) => ({ id: card.id, actionCount: await fetchCardActionCount(card.id) })),
+  );
+  const actionCountByCardId = new Map(actionCounts.map((entry) => [entry.id, entry.actionCount]));
+
   // AnalyticsScreen.tsx ще не переведений на плоску модель (окремий,
   // паралельний worktree/агент, вимоги 14/15 -- щоб уникнути конфлікту дві
   // задачі свідомо лишились розділені) -- його AnalyticsScreenState.layoutMode
@@ -1300,6 +1314,10 @@ async function loadAnalytics(): Promise<AnalyticsScreenState> {
       unmaintained: unmaintainedIds.has(card.id),
       // CH-02: той самий принцип, що loadLayout -- власний канал.
       healthState: card.trackingMode === 'state' ? card.healthState : null,
+      // CH-07: обчислено вище лише для карток, яким справді бракує і
+      // відсотка, і м'ячика стану -- для решти null (не рахувалось, не
+      // потрібно).
+      actionCount: actionCountByCardId.get(card.id) ?? null,
     })),
   };
 }
@@ -1358,6 +1376,26 @@ async function fetchCardMaintenance(cardId: string): Promise<{ hasMetricBlock: b
     return { hasMetricBlock: blocks.length > 0, entryCount: page.items.length };
   } catch {
     return { hasMetricBlock: false, entryCount: 0 };
+  }
+}
+
+/**
+ * CH-07 (structure/changes.md, closes ISS-39-adjacent gap): для картки без
+ * жодного bounded-блоку (aggregateProgress===null, CardDetailDto не несе
+ * список блоків -- відома нестиковка ISS-39) єдине, з чого клієнт може
+ * скласти чесний лічильник, -- сирі записи. Сума amount УСІХ confirmed
+ * записів картки, по ВСІХ сторінках (collectAllPages, той самий підхід, що
+ * loadBack) -- не лише перша сторінка, як fetchCardMaintenance вище (там
+ * питання "нуль чи не нуль", тут -- "скільки саме"). Збій запиту -> 0, той
+ * самий принцип, що fetchCardMaintenance ("не звинувачуємо на здогад" --
+ * тут "не показуємо число на здогад", нуль замість краху picker'а).
+ */
+async function fetchCardActionCount(cardId: string): Promise<number> {
+  try {
+    const entries = await collectAllPages<EntryDto>((after) => fetchEntryPage(cardId, after));
+    return entries.reduce((sum, entry) => (entry.status === 'confirmed' ? sum + entry.amount : sum), 0);
+  } catch {
+    return 0;
   }
 }
 
