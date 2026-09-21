@@ -286,6 +286,139 @@ test('card-view -> "Розархівувати" при помилці лишає
   expect(button.disabled).toBe(false);
 });
 
+// CH-16 (docs/features/life-area-card/changes.md): "Видалити" в Архіві
+// карток -- назавжди, з підтвердженням через ввід слова "видалити" (той
+// самий ConfirmDialog-патерн, що видалення блоку-метрики/акаунту).
+
+test('CH-16: без injected onDeleteCardPermanently кнопка "Видалити" не рендериться взагалі', async () => {
+  const loadArchivedCards = vi.fn().mockResolvedValue([{ id: 'card-1', name: 'Читання' }]);
+
+  render(
+    <ArchiveScreen
+      loadArchivedCards={loadArchivedCards}
+      onRestoreCard={vi.fn()}
+      loadArchivedCardHistory={vi.fn().mockResolvedValue([])}
+    />,
+  );
+
+  await screen.findByText('Читання');
+  expect(screen.queryByRole('button', { name: /Видалити назавжди/ })).toBeNull();
+});
+
+test('CH-16: клік на "Видалити" в списку архіву НЕ відкриває картку (stopPropagation) -- показує підтвердження', async () => {
+  const loadArchivedCards = vi.fn().mockResolvedValue([{ id: 'card-1', name: 'Читання' }]);
+
+  render(
+    <ArchiveScreen
+      loadArchivedCards={loadArchivedCards}
+      onRestoreCard={vi.fn()}
+      onDeleteCardPermanently={vi.fn()}
+      loadArchivedCardHistory={vi.fn().mockResolvedValue([])}
+    />,
+  );
+
+  await screen.findByText('Читання');
+  fireEvent.click(screen.getByRole('button', { name: 'Видалити назавжди картку «Читання»' }));
+
+  expect(screen.queryByRole('heading', { name: 'Читання' })).toBeNull(); // не перейшло в card-view
+  expect(screen.getByText(/Видалити назавжди картку «Читання»\?/)).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Видалити назавжди' })).toBeTruthy();
+});
+
+test('CH-16: кнопка підтвердження вимкнена, поки не введено точне слово «видалити»', async () => {
+  const loadArchivedCards = vi.fn().mockResolvedValue([{ id: 'card-1', name: 'Читання' }]);
+
+  render(
+    <ArchiveScreen
+      loadArchivedCards={loadArchivedCards}
+      onRestoreCard={vi.fn()}
+      onDeleteCardPermanently={vi.fn()}
+      loadArchivedCardHistory={vi.fn().mockResolvedValue([])}
+    />,
+  );
+
+  await screen.findByText('Читання');
+  fireEvent.click(screen.getByRole('button', { name: 'Видалити назавжди картку «Читання»' }));
+
+  const confirmButton = screen.getByRole('button', { name: 'Видалити назавжди' }) as HTMLButtonElement;
+  expect(confirmButton.disabled).toBe(true);
+
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'видалити' } });
+  expect(confirmButton.disabled).toBe(false);
+});
+
+test('CH-16: підтвердження викликає onDeleteCardPermanently(cardId), картка зникає зі списку', async () => {
+  const items = [
+    { id: 'card-1', name: 'Читання' },
+    { id: 'card-2', name: 'Медитація' },
+  ];
+  const loadArchivedCards = vi.fn().mockResolvedValue(items);
+  const onDeleteCardPermanently = vi.fn().mockResolvedValue(undefined);
+
+  render(
+    <ArchiveScreen
+      loadArchivedCards={loadArchivedCards}
+      onRestoreCard={vi.fn()}
+      onDeleteCardPermanently={onDeleteCardPermanently}
+      loadArchivedCardHistory={vi.fn().mockResolvedValue([])}
+    />,
+  );
+
+  await screen.findByText('Читання');
+  fireEvent.click(screen.getByRole('button', { name: 'Видалити назавжди картку «Читання»' }));
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'видалити' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Видалити назавжди' }));
+
+  expect(onDeleteCardPermanently).toHaveBeenCalledWith('card-1');
+  await screen.findByText('Медитація');
+  expect(screen.queryByText('Читання')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Видалити назавжди' })).toBeNull(); // діалог закрився
+});
+
+test('CH-16: клік "Скасувати" закриває підтвердження без виклику onDeleteCardPermanently, картка лишається', async () => {
+  const loadArchivedCards = vi.fn().mockResolvedValue([{ id: 'card-1', name: 'Читання' }]);
+  const onDeleteCardPermanently = vi.fn();
+
+  render(
+    <ArchiveScreen
+      loadArchivedCards={loadArchivedCards}
+      onRestoreCard={vi.fn()}
+      onDeleteCardPermanently={onDeleteCardPermanently}
+      loadArchivedCardHistory={vi.fn().mockResolvedValue([])}
+    />,
+  );
+
+  await screen.findByText('Читання');
+  fireEvent.click(screen.getByRole('button', { name: 'Видалити назавжди картку «Читання»' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Скасувати' }));
+
+  expect(onDeleteCardPermanently).not.toHaveBeenCalled();
+  expect(screen.getByText('Читання')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Видалити назавжди' })).toBeNull();
+});
+
+test('CH-16: провал onDeleteCardPermanently показує Banner з помилкою, картка НЕ зникає', async () => {
+  const loadArchivedCards = vi.fn().mockResolvedValue([{ id: 'card-1', name: 'Читання' }]);
+  const onDeleteCardPermanently = vi.fn().mockRejectedValue(new Error('Не вдалося видалити'));
+
+  render(
+    <ArchiveScreen
+      loadArchivedCards={loadArchivedCards}
+      onRestoreCard={vi.fn()}
+      onDeleteCardPermanently={onDeleteCardPermanently}
+      loadArchivedCardHistory={vi.fn().mockResolvedValue([])}
+    />,
+  );
+
+  await screen.findByText('Читання');
+  fireEvent.click(screen.getByRole('button', { name: 'Видалити назавжди картку «Читання»' }));
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'видалити' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Видалити назавжди' }));
+
+  expect(await screen.findByText('Не вдалося видалити')).toBeTruthy();
+  expect(screen.getByText('Читання')).toBeTruthy();
+});
+
 test('card-view -> реджект без Error-повідомлення падає назад на дефолтний текст', async () => {
   const items = [{ id: 'card-1', name: 'Читання' }];
   const loadArchivedCards = vi.fn().mockResolvedValue(items);

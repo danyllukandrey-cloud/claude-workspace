@@ -407,6 +407,20 @@ export function createApp(deps: AppDeps): express.Express {
     })
   );
 
+  app.delete(
+    '/api/v1/cards/:cardId/permanent',
+    asyncHandler(async (req, res) => {
+      // CH-16 (docs/features/life-area-card/changes.md): "Видалити" в
+      // Архіві карток -- назавжди, не архівація (DELETE вище). Один
+      // DELETE-запит на рядок card, ON DELETE CASCADE у міграціях сам
+      // прибирає все пов'язане (postgres-repo.ts's deleteCard, докладніше
+      // там) -- withTransaction тут лише заради recordAction (action_log)
+      // в тій самій транзакції, той самий підхід, що archiveCard/restoreCard.
+      await deps.withTransaction((txDb) => cardHandlers.deleteCard(txDb, ownerUserId(req), param(req, 'cardId'), deps.recordAction));
+      res.status(204).send();
+    })
+  );
+
   // --- MetricBlocks ----------------------------------------------------------
 
   app.get(

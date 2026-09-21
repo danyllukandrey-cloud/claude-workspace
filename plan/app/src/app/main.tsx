@@ -621,6 +621,19 @@ async function onRestoreCard(cardId: string): Promise<void> {
   }
 }
 
+/** CH-16 (docs/features/life-area-card/changes.md): "Видалити" в Архіві карток -- назавжди, не архівація (та вже є, onRestoreCard/archiveCard поруч). */
+async function onDeleteCardPermanently(cardId: string): Promise<void> {
+  const response = await fetch(`/api/v1/cards/${cardId}/permanent`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? 'Не вдалося видалити картку назавжди');
+  }
+}
+
 /**
  * Review 2026-09-07, post-ship follow-up review (E remainder): той самий
  * клас багу, що C15 (T48) уже виправив у loadBack -- читав лише ПЕРШУ
@@ -1850,6 +1863,7 @@ createRoot(root).render(
       onRename={onRename}
       loadArchivedCards={loadArchivedCards}
       onRestoreCard={onRestoreCard}
+      onDeleteCardPermanently={onDeleteCardPermanently}
       loadArchivedCardHistory={loadArchivedCardHistory}
       archiveCard={archiveCard}
       createMetricBlock={createMetricBlock}

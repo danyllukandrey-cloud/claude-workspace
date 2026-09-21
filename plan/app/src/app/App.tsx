@@ -87,6 +87,8 @@ export interface AppProps {
   loadArchivedCards: () => Promise<DeckGridItem[]>;
   /** Розархівовує картку (ArchiveScreen.onRestoreCard, ISS-55 stage 3). */
   onRestoreCard: (cardId: string) => Promise<void>;
+  /** CH-16 (docs/features/life-area-card/changes.md) -- видаляє архівовану картку назавжди (ArchiveScreen.onDeleteCardPermanently, DELETE /cards/{id}/permanent). */
+  onDeleteCardPermanently: (cardId: string) => Promise<void>;
   /** Завантажує історію записів архівованої картки (ArchiveScreen.loadArchivedCardHistory, ISS-55 stage 3). */
   loadArchivedCardHistory: (cardId: string) => Promise<EntryViewModel[]>;
   /** Архівовує обрану картку (DELETE /cards/{cardId}, CardFace.onArchive, ISS-56). */
@@ -247,6 +249,7 @@ export function App({
   onRename,
   loadArchivedCards,
   onRestoreCard,
+  onDeleteCardPermanently,
   loadArchivedCardHistory,
   archiveCard,
   createMetricBlock,
@@ -624,6 +627,7 @@ export function App({
               <ArchiveScreen
                 loadArchivedCards={loadArchivedCards}
                 onRestoreCard={onRestoreCard}
+                onDeleteCardPermanently={onDeleteCardPermanently}
                 loadArchivedCardHistory={loadArchivedCardHistory}
               />
               <div className="absolute bottom-4 right-4 z-20">

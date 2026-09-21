@@ -152,7 +152,7 @@ function isInvalidUuidError(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === '22P02';
 }
 
-/** SELECT-обгортка для findXById-функцій нижче -- malformed uuid -> [] (те саме, що "рядків нема"), решта помилок пробрасуються як є. */
+/** Обгортка для findXById/deleteCard нижче -- malformed uuid -> [] (те саме, що "рядків нема"), решта помилок пробрасуються як є. */
 async function selectRowsOrEmptyOnInvalidUuid<T extends QueryResultRow>(
   db: Db,
   text: string,
@@ -230,6 +230,27 @@ export async function updateCard(
     values
   );
   return rows[0] ? toCardRecord(rows[0]) : null;
+}
+
+/**
+ * Card CH-16 (docs/features/life-area-card/changes.md): назавжди видаляє
+ * картку (не архівація -- справжній DELETE рядка). Усі пов'язані таблиці
+ * (metric_block/entry/card_lifecycle_event/structure_layout_position/
+ * structure_history_event/structure_connection) мають `ON DELETE CASCADE`
+ * на card_id у своїх міграціях -- Postgres сам прибирає їх, нічого зайвого
+ * тут оркеструвати не треба. imperative_rule.scope_card_id/
+ * agent_proposal.card_id -- навмисний виняток, `ON DELETE SET NULL`
+ * (переживають видалення картки, самі про конкретну картку не є).
+ * RETURNING id -- та сама non-disclosure перевірка "чужа й неіснуюча
+ * картка -- однакова відповідь", що updateCard вище (owner_user_id у WHERE).
+ */
+export async function deleteCard(db: Db, ownerUserId: string, cardId: string): Promise<boolean> {
+  const rows = await selectRowsOrEmptyOnInvalidUuid<{ id: string }>(
+    db,
+    `DELETE FROM card WHERE id = $1 AND owner_user_id = $2 RETURNING id`,
+    [cardId, ownerUserId]
+  );
+  return rows.length > 0;
 }
 
 /** idx_card_owner -- усі картки власника (AC-04). */
