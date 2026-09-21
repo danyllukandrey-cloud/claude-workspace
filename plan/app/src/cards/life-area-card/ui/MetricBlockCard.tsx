@@ -62,6 +62,35 @@ function progressToneClasses(share: number): string {
   return 'border-bad/25 bg-bad/10 text-bad';
 }
 
+interface RoundIconButtonProps {
+  ariaLabel: string;
+  onClick: () => void;
+  disabled: boolean;
+  glyph: string;
+  /** Позиція (absolute-кут чи grid-слот) + тон кольору -- єдине, чим різняться "×"/"✎"/"+" нижче. */
+  className: string;
+}
+
+/**
+ * /simplify review-fix: спільна "чарунка" для трьох майже ідентичних кнопок
+ * нижче ("×" видалення, "✎" редагування, "+" швидкого +/-) -- різнились
+ * лише позицією (absolute-кут vs grid-слот) і кольоровим тоном, решта класів
+ * (розмір/форма/disabled-стан) повторювалась тричі буквально.
+ */
+function RoundIconButton({ ariaLabel, onClick, disabled, glyph, className }: RoundIconButtonProps): JSX.Element {
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex h-5 w-5 items-center justify-center rounded-full border shadow-soft transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+    >
+      {glyph}
+    </button>
+  );
+}
+
 export function MetricBlockCard({ block, onDelete, onEdit, onQuickAdjust, disabled = false }: MetricBlockCardProps): JSX.Element {
   const { progress } = block;
 
@@ -71,19 +100,17 @@ export function MetricBlockCard({ block, onDelete, onEdit, onQuickAdjust, disabl
   // одно займає місце (порожній <span/>), інакше показник з'їжджав би в
   // середню колонку замість правої.
   const quickAdjustSlot = onQuickAdjust ? (
-    <button
-      type="button"
-      aria-label={`Додати або відняти показник «${block.label}»`}
+    <RoundIconButton
+      ariaLabel={`Додати або відняти показник «${block.label}»`}
       onClick={onQuickAdjust}
       disabled={disabled}
+      glyph="+"
       // Живе тестування 2026-09-21 (Андрій): "зроби кружечок плюсу зеленим"
       // -- той самий тональний словник (border-good/25 bg-good/10 text-good),
       // що Banner.tsx's success-варіант/progressToneClasses вище, замість
       // нейтрального border-border + зелений лише на hover.
-      className="flex h-5 w-5 items-center justify-center justify-self-center rounded-full border border-good/25 bg-good/10 text-sm font-bold leading-none text-good shadow-soft transition-colors hover:bg-good/20 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-good/10"
-    >
-      +
-    </button>
+      className="justify-self-center border-good/25 bg-good/10 text-sm font-bold leading-none text-good hover:bg-good/20 disabled:hover:bg-good/10"
+    />
   ) : (
     <span />
   );
@@ -104,29 +131,25 @@ export function MetricBlockCard({ block, onDelete, onEdit, onQuickAdjust, disabl
           `disabled` -- справжній HTML-атрибут (не лише CSS): блокує і
           мишу/дотик, і Enter/Space з клавіатури. */}
       {onDelete && (
-        <button
-          type="button"
-          aria-label={`Видалити метрику «${block.label}»`}
+        <RoundIconButton
+          ariaLabel={`Видалити метрику «${block.label}»`}
           onClick={onDelete}
           disabled={disabled}
-          className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-surface-solid text-xs font-bold leading-none text-ink-muted shadow-soft transition-colors hover:border-bad/40 hover:text-bad disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-ink-muted"
-        >
-          ×
-        </button>
+          glyph="×"
+          className="absolute -right-1.5 -top-1.5 border-border bg-surface-solid text-xs font-bold leading-none text-ink-muted hover:border-bad/40 hover:text-bad disabled:hover:border-border disabled:hover:text-ink-muted"
+        />
       )}
       {/* CH-03: олівець -- правий нижній кут блоку (поруч із хрестиком
           видалення, який стоїть у правому верхньому). Той самий опційний-проп
           патерн, що "×" вище -- без onEdit узагалі немає в DOM. */}
       {onEdit && (
-        <button
-          type="button"
-          aria-label={`Редагувати метрику «${block.label}»`}
+        <RoundIconButton
+          ariaLabel={`Редагувати метрику «${block.label}»`}
           onClick={onEdit}
           disabled={disabled}
-          className="absolute -bottom-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-surface-solid text-xs leading-none text-ink-muted shadow-soft transition-colors hover:border-ink/40 hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-ink-muted"
-        >
-          ✎
-        </button>
+          glyph="✎"
+          className="absolute -bottom-1.5 -right-1.5 border-border bg-surface-solid text-xs leading-none text-ink-muted hover:border-ink/40 hover:text-ink disabled:hover:border-border disabled:hover:text-ink-muted"
+        />
       )}
       {progress.kind === 'ongoing' ? (
         <>

@@ -81,7 +81,7 @@ function baseProps() {
     // App замикає над cardId, той самий стиль, що createMetricBlock/onRename.
     archiveMetricBlock: vi.fn().mockResolvedValue(undefined),
     // CH-16 (docs/features/life-area-card/changes.md): реальний POST .../entries (main.tsx), той самий стиль, що archiveMetricBlock.
-    onCreateEntry: vi.fn().mockResolvedValue(undefined),
+    onCreateEntry: vi.fn().mockResolvedValue({ status: 'confirmed' }),
     // CH-02 (docs/features/life-area-card/changes.md): реальний PATCH
     // /cards/{cardId} (trackingMode/healthState, main.tsx) -- App замикає над
     // cardId, той самий стиль, що createMetricBlock/onRename.
