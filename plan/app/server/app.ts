@@ -32,6 +32,7 @@ import type { CallClaude } from '../src/cards/life-area-card/app/get-card';
 // це підтверджував.
 import {
   closeActiveLayoutPositionForCard,
+  reopenClosedLayoutPositionForCard,
   findStructureByOwner,
   insertLayoutPosition,
 } from '../src/structure/infra/postgres-repo';
@@ -391,8 +392,16 @@ export function createApp(deps: AppDeps): express.Express {
       // Review 2026-09-07, post-ship follow-up review (B5 remainder): дзеркало
       // archiveCard -- updateCard(status:'active') + insertLifecycleEvent
       // ('restored') в одній транзакції, той самий ризик "напівзробленого стану".
+      //
+      // Fix 2026-09-21 (живе тестування, картка "Філософія" назавжди
+      // втратила позицію в Структурі після архів/розархів): reopenClosedLayoutPositionForCard
+      // реально переданий -- ДО цього фіксу тут його ніхто не передавав, тож
+      // розархівована картка ніколи не отримувала активну позицію назад, і
+      // moveCard/createConnection завжди відповідали structure.card_not_found.
+      // Той самий клас дефекту, що closeActiveLayoutPositionForCard мав до
+      // A2/B5 (рядок з archiveCard вище).
       const card = await deps.withTransaction((txDb) =>
-        cardHandlers.restoreCard(txDb, ownerUserId(req), param(req, 'cardId'), deps.recordAction)
+        cardHandlers.restoreCard(txDb, ownerUserId(req), param(req, 'cardId'), reopenClosedLayoutPositionForCard, deps.recordAction)
       );
       res.status(200).json(card);
     })

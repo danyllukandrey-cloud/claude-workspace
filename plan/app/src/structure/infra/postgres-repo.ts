@@ -38,6 +38,33 @@ export async function closeActiveLayoutPositionForCard(db: Db, cardId: string): 
   );
 }
 
+/**
+ * Дзеркало closeActiveLayoutPositionForCard вище -- відкриває ЗАКРИТУ
+ * позицію картки знову (D-69, D-104, fix 2026-09-21): status 'closed' ->
+ * 'active', x/y скидаються в NULL. Скидання координат навмисне -- D-69
+ * прямо забороняє мапити стару позицію автоматично ("жодна стара позиція не
+ * мапиться автоматично"), картка має зʼявитись у купці нерозкладених
+ * (D-104), користувач розкладає заново вручну.
+ *
+ * Без цього кроку картка, архівована й розархівована хоч раз, лишалась БЕЗ
+ * жодної активної позиції назавжди -- insertLayoutPosition (нижче)
+ * викликається лише один раз, при СТВОРЕННІ картки, а updateLayoutPositionXY
+ * (moveCard) і listActiveLayoutPositionsByOwner (createConnection) обидва
+ * фільтрують на status='active', тож перетягнути чи звʼязати таку картку
+ * було фізично неможливо -- сервер завжди відповідав structure.card_not_found.
+ *
+ * Якщо закритої позиції немає (картка старша за D-103's міграцію, чи взагалі
+ * без жодної позиції) -- це НЕ помилка, той самий принцип, що вище.
+ */
+export async function reopenClosedLayoutPositionForCard(db: Db, cardId: string): Promise<void> {
+  await db.query(
+    `UPDATE structure_layout_position
+     SET status = 'active', position_x = NULL, position_y = NULL, position_updated_at = now()
+     WHERE card_id = $1 AND status = 'closed'`,
+    [cardId]
+  );
+}
+
 // T9 -- решта репозиторію (CRUD над `structure` + `structure_layout_position`,
 // AC-03/08/09/12, data-model.md). Той самий DI-контракт `Db` вище, той самий
 // стиль (RETURNING на write, camelCase-мапінг на межі) що й

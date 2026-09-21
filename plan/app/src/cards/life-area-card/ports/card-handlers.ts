@@ -27,6 +27,7 @@ import type { RecordCardRenameEvent } from '../app/update-card';
 import { archiveCard as archiveCardUseCase } from '../app/archive-card';
 import type { CloseStructurePositionForCard } from '../app/archive-card';
 import { restoreCard as restoreCardUseCase } from '../app/restore-card';
+import type { ReopenStructurePositionForCard } from '../app/restore-card';
 import type { CardRecord, CardStatusRow, CardTrackingModeRow, CardHealthStateRow, Db } from '../infra/postgres-repo';
 
 // --- DTO -- форма відповіді, camelCase, точно як у схемах контракту --------
@@ -264,7 +265,13 @@ export async function archiveCard(
 // (T21) уже приймає status='archived' і повертає ту саму CardPage, той самий
 // ендпоінт GET /cards, лише інший query-параметр (contracts/openapi.yaml).
 
-export async function restoreCard(db: Db, ownerUserId: string, cardId: string, recordAction?: RecordAction): Promise<CardDto> {
-  const record = await restoreCardUseCase(db, ownerUserId, cardId, recordAction);
+export async function restoreCard(
+  db: Db,
+  ownerUserId: string,
+  cardId: string,
+  reopenStructurePosition?: ReopenStructurePositionForCard,
+  recordAction?: RecordAction
+): Promise<CardDto> {
+  const record = await restoreCardUseCase(db, ownerUserId, cardId, reopenStructurePosition, recordAction);
   return toCardDto(record);
 }

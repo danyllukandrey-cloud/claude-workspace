@@ -480,4 +480,19 @@ describe('restoreCard handler', () => {
     expect(error).toBeInstanceOf(AppError);
     expect(error).toMatchObject({ code: 'card.not_archived', httpStatus: 409 });
   });
+
+  // Fix 2026-09-21: reopenStructurePosition -- опційна ін'єкція, дзеркало
+  // closeStructurePosition в archiveCard вище. Порт лише прокидає її далі в
+  // use-case.
+  it('threads an optional reopenStructurePosition callback through to the use-case', async () => {
+    const db = fakeRestoreCardDb({
+      current: cardRow({ status: 'archived' }),
+      restored: cardRow({ status: 'active' }),
+    });
+    const reopenStructurePosition = vi.fn().mockResolvedValue(undefined);
+
+    await restoreCard(db, OWNER, CARD_ID, reopenStructurePosition);
+
+    expect(reopenStructurePosition).toHaveBeenCalledWith(db, CARD_ID);
+  });
 });
