@@ -72,6 +72,20 @@ interface FakeServer {
   closeCalls: { cardId: string; body: unknown }[];
   /** POST .../close відповідає 409 metric_block.name_collision (life-area-card AC-15). */
   closeNameCollision?: boolean;
+  /** T11 (life-plan-levels): пункти ПЛАНу, які віддає GET /plan-items (сторінками по `planPageSize`). */
+  planItems: FakePlanItem[];
+  /** Скільки пунктів вміщає одна сторінка -- щоб перевірити, що клієнт іде по курсору до кінця. */
+  planPageSize: number;
+  /** Кожен запит до /plan-items -- метод, шлях, тіло, Idempotency-Key. */
+  planCalls: { method: string; url: string; body: unknown; idempotencyKey: string | null }[];
+}
+
+interface FakePlanItem {
+  id: string;
+  horizon: 'tactical' | 'operational' | 'strategic';
+  planText: string;
+  done: boolean;
+  createdAt: string;
 }
 
 function makeServer(overrides: Partial<FakeServer> = {}): FakeServer {
@@ -87,6 +101,9 @@ function makeServer(overrides: Partial<FakeServer> = {}): FakeServer {
     patchBodies: [],
     historyAsOf: [],
     closeCalls: [],
+    planItems: [],
+    planPageSize: 50,
+    planCalls: [],
     ...overrides,
   };
 }
@@ -120,6 +137,42 @@ function fakeFetch(server: FakeServer): typeof fetch {
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-02T00:00:00.000Z',
     };
+
+    // T11 (life-plan-levels): чотири ендпоінти ПЛАНу. Стоять ПЕРЕД гілками
+    // Структури/Карток лише тому, що шлях інший -- жодного перетину префіксів.
+    if (url.startsWith('/api/v1/plan-items')) {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      server.planCalls.push({
+        method,
+        url,
+        body: init?.body === undefined ? null : JSON.parse(String(init.body)),
+        idempotencyKey: headers['Idempotency-Key'] ?? null,
+      });
+
+      const oneItem = url.match(/^\/api\/v1\/plan-items\/([^/?]+)$/);
+      if (oneItem && method === 'PATCH') {
+        return jsonResponse(server.planItems.find((item) => item.id === oneItem[1]) ?? null);
+      }
+      if (oneItem && method === 'DELETE') {
+        server.planItems = server.planItems.filter((item) => item.id !== oneItem[1]);
+        return jsonResponse(null, 204);
+      }
+      if (method === 'POST') {
+        return jsonResponse({ ...(server.planItems[0] ?? {}), id: 'plan-item-new' }, 201);
+      }
+
+      // GET -- сторінка за курсором `after` (id останнього побаченого пункту).
+      const after = new URL(url, 'http://localhost').searchParams.get('after');
+      const startIndex = after ? server.planItems.findIndex((item) => item.id === after) + 1 : 0;
+      const page = server.planItems.slice(startIndex, startIndex + server.planPageSize);
+      const hasNext = startIndex + server.planPageSize < server.planItems.length;
+      return jsonResponse({
+        items: page,
+        has_next: hasNext,
+        has_prev: startIndex > 0,
+        next_cursor: hasNext ? page[page.length - 1].id : null,
+      });
+    }
 
     if (url.startsWith('/api/v1/structure/layout/history')) {
       const asOf = new URL(url, 'http://localhost').searchParams.get('asOf');
@@ -526,4 +579,87 @@ test('AC-12: 409 metric_block.name_collision доходить як помилк�
   await expect(
     main.onCloseCard({ cardId: 'card-a', metricTransfers: [{ metricBlockId: 'mb-2', targetCardId: 'card-b' }] }),
   ).rejects.toMatchObject({ code: 'metric_block.name_collision', httpStatus: 409 });
+});
+
+// --- T11 (life-plan-levels): чотири реальні виклики /api/v1/plan-items -------
+//
+// Перевіряємо не "проп переданий", а що саме долетить до сервера й що
+// повернеться на екран -- той самий підхід, що в тестах Структури вище.
+
+const PLAN_ITEM: FakePlanItem = {
+  id: 'plan-item-1',
+  horizon: 'tactical',
+  planText: 'Пробігти півмарафон',
+  done: false,
+  createdAt: '2026-09-15T09:00:00.000Z',
+};
+
+test('T11: loadPlanItems збирає ВСІ сторінки /plan-items за курсором, не лише першу', async () => {
+  const server = makeServer({
+    planPageSize: 2,
+    planItems: [
+      PLAN_ITEM,
+      { ...PLAN_ITEM, id: 'plan-item-2', planText: 'Вивчити іспанську' },
+      { ...PLAN_ITEM, id: 'plan-item-3', horizon: 'strategic', planText: 'Побудувати дім' },
+    ],
+  });
+
+  const props = await loadMain(server);
+  const items = await props.loadPlanItems();
+
+  // Без слідування за next_cursor третій пункт тихо зник би з екрана.
+  expect(items.map((item) => item.id)).toEqual(['plan-item-1', 'plan-item-2', 'plan-item-3']);
+  expect(server.planCalls.filter((call) => call.method === 'GET')).toHaveLength(2);
+  expect(server.planCalls[1].url).toContain('after=plan-item-2');
+});
+
+test('T11: onCreatePlanItem надсилає POST /plan-items з horizon/planText і свіжим Idempotency-Key на кожне збереження', async () => {
+  const server = makeServer();
+  const props = await loadMain(server);
+
+  await props.onCreatePlanItem({ horizon: 'operational', planText: 'Змінити професію' });
+  await props.onCreatePlanItem({ horizon: 'operational', planText: 'Переїхати' });
+
+  const posts = server.planCalls.filter((call) => call.method === 'POST');
+  expect(posts[0].body).toEqual({ horizon: 'operational', planText: 'Змінити професію' });
+  // Ключ обов'язковий за контрактом -- і він РІЗНИЙ для двох різних намірів
+  // користувача (інакше друге збереження повернуло б перший пункт).
+  expect(posts[0].idempotencyKey).toBeTruthy();
+  expect(posts[1].idempotencyKey).not.toBe(posts[0].idempotencyKey);
+});
+
+test('T11: onUpdatePlanItem несе РІВНО передані поля (чекбокс окремо, текст окремо) -- PATCH-семантика', async () => {
+  const server = makeServer({ planItems: [PLAN_ITEM] });
+  const props = await loadMain(server);
+
+  await props.onUpdatePlanItem('plan-item-1', { done: true });
+  await props.onUpdatePlanItem('plan-item-1', { planText: 'Пробігти марафон' });
+
+  const patches = server.planCalls.filter((call) => call.method === 'PATCH');
+  expect(patches[0].url).toBe('/api/v1/plan-items/plan-item-1');
+  expect(patches[0].body).toEqual({ done: true });
+  expect(patches[1].body).toEqual({ planText: 'Пробігти марафон' });
+});
+
+test('T11 (AC-04): onDeletePlanItem надсилає DELETE /plan-items/{id}, і пункт зникає з наступного читання', async () => {
+  const server = makeServer({ planItems: [PLAN_ITEM] });
+  const props = await loadMain(server);
+
+  await props.onDeletePlanItem('plan-item-1');
+
+  expect(server.planCalls.some((call) => call.method === 'DELETE' && call.url === '/api/v1/plan-items/plan-item-1')).toBe(true);
+  expect(await props.loadPlanItems()).toEqual([]);
+});
+
+test('T11: помилка сервера доходить як AppError із кодом -- екран показує message, а не свою вигадку', async () => {
+  const server = makeServer();
+  const props = await loadMain(server);
+
+  vi.stubGlobal('fetch', (async () =>
+    jsonResponse({ code: 'plan_item.text_required', message: 'Пункт плану не може бути без тексту' }, 422)) as unknown as typeof fetch);
+
+  await expect(props.onCreatePlanItem({ horizon: 'tactical', planText: ' ' })).rejects.toMatchObject({
+    code: 'plan_item.text_required',
+    message: 'Пункт плану не може бути без тексту',
+  });
 });

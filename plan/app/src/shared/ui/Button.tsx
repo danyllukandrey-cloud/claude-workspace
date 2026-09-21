@@ -21,6 +21,17 @@ export interface ButtonProps {
   type?: 'button' | 'submit';
   /** Кнопка недоступна (наприклад — поки триває збереження). */
   disabled?: boolean;
+  /**
+   * Активний/обраний стан (напр. поточна вкладка нав-меню) -- темніший фон
+   * (bg-border, той самий колір, що hover) ЗАМІСТЬ звичайного (bg-surface),
+   * не поверх нього через додатковий className: обидва класи однакової
+   * специфічності в зібраній Tailwind-таблиці стилів, тож "додати bg-border
+   * поверх bg-surface" залежало б від порядку класів У СТИЛЬОВІЙ ТАБЛИЦІ, не
+   * в className, і могло б мовчки програти (саме так і сталось при першій
+   * спробі). Повний ternary в одному місці -- той самий підхід, що
+   * `isSelected` у LayoutBoard.tsx.
+   */
+  active?: boolean;
 }
 
 export function Button({
@@ -28,13 +39,14 @@ export function Button({
   onClick,
   type = 'button',
   disabled = false,
+  active = false,
 }: ButtonProps): JSX.Element {
   return (
     <button
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className="rounded-control border border-border bg-surface px-4 py-3 font-sans text-sm font-bold leading-relaxed text-ink shadow-btn backdrop-blur-xl transition-colors enabled:hover:bg-border disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+      className={`rounded-control border border-border px-4 py-3 font-sans text-sm font-bold leading-relaxed text-ink shadow-btn backdrop-blur-xl transition-colors enabled:hover:bg-border disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none ${active ? 'bg-border' : 'bg-surface'}`}
     >
       {label}
     </button>

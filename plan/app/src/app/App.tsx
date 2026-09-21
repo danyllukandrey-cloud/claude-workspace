@@ -43,6 +43,11 @@ import type {
   RuleSettingsScreenTargetCard,
   SendMessageResult,
 } from '../agent';
+// T11 (life-plan-levels) -- реєстрація сторінки «ПЛАН» в app-shell. Імпорт
+// ЛИШЕ через ../plan-horizons's index.ts (правило залежностей, plan/app/
+// CLAUDE.md) -- ніколи напряму з plan-horizons/ui/.
+import { PlanItemEditor, PlanScreen } from '../plan-horizons';
+import type { PlanHorizon, PlanItemEditorTarget, PlanScreenItem } from '../plan-horizons';
 import { Button, GearIcon, IconButton, Logo } from '../shared/ui';
 import { LoginScreen } from './LoginScreen';
 import type { SessionResult } from './LoginScreen';
@@ -165,6 +170,21 @@ export interface AppProps {
   onRemoveSyncResource: (resourceId: string) => Promise<void>;
   /** DELETE /api/v1/account (AccountScreen.onDeleteAccount, AC-17/AC-17b). */
   onDeleteAccount: (confirmed: boolean) => Promise<void>;
+
+  // --- ПЛАН (T11, life-plan-levels/contracts/openapi.yaml) ----------------
+  /** GET /api/v1/plan-items -- усі активні пункти плану (PlanScreen.loadPlanItems, AC-08/AC-11). */
+  loadPlanItems: () => Promise<PlanScreenItem[]>;
+  /** POST /api/v1/plan-items (PlanItemEditor.onCreate, AC-01/AC-02). */
+  onCreatePlanItem: (input: { horizon: PlanHorizon; planText: string }) => Promise<void>;
+  /**
+   * PATCH /api/v1/plan-items/{planItemId} -- ЧАСТКОВЕ оновлення: чекбокс
+   * (PlanScreen.onToggleDone, AC-03/AC-03b) і текст (PlanItemEditor.onUpdate)
+   * ідуть одним ендпоінтом, тож і один DI-проп на обох споживачів -- та сама
+   * форма, що onSaveDeclaration для PATCH /structure вище.
+   */
+  onUpdatePlanItem: (planItemId: string, input: { planText?: string; done?: boolean }) => Promise<void>;
+  /** DELETE /api/v1/plan-items/{planItemId} -- м'яке прибирання (PlanItemEditor.onDelete, AC-04). */
+  onDeletePlanItem: (planItemId: string) => Promise<void>;
 }
 
 // D-121 (живе тестування): 'detail' прибрано -- відкриття картки окремим
@@ -203,7 +223,13 @@ type Screen = { screen: 'deck' } | { screen: 'archive'; from: Direction };
 // нижнього нав-меню (переїхали під шестерню) -- перший крок ієрархії,
 // решта (4 напрямки нижче) досі рівний список без пріоритету, ISS-117
 // лишається відкритим не повністю закритим цим комітом.
-type Direction = 'cards' | 'declaration' | 'layout' | 'analytics' | 'agent-rules' | 'agent-log' | 'agent-account';
+//
+// T11 (life-plan-levels): 'plan' -- сторінка ПЛАН, п'ятий напрямок рівного
+// списку нижнього нав-меню. Своєї під-навігації (Screen) вона не заводить:
+// «відкритий редактор одного пункту» -- стан, який стосується ЛИШЕ цього
+// напрямку, тож живе окремим planEditor нижче, а не розширює Screen, що
+// описує під-навігацію Карток.
+type Direction = 'cards' | 'declaration' | 'layout' | 'analytics' | 'plan' | 'agent-rules' | 'agent-log' | 'agent-account';
 
 function isSessionValid(session: StoredSession | null, now: () => Date): boolean {
   if (!session) return false;
@@ -255,6 +281,10 @@ export function App({
   onAddSyncResource,
   onRemoveSyncResource,
   onDeleteAccount,
+  loadPlanItems,
+  onCreatePlanItem,
+  onUpdatePlanItem,
+  onDeletePlanItem,
 }: AppProps): JSX.Element {
   const [session, setSession] = useState<StoredSession | null>(() => readStoredSession());
   const [screen, setScreen] = useState<Screen>({ screen: 'deck' });
@@ -290,6 +320,26 @@ export function App({
   const settingsMenuRef = useRef<HTMLDivElement>(null);
   const settingsButtonRef = useRef<HTMLDivElement>(null);
   const [ruleTargetCards, setRuleTargetCards] = useState<RuleSettingsScreenTargetCard[]>([]);
+  // T11 (life-plan-levels): який пункт зараз у редакторі -- null означає
+  // «показуємо список трьох горизонтів». PlanScreen і PlanItemEditor -- два
+  // листя без спільного батька всередині фічі, тож перемикання між ними може
+  // жити лише тут, у композиційному корені (plan/app/CLAUDE.md: app склеює,
+  // фічі -- ні). Закриття редактора РОЗМОНТОВУЄ PlanScreen і монтує його
+  // наново -- звідси й свіже читання списку після збереження, без окремого
+  // механізму інвалідації.
+  const [planEditor, setPlanEditor] = useState<PlanItemEditorTarget | null>(null);
+
+  // Review 2026-09-20 (обидва рев'юери): підтвердження пункту ПЛАНу в чаті
+  // (AC-09) НЕ проходить через planEditor вище -- ChatPanel постійна й видима
+  // одночасно з напрямком `plan`, тож той самий трюк "закриття розмонтовує"
+  // тут не спрацьовує. `key={planItemsVersion}` на PlanScreen нижче -- той
+  // самий принцип (розмонтувати й змонтувати наново = прочитати свіжий
+  // список), лише прапорець зміни не "редактор закрився", а "повідомлення в
+  // чат пішло, поки я стою на ПЛАНі". Рахуємо будь-яке надіслане повідомлення,
+  // не лише те, що реально створило пункт -- агент сам вирішує, чи там
+  // взагалі був пункт плану, і від App цього не видно; зайве перечитування
+  // порожньої зміни дешевше, ніж пропущене реальне.
+  const [planItemsVersion, setPlanItemsVersion] = useState(0);
 
   // Задача 9: click-outside-close для меню налаштувань -- слухач вішається
   // лише поки меню відкрите (і знімається одразу, щойно закрилось чи
@@ -516,6 +566,33 @@ export function App({
             />
           )}
 
+          {/* T11 (life-plan-levels, AC-01/AC-04): один напрямок -- два
+              взаємовиключні види. Список трьох горизонтів за замовчуванням;
+              редактор одного пункту -- поки planEditor не null. Обидва
+              отримують ті самі чотири DI-колбеки, лише під формою, якої
+              кожен із них чекає: PlanScreen знає пункт цілим об'єктом,
+              контракт же адресує його id -- переклад однієї форми в іншу
+              робить app-shell, а не компонент і не транспорт. */}
+          {direction === 'plan' && planEditor === null && (
+            <PlanScreen
+              key={planItemsVersion}
+              loadPlanItems={loadPlanItems}
+              onToggleDone={(item, done) => onUpdatePlanItem(item.id, { done })}
+              onAddPlanItem={(horizon) => setPlanEditor({ kind: 'new', horizon })}
+              onOpenPlanItem={(item) => setPlanEditor({ kind: 'existing', item })}
+              onSessionExpired={endSession}
+            />
+          )}
+          {direction === 'plan' && planEditor !== null && (
+            <PlanItemEditor
+              target={planEditor}
+              onCreate={onCreatePlanItem}
+              onUpdate={(item, planText) => onUpdatePlanItem(item.id, { planText })}
+              onDelete={(item) => onDeletePlanItem(item.id)}
+              onClose={() => setPlanEditor(null)}
+            />
+          )}
+
           {direction === 'agent-rules' && (
             <RuleSettingsScreen targetCards={ruleTargetCards} loadRules={loadRules} onSave={onSaveRule} />
           )}
@@ -626,12 +703,36 @@ export function App({
             це один код без дублювання, а не тим, що нав завжди на всю ширину
             фізично. */}
         <nav className="flex flex-wrap justify-center gap-2 border-t border-border bg-surface-solid px-3 py-3 sm:gap-3 sm:px-4 md:col-start-2 md:row-start-3">
-          <Button label="Декларація" onClick={() => setDirection('declaration')} />
-          <Button label="Схема" onClick={() => setDirection('layout')} />
-          {/* D-125 (живе тестування): "Літопис-Аналітика" -> "Аналітика" --
-              коротший підпис, той самий напрямок ('analytics') і той самий
-              AnalyticsScreen під ним, назва напрямку в коді не змінилась. */}
-          <Button label="Аналітика" onClick={() => setDirection('analytics')} />
+          {/* CH-02 (docs/app-shell.md, живе тестування 2026-09-21): активна
+              вкладка -- темніший фон (bg-border, той самий колір, що вже
+              показує hover на решті кнопок), щоб було видно, де користувач
+              зараз, без здогадок. `active`, не додатковий className -- перша
+              спроба (className="bg-border" ПОВЕРХ фіксованого bg-surface
+              кнопки) мовчки програвала порядку класів у зібраній
+              Tailwind-таблиці стилів, колір узагалі не мінявся (живе
+              тестування виявило). */}
+          <Button
+            label="Декларація"
+            onClick={() => setDirection('declaration')}
+            active={direction === 'declaration'}
+          />
+          {/* CH-01 (docs/app-shell.md, виконано 2026-09-20): ПЛАН одразу
+              після Декларації, не в кінці списку -- логічний порядок роботи
+              з продуктом (картина світу -> план у часі -> конкретні зони ->
+              розкладка пріоритетів -> аналітика).
+              Клік ЗАВЖДИ веде на список трьох горизонтів, навіть якщо перед
+              переходом на інший напрямок лишався відкритий редактор пункту --
+              та сама причина, що в кнопки «Картки» нижче: інакше повернення в
+              ПЛАН виглядало б як «застрягло в редакторі», а не як пам'ять
+              місця. */}
+          <Button
+            label="ПЛАН"
+            onClick={() => {
+              setDirection('plan');
+              setPlanEditor(null);
+            }}
+            active={direction === 'plan'}
+          />
           {/* Живе тестування (Андрій): "Картки" тепер ЗАВЖДИ веде на саму
               колоду, навіть якщо перед цим був відкритий архів чи форма
               створення -- раніше кнопка лише перемикала direction, а Screen
@@ -644,6 +745,20 @@ export function App({
               setDirection('cards');
               setScreen({ screen: 'deck' });
             }}
+            active={direction === 'cards'}
+          />
+          <Button
+            label="Схема"
+            onClick={() => setDirection('layout')}
+            active={direction === 'layout'}
+          />
+          {/* D-125 (живе тестування): "Літопис-Аналітика" -> "Аналітика" --
+              коротший підпис, той самий напрямок ('analytics') і той самий
+              AnalyticsScreen під ним, назва напрямку в коді не змінилась. */}
+          <Button
+            label="Аналітика"
+            onClick={() => setDirection('analytics')}
+            active={direction === 'analytics'}
           />
         </nav>
 
@@ -659,7 +774,16 @@ export function App({
           loadHistory={loadChatHistory}
           loadOnboarding={loadChatOnboarding}
           loadActiveProposal={loadActiveChatProposal}
-          sendMessage={sendChatMessage}
+          sendMessage={async (input) => {
+            const result = await sendChatMessage(input);
+            // Review 2026-09-20 (AC-09): бампаємо ЛИШЕ коли повідомлення
+            // реально дійшло -- невдале надсилання нічого в базі не змінило,
+            // перечитувати нічого.
+            if (direction === 'plan') {
+              setPlanItemsVersion((v) => v + 1);
+            }
+            return result;
+          }}
           confirmProposal={confirmChatProposal}
         />
       </main>

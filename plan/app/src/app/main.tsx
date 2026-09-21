@@ -88,6 +88,7 @@ import type {
   RuleSettingsScreenTargetCard,
   SendMessageResult,
 } from '../agent';
+import type { PlanHorizon } from '../plan-horizons';
 import { AppError } from '../shared/errors';
 import { collectAllPages } from '../shared/pagination';
 import { createLocalStorageAdapter } from '../shared/storage/local';
@@ -1724,6 +1725,105 @@ async function onDeleteAccount(confirmed: boolean): Promise<void> {
   }
 }
 
+// --- ПЛАН (T11, life-plan-levels/contracts/openapi.yaml) --------------------
+//
+// Чотири реальні виклики /api/v1/plan-items, які App.tsx прокидає в PlanScreen
+// (T9) і PlanItemEditor (T10). Той самий стиль authHeaders/AppError, що решта
+// файлу -- жодної власної обробки помилок, код із тіла відповіді доходить до
+// екрана як є (PlanScreen показує його банером, PlanItemEditor -- під полем).
+
+/** Рівно `components.schemas.PlanItem` контракту -- те саме, що PlanScreenItem. */
+interface PlanItemDto {
+  id: string;
+  horizon: PlanHorizon;
+  planText: string;
+  done: boolean;
+  createdAt: string;
+}
+
+interface PlanItemPageDto {
+  items: PlanItemDto[];
+  next_cursor: string | null;
+}
+
+async function fetchPlanItemPage(after: string | undefined): Promise<PlanItemPageDto> {
+  const url = `/api/v1/plan-items${after ? `?after=${encodeURIComponent(after)}` : ''}`;
+  const response = await fetch(url, { headers: authHeaders() });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    throw new AppError(body?.code ?? 'plan_item.request_failed', body?.message ?? 'Не вдалося завантажити ПЛАН', response.status);
+  }
+
+  return (await response.json()) as PlanItemPageDto;
+}
+
+/**
+ * GET /api/v1/plan-items -- УСІ активні пункти всіх трьох горизонтів
+ * (PlanScreen.loadPlanItems, AC-08/AC-11).
+ *
+ * Сторінка контракту -- 50 пунктів за замовчуванням, а екран показує три
+ * горизонти цілком, тож тут збираємо всі сторінки (collectAllPages, той самий
+ * підхід, що історія записів картки) -- інакше в користувача з довгим планом
+ * тихо зникали б пункти з кінця списку.
+ */
+async function loadPlanItems(): Promise<PlanItemDto[]> {
+  return collectAllPages<PlanItemDto>(fetchPlanItemPage);
+}
+
+/**
+ * POST /api/v1/plan-items (PlanItemEditor.onCreate, AC-01/AC-09).
+ *
+ * `Idempotency-Key` -- обов'язковий заголовок контракту: свіжий uuid на КОЖНЕ
+ * натискання "Зберегти" (не на кожен рендер і не на сесію) -- саме повтор
+ * ОДНОГО натискання (подвійний клік, мережевий ретрай) має повернути той
+ * самий пункт, а два різні наміри користувача -- два різні пункти.
+ */
+async function onCreatePlanItem(input: { horizon: PlanHorizon; planText: string }): Promise<void> {
+  const response = await fetch('/api/v1/plan-items', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID(), ...authHeaders() },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    // 422 plan_item.text_required -- PlanItemEditor показує message під полем.
+    throw new AppError(body?.code ?? 'plan_item.create_failed', body?.message ?? 'Не вдалося зберегти пункт', response.status);
+  }
+}
+
+/**
+ * PATCH /api/v1/plan-items/{planItemId} -- ЧАСТКОВЕ оновлення: тіло несе рівно
+ * ті поля, що передав викликач (чекбокс із PlanScreen -- лише `done`, редактор
+ * -- лише `planText`), та сама PATCH-семантика, що onSaveDeclaration вище.
+ */
+async function onUpdatePlanItem(planItemId: string, input: { planText?: string; done?: boolean }): Promise<void> {
+  const response = await fetch(`/api/v1/plan-items/${planItemId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    throw new AppError(body?.code ?? 'plan_item.update_failed', body?.message ?? 'Не вдалося зберегти пункт', response.status);
+  }
+}
+
+/** DELETE /api/v1/plan-items/{planItemId} -- м'яке прибирання (PlanItemEditor.onDelete, AC-04). */
+async function onDeletePlanItem(planItemId: string): Promise<void> {
+  const response = await fetch(`/api/v1/plan-items/${planItemId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+    throw new AppError(body?.code ?? 'plan_item.delete_failed', body?.message ?? 'Не вдалося прибрати пункт', response.status);
+  }
+}
+
 const root = document.getElementById('root');
 if (!root) throw new Error('Не знайдено елемент #root у index.html');
 
@@ -1774,6 +1874,10 @@ createRoot(root).render(
       onAddSyncResource={onAddSyncResource}
       onRemoveSyncResource={onRemoveSyncResource}
       onDeleteAccount={onDeleteAccount}
+      loadPlanItems={loadPlanItems}
+      onCreatePlanItem={onCreatePlanItem}
+      onUpdatePlanItem={onUpdatePlanItem}
+      onDeletePlanItem={onDeletePlanItem}
     />
   </StrictMode>,
 );

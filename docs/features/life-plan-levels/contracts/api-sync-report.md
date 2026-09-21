@@ -31,3 +31,12 @@ No `low`-confidence rows — every field traces to either a `data-model.md` colu
 ## Deviations from the fixed defaults
 
 None — OpenAPI 3.1.0, `{code, message, details?}` envelope, cursor pagination, `/api/v1/...` URL versioning, global `BearerAuth`, `$ref` for all shared schemas, placeholder-only examples. No ADR overrides any default.
+
+## Reconciliation — 2026-09-20 (review)
+
+Two error codes the implementation actually throws were missing from this contract, found by the independent `/sdd:review` pass over the committed diff:
+
+- `plan_item.horizon_invalid` (422, POST `/plan-items`) — `domain/plan-item.ts` rejects a `horizon` outside the three fixed values; the contract only documented `plan_item.text_required` on that status.
+- `plan_item.nothing_to_update` (400, PATCH `/plan-items/{id}`) — `app/update-plan-item.ts` rejects an empty patch body (`{}`, no `planText`/`done`); the contract's 400 only pointed at the shared malformed-JSON case.
+
+Both added via `examples` (plural) alongside the existing case on the same status code — no behavior changed, this closes a documentation-only gap (Section A's `medium`-confidence rows from the original pass are now resolved).

@@ -35,6 +35,7 @@ import type {
   RuleSettingsScreenRule,
   RuleSettingsScreenTargetCard,
 } from '../agent';
+import type { PlanScreenItem } from '../plan-horizons';
 import { AppError } from '../shared/errors';
 
 const FIXED_NOW = () => new Date('2026-09-06T12:00:00.000Z');
@@ -129,6 +130,13 @@ function baseProps() {
     loadRules: vi.fn().mockResolvedValue([] as RuleSettingsScreenRule[]),
     onSaveRule: vi.fn(),
     loadActionLog: vi.fn().mockResolvedValue([] as LogEntryViewModel[]),
+    // T11 (life-plan-levels): ін'єкція чотирьох реальних викликів
+    // /api/v1/plan-items (main.tsx), які App прокидає в PlanScreen (T9) і
+    // PlanItemEditor (T10) -- той самий DI-стиль, що loadStructure/loadLayout.
+    loadPlanItems: vi.fn().mockResolvedValue([] as PlanScreenItem[]),
+    onCreatePlanItem: vi.fn().mockResolvedValue(undefined),
+    onUpdatePlanItem: vi.fn().mockResolvedValue(undefined),
+    onDeletePlanItem: vi.fn().mockResolvedValue(undefined),
     loadSyncResources: vi.fn().mockResolvedValue([] as AccountScreenResource[]),
     onAddSyncResource: vi.fn(),
     onRemoveSyncResource: vi.fn(),
@@ -788,8 +796,12 @@ test('Задача 9: клік поза меню шестерні закрива
   fireEvent.click(await screen.findByRole('button', { name: 'Меню налаштувань' }));
   expect(await screen.findByRole('menu')).toBeTruthy();
 
-  // Клік по заголовку "ПЛАН" -- точно поза меню й поза шестернею.
-  fireEvent.mouseDown(await screen.findByText('ПЛАН'));
+  // Клік по бренд-заголовку у верхньому барі -- точно поза меню й поза
+  // шестернею. Саме `heading` рівня 1, не пошук по тексту "ПЛАН": T11 додав у
+  // нав-меню кнопку з тим самим підписом (напрямок «ПЛАН»), тож текстовий
+  // пошук став неоднозначним -- перевірка від цього не послабилась, лише
+  // вказує на той самий елемент точніше.
+  fireEvent.mouseDown(await screen.findByRole('heading', { level: 1 }));
 
   await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
 });
@@ -880,4 +892,146 @@ test('T29: надсилання повідомлення в Чаті викли�
 
   expect(props.sendChatMessage).toHaveBeenCalledWith({ content: 'пробіг 5 км', attachment: null });
   expect(await screen.findByText('Записав: пробіг 5 км')).toBeTruthy();
+});
+
+// --- T11 (life-plan-levels): підключення напрямку «ПЛАН» в app-shell --------
+//
+// RED: App.tsx ще не знає ні про напрямок 'plan', ні про чотири нові
+// AppProps-колбеки (loadPlanItems/onCreatePlanItem/onUpdatePlanItem/
+// onDeletePlanItem) -- PlanScreen.tsx (T9) і PlanItemEditor.tsx (T10)
+// написані й протестовані, але недосяжні користувачу, поки композиційний
+// корінь їх не склеїть (та сама діра, що review 2026-09-11 MUST-FIX 4
+// знайшов у LayoutBoard.onCloseCard).
+//
+// Назви й форма пропів узгоджені з реальними пропами обох компонентів --
+// App лише прокидає їх без змін (той самий DI-стиль, що loadStructure/
+// loadLayout вище). Перемикання PlanScreen <-> PlanItemEditor -- єдине, що
+// App додає від себе: який саме пункт (чи який горизонт) зараз у редакторі,
+// знає лише app-shell, бо обидва компоненти -- листя без спільного батька.
+
+const PLAN_ITEM_TACTICAL = {
+  id: 'plan-item-1',
+  horizon: 'tactical' as const,
+  planText: 'Пробігти півмарафон',
+  done: false,
+  createdAt: '2026-09-15T09:00:00.000Z',
+};
+
+test('T11 (AC-01): клік "ПЛАН" у нав-меню перемикає екран на PlanScreen із даними ін\'єктованого loadPlanItems', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([]);
+  props.loadPlanItems.mockResolvedValue([PLAN_ITEM_TACTICAL]);
+
+  render(<App {...props} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'ПЛАН' }));
+
+  // Три горизонти одним екраном (AC-08) -- секції PlanScreen.tsx -- і сам
+  // пункт із ін'єктованого loadPlanItems, а не з вигаданих даних App.
+  expect(await screen.findByText('Пробігти півмарафон')).toBeTruthy();
+  expect(props.loadPlanItems).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole('region', { name: 'Тактичний' })).toBeTruthy();
+  expect(screen.getByRole('region', { name: 'Оперативний' })).toBeTruthy();
+  expect(screen.getByRole('region', { name: 'Стратегічний' })).toBeTruthy();
+});
+
+test('T11 (AC-01): чекбокс "виконано" на екрані ПЛАН викликає ін\'єктований onUpdatePlanItem', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([]);
+  props.loadPlanItems.mockResolvedValue([PLAN_ITEM_TACTICAL]);
+
+  render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'ПЛАН' }));
+
+  fireEvent.click(await screen.findByRole('checkbox', { name: 'Пробігти півмарафон' }));
+
+  await waitFor(() =>
+    expect(props.onUpdatePlanItem).toHaveBeenCalledWith('plan-item-1', { done: true }),
+  );
+});
+
+test('T11 (AC-01): "+" горизонту відкриває PlanItemEditor, збереження викликає onCreatePlanItem і повертає на PlanScreen', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([]);
+  props.loadPlanItems.mockResolvedValue([]);
+
+  render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'ПЛАН' }));
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Додати пункт: Оперативний' }));
+
+  fireEvent.change(await screen.findByLabelText(/Текст пункту/), { target: { value: 'Змінити професію' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+
+  await waitFor(() =>
+    expect(props.onCreatePlanItem).toHaveBeenCalledWith({ horizon: 'operational', planText: 'Змінити професію' }),
+  );
+
+  // Після збереження редактор закривається -- знову PlanScreen, із повторним
+  // читанням списку (новий пункт інакше не з'явився б на екрані).
+  await waitFor(() => expect(props.loadPlanItems).toHaveBeenCalledTimes(2));
+  expect(screen.queryByLabelText(/Текст пункту/)).toBeNull();
+});
+
+test('T11 (AC-04): клік по тексту пункту відкриває редактор -- порожній текст зберігається як onDeletePlanItem', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([]);
+  props.loadPlanItems.mockResolvedValue([PLAN_ITEM_TACTICAL]);
+
+  render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'ПЛАН' }));
+
+  fireEvent.click(await screen.findByText('Пробігти півмарафон'));
+
+  const field = await screen.findByLabelText(/Текст пункту/);
+  expect((field as HTMLInputElement).value).toBe('Пробігти півмарафон');
+
+  // AC-04 буквально: "down to nothing, not just spaces" -- лише СПРАВДІ
+  // порожнє поле рахується жестом очищення (виправлено 2026-09-20 після
+  // ручної звірки з текстом специфікації; окремий тест нижче покриває
+  // лише-пробільний випадок).
+  fireEvent.change(field, { target: { value: '' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+
+  await waitFor(() => expect(props.onDeletePlanItem).toHaveBeenCalledWith('plan-item-1'));
+  expect(props.onUpdatePlanItem).not.toHaveBeenCalled();
+});
+
+test('T11 (AC-04): лише-пробільний текст наявного пункту -- НЕ видаляє, показує пояснення', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([]);
+  props.loadPlanItems.mockResolvedValue([PLAN_ITEM_TACTICAL]);
+
+  render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'ПЛАН' }));
+  fireEvent.click(await screen.findByText('Пробігти півмарафон'));
+
+  const field = await screen.findByLabelText(/Текст пункту/);
+  fireEvent.change(field, { target: { value: '   ' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+
+  await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+  expect(props.onDeletePlanItem).not.toHaveBeenCalled();
+  expect(props.onUpdatePlanItem).not.toHaveBeenCalled();
+});
+
+test('review 2026-09-20 (AC-09): підтвердження пункту в чаті, поки відкрита сторінка ПЛАН, перечитує список', async () => {
+  const props = validSessionProps();
+  props.loadCards.mockResolvedValue([]);
+  props.loadPlanItems.mockResolvedValue([PLAN_ITEM_TACTICAL]);
+  props.sendChatMessage.mockResolvedValue({ reply: 'Додав до тактичного горизонту.', proposal: null });
+
+  render(<App {...props} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'ПЛАН' }));
+  await screen.findByText('Пробігти півмарафон');
+
+  expect(props.loadPlanItems).toHaveBeenCalledTimes(1);
+
+  fireEvent.change(screen.getByLabelText('Повідомлення'), { target: { value: 'додай пункт про здоровʼя' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Надіслати' }));
+
+  await waitFor(() => expect(props.sendChatMessage).toHaveBeenCalledTimes(1));
+  // Без переходу на іншу вкладку й назад -- сторінка ПЛАН сама перечитала
+  // список одразу після того, як повідомлення реально пішло.
+  await waitFor(() => expect(props.loadPlanItems).toHaveBeenCalledTimes(2));
 });

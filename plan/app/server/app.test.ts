@@ -1530,3 +1530,428 @@ describe('composition root -- "Лог дій" (deps.recordAction) реально
     }
   });
 });
+
+// --- ПЛАН (фіча `life-plan-levels`) -----------------------------------------
+//
+// RED (T8): 4 маршрути contracts/openapi.yaml -- GET/POST /api/v1/plan-items,
+// PATCH/DELETE /api/v1/plan-items/{planItemId}. Той самий урок, що MUST-FIX 1
+// (Структура) і T29 (агент) вище: порти, написані й покриті юніт-тестами,
+// лишаються 404 для реального застосунку, поки composition root їх не
+// змонтує -- тому кожен шлях пінимо тут, через справжній HTTP і справжній
+// auth-middleware, до межі `db.query`.
+
+const PLAN_ITEM_ROW = {
+  id: 'plan-item-1',
+  owner_user_id: 'user-42',
+  horizon: 'tactical',
+  plan_text: 'Пробігти півмарафон',
+  done: false,
+  status: 'active',
+  created_at: new Date('2026-01-01T00:00:00Z'),
+  updated_at: new Date('2026-01-01T00:00:00Z'),
+};
+
+function planItemDb(rows: unknown[] = [PLAN_ITEM_ROW]) {
+  return vi.fn(async (text: string) => {
+    if (text.includes('plan_item')) {
+      // М'яке видалення (AC-04) повертає лише id -- RETURNING id, не всі колонки.
+      if (text.includes("status = 'removed'")) {
+        return { rows: rows.length ? [{ id: PLAN_ITEM_ROW.id }] : [] };
+      }
+      return { rows };
+    }
+    throw new Error(`Непередбачений запит у тесті (planItemDb): ${text}`);
+  });
+}
+
+describe('composition root -- маршрути ПЛАНу змонтовані (T8, contracts/openapi.yaml)', () => {
+  const PLAN_ITEM_ROUTES: Array<{ method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; path: string }> = [
+    { method: 'GET', path: '/api/v1/plan-items' },
+    { method: 'POST', path: '/api/v1/plan-items' },
+    { method: 'PATCH', path: '/api/v1/plan-items/plan-item-1' },
+    { method: 'DELETE', path: '/api/v1/plan-items/plan-item-1' },
+  ];
+
+  it.each(PLAN_ITEM_ROUTES)('$method $path without a token is 401 (mounted, not 404)', async ({ method, path }) => {
+    const query = planItemDb();
+    const verifyJwt = vi.fn();
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}${path}`, { method });
+      expect(res.status).toBe(401);
+      expect(await res.json()).toMatchObject(ERROR_SHAPE);
+      expect(verifyJwt).not.toHaveBeenCalled();
+    } finally {
+      server.close();
+    }
+  });
+
+  it('GET /api/v1/plan-items is 200 with the PlanItemPage shape (AC-08)', async () => {
+    const query = planItemDb();
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/plan-items`, { headers: AUTHED });
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(body).toEqual({
+        items: [
+          {
+            id: 'plan-item-1',
+            horizon: 'tactical',
+            planText: 'Пробігти півмарафон',
+            done: false,
+            createdAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+        has_next: false,
+        has_prev: false,
+        next_cursor: null,
+      });
+      // Власник із JWT sub доходить до параметрів SQL (AC-07).
+      expect(query.mock.calls[0][1]).toEqual(['user-42']);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('GET /api/v1/plan-items is an empty page for a first-time user, not an error (AC-11)', async () => {
+    const query = planItemDb([]);
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/plan-items`, { headers: AUTHED });
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ items: [], has_next: false, next_cursor: null });
+    } finally {
+      server.close();
+    }
+  });
+
+  it('POST /api/v1/plan-items is 201 with the PlanItem shape (AC-01)', async () => {
+    const query = planItemDb();
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/plan-items`, {
+        method: 'POST',
+        headers: AUTHED_JSON,
+        body: JSON.stringify({ horizon: 'tactical', planText: 'Пробігти півмарафон' }),
+      });
+      const body = await res.json();
+
+      expect(res.status).toBe(201);
+      expect(body).toEqual({
+        id: 'plan-item-1',
+        horizon: 'tactical',
+        planText: 'Пробігти півмарафон',
+        done: false,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      });
+    } finally {
+      server.close();
+    }
+  });
+
+  // RED (T14): заголовок Idempotency-Key має реально дійти від HTTP до порта --
+  // без цього рядка в composition root уся дедуплікація нижче мертва, той самий
+  // урок, що з немонтованими маршрутами вище.
+  it('POST /api/v1/plan-items twice with the same Idempotency-Key writes one row (spec.md §6 NFR)', async () => {
+    const query = planItemDb();
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+    const save = () =>
+      fetch(`${baseUrl}/api/v1/plan-items`, {
+        method: 'POST',
+        headers: { ...AUTHED_JSON, 'Idempotency-Key': 'a1b2c3d4-0000-4000-8000-000000000001' },
+        body: JSON.stringify({ horizon: 'tactical', planText: 'Пробігти півмарафон' }),
+      });
+
+    try {
+      const first = await save();
+      const second = await save();
+
+      expect(first.status).toBe(201);
+      expect(second.status).toBe(201);
+      expect(await second.json()).toEqual(await first.json());
+      // Один INSERT на два натискання «Зберегти» -- дубля в базі немає.
+      expect(query).toHaveBeenCalledTimes(1);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('POST /api/v1/plan-items with blank text is the contract 422 plan_item.text_required (AC-02)', async () => {
+    const query = planItemDb();
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/plan-items`, {
+        method: 'POST',
+        headers: AUTHED_JSON,
+        body: JSON.stringify({ horizon: 'tactical', planText: '   ' }),
+      });
+      const body = await res.json();
+
+      expect(res.status).toBe(422);
+      expect(body).toEqual({ code: 'plan_item.text_required', message: expect.any(String) });
+      // Порожній пункт не лишає в базі жодного сліду.
+      expect(query).not.toHaveBeenCalled();
+    } finally {
+      server.close();
+    }
+  });
+
+  it('POST /api/v1/plan-items with a broken JSON body is the contract 400 request.invalid_body', async () => {
+    const query = planItemDb();
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/plan-items`, {
+        method: 'POST',
+        headers: AUTHED_JSON,
+        body: '{"horizon": "tactical", "planText": "unclosed',
+      });
+      const body = await res.json();
+
+      expect(res.status).toBe(400);
+      expect(body).toEqual({ code: 'request.invalid_body', message: expect.any(String) });
+    } finally {
+      server.close();
+    }
+  });
+
+  it('POST /api/v1/plan-items with a body past the parser limit is the contract 413 request.invalid_body', async () => {
+    const query = planItemDb();
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      // express.json({ limit: '10mb' }) -- на 11 МБ body-parser зупиняється з
+      // entity.too.large (числовий status 413), який error-middleware мапить у
+      // той самий конверт, що й зіпсований JSON вище.
+      const res = await fetch(`${baseUrl}/api/v1/plan-items`, {
+        method: 'POST',
+        headers: AUTHED_JSON,
+        body: JSON.stringify({ horizon: 'tactical', planText: 'x'.repeat(11 * 1024 * 1024) }),
+      });
+      const body = await res.json();
+
+      expect(res.status).toBe(413);
+      expect(body).toEqual({ code: 'request.invalid_body', message: expect.any(String) });
+    } finally {
+      server.close();
+    }
+  });
+
+  it('PATCH /api/v1/plan-items/{id} flips the "done" checkbox and is 200 (AC-03b)', async () => {
+    const query = planItemDb([{ ...PLAN_ITEM_ROW, done: true }]);
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/plan-items/plan-item-1`, {
+        method: 'PATCH',
+        headers: AUTHED_JSON,
+        body: JSON.stringify({ done: true }),
+      });
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(body).toMatchObject({ id: 'plan-item-1', done: true });
+    } finally {
+      server.close();
+    }
+  });
+
+  it('PATCH /api/v1/plan-items/{id} on a nonexistent/foreign item is the contract 404 (AC-07)', async () => {
+    const query = planItemDb([]);
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/plan-items/someone-elses-item`, {
+        method: 'PATCH',
+        headers: AUTHED_JSON,
+        body: JSON.stringify({ done: true }),
+      });
+      const body = await res.json();
+
+      expect(res.status).toBe(404);
+      expect(body).toEqual({ code: 'plan_item.not_found', message: expect.any(String) });
+    } finally {
+      server.close();
+    }
+  });
+
+  it('DELETE /api/v1/plan-items/{id} is 204 with no body and never a physical delete (AC-04)', async () => {
+    const query = planItemDb();
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/plan-items/plan-item-1`, {
+        method: 'DELETE',
+        headers: AUTHED,
+      });
+
+      expect(res.status).toBe(204);
+      expect(await res.text()).toBe('');
+      expect(query.mock.calls.some(([text]: [string]) => text.includes('DELETE FROM plan_item'))).toBe(false);
+      expect(query.mock.calls.some(([text]: [string]) => text.includes("status = 'removed'"))).toBe(true);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('DELETE /api/v1/plan-items/{id} on a nonexistent/foreign item is the contract 404 (AC-07)', async () => {
+    const query = planItemDb([]);
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer(noopDeps({ query }, verifyJwt));
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/plan-items/someone-elses-item`, {
+        method: 'DELETE',
+        headers: AUTHED,
+      });
+      const body = await res.json();
+
+      expect(res.status).toBe(404);
+      expect(body).toEqual({ code: 'plan_item.not_found', message: expect.any(String) });
+    } finally {
+      server.close();
+    }
+  });
+
+  it('POST /api/v1/plan-items записує рядок у action_log, коли deps.recordAction задано (AC-05)', async () => {
+    const query = vi.fn(async (text: string) => {
+      if (text.includes('action_log')) return { rows: [ACTION_LOG_ROW] };
+      if (text.includes('plan_item')) return { rows: [PLAN_ITEM_ROW] };
+      throw new Error(`Непередбачений запит у тесті (plan recordAction wiring): ${text}`);
+    });
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const { server, baseUrl } = await startServer({ ...noopDeps({ query }, verifyJwt), recordAction });
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/plan-items`, {
+        method: 'POST',
+        headers: AUTHED_JSON,
+        body: JSON.stringify({ horizon: 'tactical', planText: 'Пробігти півмарафон' }),
+      });
+
+      expect(res.status).toBe(201);
+      const actionLogInsert = query.mock.calls.find(([text]: [string]) => text.includes('INSERT INTO action_log'));
+      expect(actionLogInsert).toBeTruthy();
+      const [, params] = actionLogInsert as unknown as [string, unknown[]];
+      expect(params).toEqual([expect.any(String), 'user-42', 'Додано пункт плану «Пробігти півмарафон»']);
+    } finally {
+      server.close();
+    }
+  });
+
+  // Review 2026-09-20 (stage-1 + stage-2, обидва незалежні рев'юери): збій
+  // Лог дій НЕ мав лишати зміну plan_item закомічену без сліду (sad.md §8,
+  // AC-05). Той самий патерн, що "збій вставки позиції не глушиться" для
+  // карток вище -- withTransaction, що РЕАЛЬНО фіксує відхилення.
+  it('POST /api/v1/plan-items: збій запису в Лог дій не глушиться -- запит падає, щоб транзакція відкотила й сам пункт (AC-05)', async () => {
+    const query = planItemDb();
+    const failingRecordAction = vi.fn().mockRejectedValue(new Error('Лог дій тимчасово недоступний'));
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const rejections: unknown[] = [];
+    const db = { query } as unknown as Db;
+    const deps: AppDeps = {
+      ...noopDeps({ query } as unknown as { query: typeof query }, verifyJwt),
+      recordAction: failingRecordAction,
+      withTransaction: (fn) =>
+        fn(db).catch((err: unknown) => {
+          rejections.push(err);
+          throw err;
+        }),
+    };
+    const { server, baseUrl } = await startServer(deps);
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/plan-items`, {
+        method: 'POST',
+        headers: AUTHED_JSON,
+        body: JSON.stringify({ horizon: 'tactical', planText: 'Пробігти півмарафон' }),
+      });
+
+      expect(res.status).toBe(500);
+      // Ключове: помилка ВИЙШЛА за межі withTransaction -- саме це змушує
+      // server/db.ts зробити ROLLBACK і не лишити пункт плану без сліду в Лозі.
+      expect(rejections).toHaveLength(1);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('PATCH /api/v1/plan-items/{id}: збій запису в Лог дій відкочує і саму зміну тексту (AC-05)', async () => {
+    const query = planItemDb();
+    const failingRecordAction = vi.fn().mockRejectedValue(new Error('Лог дій тимчасово недоступний'));
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const rejections: unknown[] = [];
+    const db = { query } as unknown as Db;
+    const deps: AppDeps = {
+      ...noopDeps({ query } as unknown as { query: typeof query }, verifyJwt),
+      recordAction: failingRecordAction,
+      withTransaction: (fn) =>
+        fn(db).catch((err: unknown) => {
+          rejections.push(err);
+          throw err;
+        }),
+    };
+    const { server, baseUrl } = await startServer(deps);
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/plan-items/plan-item-1`, {
+        method: 'PATCH',
+        headers: AUTHED_JSON,
+        body: JSON.stringify({ done: true }),
+      });
+
+      expect(res.status).toBe(500);
+      expect(rejections).toHaveLength(1);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('DELETE /api/v1/plan-items/{id}: збій запису в Лог дій відкочує і саме м\'яке видалення (AC-05)', async () => {
+    const query = planItemDb();
+    const failingRecordAction = vi.fn().mockRejectedValue(new Error('Лог дій тимчасово недоступний'));
+    const verifyJwt = vi.fn().mockResolvedValue({ sub: 'user-42' });
+    const rejections: unknown[] = [];
+    const db = { query } as unknown as Db;
+    const deps: AppDeps = {
+      ...noopDeps({ query } as unknown as { query: typeof query }, verifyJwt),
+      recordAction: failingRecordAction,
+      withTransaction: (fn) =>
+        fn(db).catch((err: unknown) => {
+          rejections.push(err);
+          throw err;
+        }),
+    };
+    const { server, baseUrl } = await startServer(deps);
+
+    try {
+      const res = await fetch(`${baseUrl}/api/v1/plan-items/plan-item-1`, {
+        method: 'DELETE',
+        headers: AUTHED,
+      });
+
+      expect(res.status).toBe(500);
+      expect(rejections).toHaveLength(1);
+    } finally {
+      server.close();
+    }
+  });
+});

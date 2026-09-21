@@ -1008,3 +1008,110 @@ describe('handleMessage -- AC-01/AC-02/AC-05 fix: an incomplete proposal never b
     expect(inserted).toBe(false);
   });
 });
+
+describe('handleMessage -- T12 (AC-06/AC-09): agent-drafted plan-item, confirmed in chat', () => {
+  it('AC-06: a plan-item the agent merely PROPOSES is never created -- nothing leaves the chat', async () => {
+    const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()] });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(
+      okClaude(
+        decisionJson({
+          outcome: 'clarification',
+          proposedSummary: null,
+          reply: 'Пропоную так: «Записатись до лікаря цього тижня». Підтвердиш?',
+          planItemProposal: { horizon: 'tactical', planText: 'Записатись до лікаря цього тижня' },
+        })
+      )
+    );
+    const createPlanItem = vi.fn().mockResolvedValue(undefined);
+
+    const result = await handleMessage(db, askClaude, { userId: USER_ID, text: 'хочу щось зробити зі здоровʼям' }, { createPlanItem });
+
+    expect(createPlanItem).not.toHaveBeenCalled();
+    expect(result.reply).toContain('Підтвердиш?');
+  });
+
+  it('AC-09: confirming the proposal in chat creates the plan-item with the confirmed text, via the injected create path', async () => {
+    const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()] });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(
+      okClaude(
+        decisionJson({
+          outcome: 'clarification',
+          proposedSummary: null,
+          reply: 'Додав до тактичного горизонту.',
+          confirmedPlanItem: { horizon: 'tactical', planText: 'Записатись до лікаря цього тижня' },
+        })
+      )
+    );
+    const createPlanItem = vi.fn().mockResolvedValue(undefined);
+
+    await handleMessage(db, askClaude, { userId: USER_ID, text: 'так, додай' }, { createPlanItem });
+
+    expect(createPlanItem).toHaveBeenCalledTimes(1);
+    expect(createPlanItem).toHaveBeenCalledWith({
+      ownerUserId: USER_ID,
+      horizon: 'tactical',
+      planText: 'Записатись до лікаря цього тижня',
+    });
+  });
+
+  it('never creates a plan-item from an empty confirmed text (same fail-safe as the rest of this file)', async () => {
+    const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()] });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(
+      okClaude(
+        decisionJson({
+          outcome: 'clarification',
+          proposedSummary: null,
+          reply: 'Гаразд.',
+          confirmedPlanItem: { horizon: 'tactical', planText: '   ' },
+        })
+      )
+    );
+    const createPlanItem = vi.fn().mockResolvedValue(undefined);
+
+    await handleMessage(db, askClaude, { userId: USER_ID, text: 'так' }, { createPlanItem });
+
+    expect(createPlanItem).not.toHaveBeenCalled();
+  });
+
+  it('review 2026-09-20: Claude returning an unknown horizon does not crash the chat turn -- the reply degrades instead', async () => {
+    const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()] });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(
+      okClaude(
+        decisionJson({
+          outcome: 'clarification',
+          proposedSummary: null,
+          reply: 'Додав до короткострокового горизонту.',
+          // Claude сам вигадує рядок текстом -- тут навмисно щось, чого немає
+          // серед трьох дозволених значень (tactical/operational/strategic).
+          confirmedPlanItem: { horizon: 'short-term', planText: 'Записатись до лікаря цього тижня' },
+        })
+      )
+    );
+    const createPlanItem = vi.fn().mockRejectedValue(new Error('plan_item.horizon_invalid'));
+
+    const result = await handleMessage(db, askClaude, { userId: USER_ID, text: 'так, додай' }, { createPlanItem });
+
+    expect(createPlanItem).toHaveBeenCalledTimes(1);
+    // Хід НЕ впав -- reply замінено детермінованим поясненням, а не винятком,
+    // що вийшов би з handleMessage і зламав POST /api/v1/messages цілком.
+    expect(result.reply).toMatch(/не вдалося зберегти/);
+  });
+
+  it('is a no-op when no createPlanItem callback is injected (backward-compatible with every existing caller)', async () => {
+    const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()] });
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(
+      okClaude(
+        decisionJson({
+          outcome: 'clarification',
+          proposedSummary: null,
+          reply: 'Гаразд.',
+          confirmedPlanItem: { horizon: 'tactical', planText: 'Записатись до лікаря' },
+        })
+      )
+    );
+
+    const result = await handleMessage(db, askClaude, { userId: USER_ID, text: 'так, додай' });
+
+    expect(result.reply).toBe('Гаразд.');
+  });
+});

@@ -103,6 +103,23 @@ export interface HandleMessageDeps {
    * (пропозиція чи уточнення) -- дія користувача вже відбулась.
    */
   recordAction?: (db: Db, input: { ownerUserId: string; action: string }) => Promise<void>;
+  /**
+   * T12 (life-plan-levels AC-09, sad.md §6 Critical flow 4) -- створення
+   * пункту ПЛАНу, підтвердженого користувачем прямо в чаті. Колбек, а не
+   * прямий імпорт: `agent` нічого не знає про модуль `plan-horizons` (і
+   * навпаки) -- зв'язує їх композиційний корінь (server/app.ts), той самий
+   * оптційний DI-стиль, що `recordAction`/`reportUserIssue` вище. За цим
+   * колбеком стоїть РІВНО той самий вхід, що обслуговує пряме введення на
+   * сторінці ПЛАН (ports/plan-item-handlers.createPlanItem -> POST
+   * /api/v1/plan-items), тому підтвердження в чаті й ручне додавання
+   * сходяться в одному шляху запису, а не в двох паралельних.
+   *
+   * `horizon` тут -- звичайний рядок: перевірка, що це один із трьох
+   * горизонтів, живе в домені plan-horizons (`createPlanItem` кине
+   * PlanItemValidationError), і дублювати її тут означало б два джерела
+   * правди (D-19).
+   */
+  createPlanItem?: (input: { ownerUserId: string; horizon: string; planText: string }) => Promise<unknown>;
 }
 
 // --- Claude's structured decision (this file's own wire contract) ---------
@@ -161,6 +178,31 @@ interface AgentDecision {
    * КОРИСТУВАЧА, готовий лягти в лист. `null` -- цей хід не про це.
    */
   reportIssueToDeveloper: string | null;
+  /**
+   * T12 / life-plan-levels AC-06 -- формулювання пункту ПЛАНу, яке агент лише
+   * ПРОПОНУЄ. Свідомо НІКОЛИ нікуди не пишеться: пропозиція живе лише в
+   * `reply` (тобто лише в чаті), на сервері немає стану "очікує
+   * підтвердження" (life-plan-levels sad.md §4 п.3). Поле існує, щоб намір
+   * був явним у конверті (і перевірюваним тестом), а не вгадувався з тексту.
+   */
+  planItemProposal: { horizon: string; planText: string } | null;
+  /**
+   * T12 / life-plan-levels AC-09 -- користувач підтвердив формулювання прямо
+   * в чаті: САМЕ це підтвердження і є збереженням (жодної додаткової дії в
+   * редакторі). Заповнюється лише коли підтвердження однозначне -- той самий
+   * принцип, що `proposedRule` вище: доки триває уточнення, тут `null`.
+   */
+  confirmedPlanItem: { horizon: string; planText: string } | null;
+}
+
+/** Розбір `{horizon, planText}` з конверта -- будь-яка невідповідність форми -> null (той самий fail-safe, що safeProposedRule). */
+function safePlanItemDraft(value: unknown): { horizon: string; planText: string } | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const raw = value as Partial<Record<'horizon' | 'planText', unknown>>;
+  const horizon = safeString(raw.horizon);
+  const planText = safeString(raw.planText);
+  if (horizon === null || planText === null) return null;
+  return { horizon, planText };
 }
 
 function safeString(value: unknown): string | null {
@@ -230,6 +272,8 @@ function parseAgentDecision(raw: string): AgentDecision {
       forgetReplacementText: safeString(parsed.forgetReplacementText),
       proposedRule: safeProposedRule(parsed.proposedRule),
       reportIssueToDeveloper: safeString(parsed.reportIssueToDeveloper),
+      planItemProposal: safePlanItemDraft(parsed.planItemProposal),
+      confirmedPlanItem: safePlanItemDraft(parsed.confirmedPlanItem),
     };
   } catch {
     return {
@@ -247,6 +291,8 @@ function parseAgentDecision(raw: string): AgentDecision {
       forgetReplacementText: null,
       proposedRule: null,
       reportIssueToDeveloper: null,
+      planItemProposal: null,
+      confirmedPlanItem: null,
     };
   }
 }
@@ -419,6 +465,8 @@ const RESPONSE_FORMAT_INSTRUCTION = `Відповідай СТРОГО одни�
   "forgetTopic": "<тема раніше запам'ятованого факту, який користувач хоче скасувати чи виправити ('забудь, що...'), або null>",
   "forgetReplacementText": "<заданий разом із forgetTopic -- новий текст факту (виправлення); null разом із forgetTopic -- факт просто видаляється>",
   "proposedRule": "<об'єкт {category, ruleText, scopeCardId} КОЛИ користувач хоче сформулювати власне правило (AC-14) і діалог уже досяг конкретного, готового до збереження формулювання -- інакше null (ще уточнюєш формулювання в reply, нічого не зберігай передчасно). category -- одне з готового меню (data/correction/survey/context_clarification/owner_impact/reminder) або null; ruleText -- власне формулювання або null; має бути задано ХОЧА Б ОДНЕ з двох. scopeCardId -- id картки зі списку нижче, якщо правило стосується лише ОДНІЄЇ картки (AC-12), або null для глобального правила. Система сама ще раз звірить із наявними правилами тієї самої області дії ПЕРЕД збереженням -- якщо знайде дублікат, збереження не станеться і користувач побачить чому.>",
+  "planItemProposal": "<об'єкт {horizon, planText} КОЛИ користувач просить допомогти СФОРМУЛЮВАТИ пункт свого ПЛАНу і ти пропонуєш формулювання, якого він ще НЕ підтвердив -- інакше null. horizon -- один із трьох горизонтів: 'tactical' (найближче), 'operational' (середнє), 'strategic' (далеке); planText -- саме формулювання. Пропозиція лишається ЛИШЕ в чаті: нічого не зберігається, доки користувач не підтвердить. Твій reply має показати формулювання й запитати підтвердження.>",
+  "confirmedPlanItem": "<об'єкт {horizon, planText} КОЛИ користувач у чаті явно підтвердив запропоноване формулювання ('так', 'додай', 'давай') -- саме це підтвердження і створює пункт, жодної іншої дії від користувача не потрібно. planText -- ПІДТВЕРДЖЕНИЙ текст (з урахуванням правок користувача), horizon -- той самий набір із трьох значень. Інакше null -- доки підтвердження немає, нічого не зберігається.>",
   "reportIssueToDeveloper": "<КОРОТКИЙ опис проблеми з погляду користувача, КОЛИ користувач явно просить переслати проблему розробнику ('відправ це розробнику', 'повідом про це розробнику' тощо, AC-20b) -- або null, коли це звичайна розмова. Якщо задано, твій reply МАЄ підтвердити користувачу, що надіслано (наприклад: 'Надіслав це розробнику.') -- система сама повторно перевірить, чи надсилання дійсно вдалось, і замінить твою відповідь поясненням, якщо ні.>"
 }
 "outcome": "proposal" ЛИШЕ тоді, коли proposedSummary заповнено і ти дійсно пропонуєш конкретний запис (AC-01/AC-10/AC-19). В решті випадків -- "clarification": суперечливі чи невизначені дані (AC-04), кілька однаково ймовірних карток або жодної підходящої (AC-05), чи вкладення, з якого не вдалось виділити факт (AC-10b/AC-19b). Обирай cardId/metricBlockId ЛИШЕ зі списку нижче -- ніколи не вигадуй id.`;
@@ -646,6 +694,47 @@ async function refineActiveProposal(
  * колбек (deps не передано) -- тихий no-op, той самий fallback, що
  * emailTransport/developerEmail деінде в проєкті (T29 wiring).
  */
+/**
+ * T12 (life-plan-levels AC-09/AC-06, sad.md §6 Critical flow 4) -- підтверджений
+ * у чаті пункт ПЛАНу створюється тут, ТИМ САМИМ шляхом, що й пряме введення на
+ * сторінці ПЛАН (колбек `deps.createPlanItem`, зв'язаний композиційним коренем).
+ *
+ * Симетрична половина AC-06: `decision.planItemProposal` тут свідомо НЕ
+ * читається взагалі -- непідтверджена пропозиція не має жодного шляху до
+ * запису, не "має, але з перевіркою". Єдиний вхід -- `confirmedPlanItem`.
+ *
+ * Порожній/пробільний текст -- тихо нічого не створюємо (той самий fail-safe,
+ * що `prepareFactText`/`persistProposedRule` вище): доменна перевірка
+ * plan-horizons однаково відхилила б його, але кидати виняток за очікуваний
+ * результат розбору відповіді Claude цей файл ніде не робить.
+ *
+ * Review 2026-09-20 (обидва незалежні рев'юери): `confirmed.horizon` --
+ * рядок, який САМ Claude придумав текстом (жодного списку варіантів у
+ * промпті), тож він може не збігтися з жодним із трьох дозволених значень.
+ * До цього фіксу `deps.createPlanItem` кидав виняток, що летів крізь увесь
+ * `handleMessage` і ламав хід чату цілком (відповідь агента не зберігалась
+ * навіть у частині, що не стосувалась пункту плану) -- той самий клас
+ * помилки, що `notifyDeveloperOfUserIssue` вище вже деградує замість кидати.
+ * Тепер так само: збій колбека замінює відповідь детермінованим поясненням,
+ * а не валить увесь хід.
+ */
+async function persistConfirmedPlanItem(deps: HandleMessageDeps | undefined, userId: string, decision: AgentDecision): Promise<string | null> {
+  const confirmed = decision.confirmedPlanItem;
+  if (!confirmed || !deps?.createPlanItem) {
+    return null;
+  }
+  const planText = confirmed.planText.trim();
+  if (planText.length === 0) {
+    return null;
+  }
+  try {
+    await deps.createPlanItem({ ownerUserId: userId, horizon: confirmed.horizon, planText });
+    return null;
+  } catch {
+    return 'Спробував додати пункт до плану, але не вдалося зберегти -- спробуй ще раз трохи пізніше.';
+  }
+}
+
 async function notifyDeveloperOfUserIssue(deps: HandleMessageDeps | undefined, decision: AgentDecision): Promise<string | null> {
   const description = decision.reportIssueToDeveloper?.trim();
   if (!description || !deps?.reportUserIssue) {
@@ -764,6 +853,16 @@ export async function handleMessage(
   const ruleConflictReply = await persistProposedRule(db, input.userId, decision, catalog.cardIds);
   if (ruleConflictReply !== null) {
     decision.reply = ruleConflictReply;
+  }
+
+  // T12 (life-plan-levels AC-09): підтверджений у чаті пункт ПЛАНу -- така
+  // сама фонова дія цього ходу, як AC-09/AC-14 вище, незалежна від того, чи
+  // хід ще й формує пропозицію запису в картку. Запис у Лог дій (AC-05 тієї
+  // фічі) робить сам колбек -- композиційний корінь передає в нього ту саму
+  // `recordAction`, що й прямому введенню, тож рядок у Лозі однаковий.
+  const planItemReply = await persistConfirmedPlanItem(deps, input.userId, decision);
+  if (planItemReply !== null) {
+    decision.reply = planItemReply;
   }
 
   // AC-20b (review 2026-09-13 gap fix): застосовується ПІСЛЯ AC-14's

@@ -194,6 +194,15 @@ export interface CreateMessageOptions {
   developerEmail?: string;
   /** Лог дій -- прокидається в handleMessage як HandleMessageDeps.recordAction (../app/handle-message.ts). */
   recordAction?: HandleMessageDeps['recordAction'];
+  /**
+   * T12 (life-plan-levels AC-09) -- створення підтвердженого в чаті пункту
+   * ПЛАНу; прокидається в handleMessage як HandleMessageDeps.createPlanItem.
+   * Той самий optional-DI підхід, що `recordAction`/`transport` вище: цей
+   * файл лише передає колбек далі й нічого не знає про модуль plan-horizons
+   * (зв'язує їх композиційний корінь, server/app.ts). Відсутній -- чат просто
+   * ніколи не створює пунктів ПЛАНу, не падає.
+   */
+  createPlanItem?: HandleMessageDeps['createPlanItem'];
 }
 
 /**
@@ -259,7 +268,7 @@ export async function createMessage(
       db,
       askClaude,
       { userId: ownerUserId, text, attachment, now },
-      { reportUserIssue, recordAction: options.recordAction }
+      { reportUserIssue, recordAction: options.recordAction, createPlanItem: options.createPlanItem }
     );
   } finally {
     await insertChatMessage(db, {
