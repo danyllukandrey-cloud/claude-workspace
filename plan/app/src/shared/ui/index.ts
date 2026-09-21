@@ -26,7 +26,7 @@ export type { ButtonProps } from './Button';
 export { IconButton } from './IconButton';
 export type { IconButtonProps } from './IconButton';
 
-export { AttachIcon, ChevronIcon, GearIcon, MicIcon, SendIcon } from './icons';
+export { AttachIcon, ChevronIcon, GearIcon, MicIcon, SendIcon, TrashIcon } from './icons';
 export type { IconProps } from './icons';
 
 export { TextField } from './TextField';

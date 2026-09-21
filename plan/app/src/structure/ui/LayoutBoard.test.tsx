@@ -244,7 +244,14 @@ describe('CH-04: купка як явна ціль "визначено/неви�
     await waitFor(() => expect(props.onMoveCard).toHaveBeenCalledWith({ cardId: 'card-a', x: 50, y: 50 }));
   });
 
-  test('коли купка видима (реальна нерозкладена картка), картки канви рендеряться вище (стиснуто по Y)', async () => {
+  // Bug fix 2026-09-21 (живе тестування, Андрій: "єдине правило, коли блок
+  // може стояти будь-де -- це якщо я його туди фізично пересунув"): раніше
+  // купка, щойно ставала видимою, стискала Y ВСІХ карток канви (щоб не
+  // ховатись за неї) -- саме ЦЕ стиснення й спричиняло "підскакування"
+  // карток при захопленні/відпусканні. Скасовано повністю -- картка
+  // рендериться РІВНО на збереженій позиції, незалежно від того, чи видима
+  // купка.
+  test('купка видима (реальна нерозкладена картка) НЕ стискає позицію карток канви -- рендеряться на збереженому x/y як є', async () => {
     const props = baseProps({
       cards: [
         { cardId: 'card-a', cardTitle: 'Картка A', x: 20, y: 30, healthState: null },
@@ -256,11 +263,42 @@ describe('CH-04: купка як явна ціль "визначено/неви�
 
     await screen.findByTestId('unassigned-tray');
     const cardB = screen.getByTestId('card-card-b');
-    // free = 1 - 40/210 = 170/210 -- top стиснуто МЕНШЕ за сирі 70%, картка
-    // не ховається за трей (TRAY_RECT top=170 з 210 -- 80.95% канви).
     const top = Number(cardB.parentElement?.style.top?.replace('%', ''));
-    expect(top).toBeLessThan(70);
-    expect(top).toBeCloseTo(56.67, 1);
+    expect(top).toBeCloseTo(70, 1);
+  });
+
+  // Bug fix 2026-09-21 (живе тестування, Андрій): "блок... відскакує від
+  // нижньої канви вище ніж я пробую його встановити" -- саме тому, що трей
+  // (видимий, бо ЩЕ Є нерозкладена картка) стискав щойно відпущену картку
+  // ОДРАЗУ після drop. Відтворюю точно цей сценарій: дві нерозкладені
+  // картки, перетягую ОДНУ на канву ближче до низу, ДРУГА лишається в
+  // треї (трей і далі видимий після відпускання) -- картка має лишитись
+  // РІВНО там, де її відпустили.
+  test('відпустив картку біля низу канви, поки трей ЩЕ видимий (друга картка нерозкладена) -- лишається рівно там, де відпустив', async () => {
+    const props = baseProps({
+      cards: [
+        { cardId: 'card-a', cardTitle: 'Картка A', x: null, y: null, healthState: null },
+        { cardId: 'card-b', cardTitle: 'Картка B', x: null, y: null, healthState: null },
+      ],
+    });
+    render(<LayoutBoard {...props} />);
+
+    const cardA = await screen.findByTestId('card-card-a');
+    firePointer(cardA, 'pointerdown', 10, 10);
+    // (150, 160) -- у межах канви (300x210), ВИЩЕ за TRAY_RECT (top:170), 50%/76.19%.
+    firePointer(window, 'pointermove', 150, 160);
+    firePointer(window, 'pointerup', 150, 160);
+
+    await waitFor(() => expect(props.onMoveCard).toHaveBeenCalledWith({ cardId: 'card-a', x: 50, y: expect.closeTo(76.19, 1) }));
+
+    // Трей і далі видимий -- card-b лишається нерозкладеною.
+    const tray = screen.getByTestId('unassigned-tray');
+    expect(tray.contains(screen.getByTestId('card-card-b'))).toBe(true);
+
+    // card-a рендериться РІВНО на y=76.19%, не стиснуто вище.
+    const placedCardA = screen.getByTestId('card-card-a');
+    const top = Number(placedCardA.parentElement?.style.top?.replace('%', ''));
+    expect(top).toBeCloseTo(76.19, 1);
   });
 });
 
@@ -296,6 +334,34 @@ describe('вимога 3 (чат): реальний драг мишею/доти
     await waitFor(() => expect(props.onMoveCard).toHaveBeenCalledWith({ cardId: 'card-tray', x: 25, y: 20 }));
   });
 
+  // Живе тестування 2026-09-21 (Андрій): "картка тікає з-під миші на центр,
+  // де колись знаходилась" -- pointerdown на картці з купки (x/y === null)
+  // раніше ставив стартову "живу" позицію на жорсткий "50/50" (центр канви)
+  // замість реального місця курсора. React встигав перемалювати з ЦИМ
+  // заглушковим значенням ДО першого pointermove (setDraggingCardId --
+  // state, викликає рендер), тож картка на мить "стрибала" в центр. Тест
+  // перевіряє позицію ОДРАЗУ після pointerdown, БЕЗ жодного pointermove --
+  // саме той кадр, що глючив.
+  test('bug fix: одразу після pointerdown (без pointermove) картка з купки рендериться під курсором, не в центрі канви', async () => {
+    const props = baseProps({
+      cards: [{ cardId: 'card-tray', cardTitle: 'У треї', x: null, y: null, healthState: null }],
+    });
+    render(<LayoutBoard {...props} />);
+
+    const trayCard = await screen.findByTestId('card-card-tray');
+    // clientX=90/clientY=189 -> 30%/90% канви 300x210 (обидва рівно діляться,
+    // без плаваючої коми) -- курсор фізично над треєм (TRAY_RECT top=170),
+    // той самий сценарій, що звіт "переношу блок з низу в верх".
+    firePointer(trayCard, 'pointerdown', 90, 189);
+
+    // Драг стартував -- картка перейшла з треєвого рендеру (без обгортки) в
+    // канвовий (з позиційною обгorткою), React ЦЕ НОВИЙ DOM-вузол -- стара
+    // змінна `trayCard` тепер вказує на відʼєднаний вузол, перезапитуємо.
+    const wrapper = screen.getByTestId('card-card-tray').parentElement as HTMLElement;
+    expect(wrapper.style.left).toBe('30%');
+    expect(wrapper.style.top).toBe('90%');
+  });
+
   test('координати клемпляться в 0..100 -- перетягування за межі канви не виходить за них', async () => {
     const props = baseProps();
     render(<LayoutBoard {...props} />);
@@ -321,6 +387,32 @@ describe('вимога 3 (чат): реальний драг мишею/доти
 
     const banner = await screen.findByText(/не вдалося зберегти|мереж/i);
     expect(banner.closest('[data-variant]')?.getAttribute('data-variant')).toBe('error');
+  });
+
+  // Bug fix 2026-09-21 (живе тестування, Андрій: "все працює окрім оцієї
+  // чортівні" -- банер помилки лишався на екрані НАЗАВЖДИ, навіть коли
+  // наступні перетягування вже проходили успішно -- Banner.tsx не має кнопки
+  // закрити, і нічим, крім нового драгу, банер не скидався).
+  test('новий драг картки прибирає старий банер помилки з попереднього невдалого перетягування', async () => {
+    const onMoveCard = vi.fn().mockRejectedValueOnce(new Error('Failed to fetch')).mockResolvedValue(undefined);
+    const props = { ...baseProps(), onMoveCard };
+    render(<LayoutBoard {...props} />);
+
+    const card = await screen.findByTestId('card-card-a');
+    firePointer(card, 'pointerdown', 60, 63);
+    firePointer(window, 'pointermove', 150, 105);
+    firePointer(window, 'pointerup', 150, 105);
+    await screen.findByText(/не вдалося зберегти|мереж/i);
+
+    // Другий (успішний) драг тієї самої картки -- сам ПОЧАТОК драгу вже
+    // прибирає старий банер, не чекаючи результату нового запиту.
+    firePointer(screen.getByTestId('card-card-a'), 'pointerdown', 60, 63);
+    expect(screen.queryByText(/не вдалося зберегти|мереж/i)).toBeNull();
+
+    firePointer(window, 'pointermove', 150, 105);
+    firePointer(window, 'pointerup', 150, 105);
+    await waitFor(() => expect(onMoveCard).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText(/не вдалося зберегти|мереж/i)).toBeNull();
   });
 });
 
@@ -423,7 +515,43 @@ describe('вимоги 4/5 (чат): два завжди видимі інстр
     expect(line.getAttribute('data-directed')).toBe('false');
   });
 
-  test('тап по наявному зв\'язку (поза режимом зв\'язування) видаляє його', async () => {
+  // Bug fix (docs/features/structure/changes.md CH-13, живе тестування,
+  // Андрій зі скріншотом): "перетягнув блок в низ... звязки з екрану
+  // потрібно автоматично прибрати" -- лінія тяглась до старої реальної
+  // позиції картки, навіть коли сам чип уже намальований у треї
+  // (pendingUnassignedIds, CH-04, клієнтський стан -- card.x лишається
+  // непорожнім).
+  test('перетягнув картку-кінець зв\'язку в трей -- лінія зникає з канви (не висить у порожньому місці)', async () => {
+    const props = baseProps({
+      connections: [{ id: 'conn-1', cardIdA: 'card-a', cardIdB: 'card-b', directed: false }],
+    });
+    render(<LayoutBoard {...props} />);
+
+    await screen.findByTestId('connection-conn-1');
+
+    const card = await screen.findByTestId('card-card-a');
+    firePointer(card, 'pointerdown', 60, 63);
+    firePointer(window, 'pointermove', 150, 190); // усередині TRAY_RECT.
+    firePointer(window, 'pointerup', 150, 190);
+
+    await waitFor(() => {
+      const tray = screen.getByTestId('unassigned-tray');
+      expect(tray.contains(screen.getByTestId('card-card-a'))).toBe(true);
+    });
+    expect(screen.queryByTestId('connection-conn-1')).toBeNull();
+
+    // Повернув картку назад на канву -- той самий звʼязок з'являється знову
+    // (лише приховано, не видалено).
+    firePointer(screen.getByTestId('card-card-a'), 'pointerdown', 60, 63);
+    firePointer(window, 'pointermove', 150, 105);
+    firePointer(window, 'pointerup', 150, 105);
+
+    await waitFor(() => expect(screen.queryByTestId('connection-conn-1')).toBeTruthy());
+  });
+
+  // CH-12 (docs/features/structure/changes.md): клік на лінію/стрілку більше
+  // НЕ видаляє одразу -- лише озброює кнопку підтвердження "Видалити".
+  test('тап по наявному зв\'язку (поза режимом зв\'язування) НЕ видаляє одразу -- показує кнопку підтвердження "Видалити"', async () => {
     const props = baseProps({
       connections: [{ id: 'conn-1', cardIdA: 'card-a', cardIdB: 'card-b', directed: false }],
     });
@@ -432,9 +560,42 @@ describe('вимоги 4/5 (чат): два завжди видимі інстр
     const line = await screen.findByTestId('connection-conn-1');
     fireEvent.click(line);
 
+    expect(props.onDeleteConnection).not.toHaveBeenCalled();
+    expect(screen.getByTestId('connection-conn-1')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Видалити' })).toBeTruthy();
+  });
+
+  test('CH-12: клік на кнопку підтвердження "Видалити" видаляє зв\'язок', async () => {
+    const props = baseProps({
+      connections: [{ id: 'conn-1', cardIdA: 'card-a', cardIdB: 'card-b', directed: false }],
+    });
+    render(<LayoutBoard {...props} />);
+
+    const line = await screen.findByTestId('connection-conn-1');
+    fireEvent.click(line);
+    fireEvent.click(screen.getByRole('button', { name: 'Видалити' }));
+
     await waitFor(() => expect(props.onDeleteConnection).toHaveBeenCalledWith({ connectionId: 'conn-1' }));
     // Оптимістичне видалення -- лінія зникає одразу, не чекаючи відповіді сервера.
     expect(screen.queryByTestId('connection-conn-1')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Видалити' })).toBeNull();
+  });
+
+  test('CH-12: клік деінде на канві після озброєння скасовує підтвердження -- зв\'язок лишається', async () => {
+    const props = baseProps({
+      connections: [{ id: 'conn-1', cardIdA: 'card-a', cardIdB: 'card-b', directed: false }],
+    });
+    render(<LayoutBoard {...props} />);
+
+    const line = await screen.findByTestId('connection-conn-1');
+    fireEvent.click(line);
+    expect(screen.getByRole('button', { name: 'Видалити' })).toBeTruthy();
+
+    fireEvent.click(await screen.findByTestId('canvas'));
+
+    expect(screen.queryByRole('button', { name: 'Видалити' })).toBeNull();
+    expect(props.onDeleteConnection).not.toHaveBeenCalled();
+    expect(screen.getByTestId('connection-conn-1')).toBeTruthy();
   });
 });
 

@@ -27,6 +27,9 @@ import type { RecordCardRenameEvent } from '../app/update-card';
 import { archiveCard as archiveCardUseCase } from '../app/archive-card';
 import type { CloseStructurePositionForCard } from '../app/archive-card';
 import { restoreCard as restoreCardUseCase } from '../app/restore-card';
+import type { ReopenStructurePositionForCard } from '../app/restore-card';
+import { deleteCard as deleteCardUseCase } from '../app/delete-card';
+import type { RecordAction as DeleteCardRecordAction } from '../app/delete-card';
 import type { CardRecord, CardStatusRow, CardTrackingModeRow, CardHealthStateRow, Db } from '../infra/postgres-repo';
 
 // --- DTO -- форма відповіді, camelCase, точно як у схемах контракту --------
@@ -264,7 +267,23 @@ export async function archiveCard(
 // (T21) уже приймає status='archived' і повертає ту саму CardPage, той самий
 // ендпоінт GET /cards, лише інший query-параметр (contracts/openapi.yaml).
 
-export async function restoreCard(db: Db, ownerUserId: string, cardId: string, recordAction?: RecordAction): Promise<CardDto> {
-  const record = await restoreCardUseCase(db, ownerUserId, cardId, recordAction);
+export async function restoreCard(
+  db: Db,
+  ownerUserId: string,
+  cardId: string,
+  reopenStructurePosition?: ReopenStructurePositionForCard,
+  recordAction?: RecordAction
+): Promise<CardDto> {
+  const record = await restoreCardUseCase(db, ownerUserId, cardId, reopenStructurePosition, recordAction);
   return toCardDto(record);
+}
+
+// --- deleteCard -- DELETE /api/v1/cards/{cardId}/permanent -----------------
+// CH-16 (docs/features/life-area-card/changes.md) -- назавжди, не архівація
+// (та вже є вище, archiveCard). 404 card.not_found (non-disclosure, AC-04) і
+// 409 card.not_archived (лише з архіву) кидає use-case сам -- пропускаємо як
+// є, той самий підхід, що решта хендлерів цього файлу.
+
+export async function deleteCard(db: Db, ownerUserId: string, cardId: string, recordAction?: DeleteCardRecordAction): Promise<void> {
+  await deleteCardUseCase(db, ownerUserId, cardId, recordAction);
 }

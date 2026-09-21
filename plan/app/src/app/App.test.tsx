@@ -67,6 +67,9 @@ function baseProps() {
     // (T36) при перемиканні на 'archive'.
     loadArchivedCards: vi.fn().mockReturnValue(new Promise<DeckGridItem[]>(() => {})),
     onRestoreCard: vi.fn().mockResolvedValue(undefined),
+    // CH-16 (docs/features/life-area-card/changes.md): реальний DELETE
+    // /cards/{id}/permanent (main.tsx), той самий стиль, що onRestoreCard.
+    onDeleteCardPermanently: vi.fn().mockResolvedValue(undefined),
     loadArchivedCardHistory: vi.fn().mockResolvedValue([] as EntryViewModel[]),
     // ISS-56 (docs/ISSUES.md): реальний DELETE /cards/{cardId} (main.tsx),
     // яку App замикає над cardId (той самий стиль, що loadCard/loadBack/onRename).

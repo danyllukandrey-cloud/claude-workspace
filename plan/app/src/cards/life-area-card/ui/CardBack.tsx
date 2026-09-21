@@ -577,7 +577,16 @@ export function CardBack({
         <ArchiveCardDialog cardName={cardName} onArchive={confirmArchive} onCancel={cancelArchive} />
       )}
 
-      <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
+      {/* Bug fix 2026-09-21 (живе тестування, Андрій зі скріншотом): "поле
+          скролу по ширині вилізло" -- та сама причина, що CH-09
+          (AnalyticsScreen.tsx мʼячик): overflow-y-auto CSS-каскадом обчислює
+          й overflow-x як auto (спека), тож НАЙМЕНШИЙ overflow вправо теж
+          вмикає горизонтальний скрол. MetricBlockCard's "×"/"✎" навмисно
+          виступають за межу блоку (-right-1.5/-top-1.5/-bottom-1.5, 6px) --
+          без запасу той самий 6px overhang і був цим overflow. pr-2/pt-1 --
+          той самий прийом, що CH-09 (pt-1 pr-1), лише 8px (не 4px) під
+          трохи більший офсет тут (1.5, не 1). */}
+      <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-y-auto pr-2 pt-1">
         {/* Review 2026-09-07 E (T52): фоновий refresh невдалий -- НЕблокуючий
             банер над уже показаними даними, не заміна всього екрана. */}
         {refreshError !== null && <Banner variant="error" text={refreshError} />}

@@ -97,6 +97,52 @@ describe('restoreCard', () => {
 
     await expect(restoreCard(db, ownerUserId, cardId)).rejects.toBeInstanceOf(AppError);
   });
+
+  // Fix 2026-09-21 (D-69/D-103 дзеркало для розархівації, картка "Філософія"):
+  // успішна розархівація викликає інжектований reopenStructurePosition з тим
+  // самим db і id розархівованої картки -- без цього позиція картки в
+  // Структурі лишалась 'closed' навіки, moveCard/createConnection завжди
+  // відповідали structure.card_not_found.
+  it('calls reopenStructurePosition with the restored card id on success', async () => {
+    const restoredRow: CardRecord = { ...makeActiveCardRow(), updatedAt: new Date('2026-01-02T00:00:00Z') };
+    const db: Db = { query: vi.fn() };
+    (db.query as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ rows: [toRawCardRow(makeArchivedCardRow())] }) // findCardById
+      .mockResolvedValueOnce({ rows: [toRawCardRow(restoredRow)] }) // updateCard
+      .mockResolvedValueOnce({ rows: [toRawLifecycleEventRow()] }); // insertLifecycleEvent
+    const reopenStructurePosition = vi.fn().mockResolvedValue(undefined);
+
+    await restoreCard(db, ownerUserId, cardId, reopenStructurePosition);
+
+    expect(reopenStructurePosition).toHaveBeenCalledTimes(1);
+    expect(reopenStructurePosition).toHaveBeenCalledWith(db, cardId);
+  });
+
+  // Без переданого reopenStructurePosition (composition root ще не
+  // підключив структуру, чи тест) -- use-case просто не робить цей крок, не падає.
+  it('does not fail when reopenStructurePosition is not provided', async () => {
+    const restoredRow: CardRecord = { ...makeActiveCardRow(), updatedAt: new Date('2026-01-02T00:00:00Z') };
+    const db: Db = { query: vi.fn() };
+    (db.query as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ rows: [toRawCardRow(makeArchivedCardRow())] })
+      .mockResolvedValueOnce({ rows: [toRawCardRow(restoredRow)] })
+      .mockResolvedValueOnce({ rows: [toRawLifecycleEventRow()] });
+
+    await expect(restoreCard(db, ownerUserId, cardId)).resolves.toMatchObject({ status: 'active' });
+  });
+
+  // Non-disclosure/уже активна картка: reopenStructurePosition НЕ
+  // викликається -- помилка кидається раніше, нема що відкривати.
+  it('never calls reopenStructurePosition when the card is already active', async () => {
+    const db: Db = { query: vi.fn() };
+    (db.query as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ rows: [toRawCardRow(makeActiveCardRow())] });
+    const reopenStructurePosition = vi.fn().mockResolvedValue(undefined);
+
+    await expect(restoreCard(db, ownerUserId, cardId, reopenStructurePosition)).rejects.toMatchObject({
+      code: 'card.not_archived',
+    });
+    expect(reopenStructurePosition).not.toHaveBeenCalled();
+  });
 });
 
 // --- допоміжне: канонічні "сирі" рядки бази (snake_case), як повертає pg ---

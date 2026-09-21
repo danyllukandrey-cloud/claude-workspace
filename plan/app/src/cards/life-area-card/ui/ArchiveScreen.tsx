@@ -21,10 +21,26 @@
 // транспорт (Express) підключить майбутня задача T30. Дані й дії компонент
 // отримує через ІН'ЄКТОВАНІ пропси-функції, що повертають Promise -- той
 // самий стиль DI, що вже в DeckScreen.tsx/CardFace.tsx цього ж репозиторію.
-import { useEffect, useState } from 'react';
-import { Banner, Button, CardShell, EmptyState, Spinner } from '../../../shared/ui';
+import { useEffect, useRef, useState } from 'react';
+import { Banner, Button, CardShell, ConfirmDialog, EmptyState, Spinner, TrashIcon } from '../../../shared/ui';
 import type { DeckGridItem } from './DeckGrid';
 import type { EntryViewModel } from './types';
+
+// CH-16 (docs/features/life-area-card/changes.md, живе тестування, Андрій):
+// "Картки масштабуй завжди до такого розміру щоб вони всі влазили в екран
+// розкладки" -- той самий "масштабувати як одне ціле" принцип, що Схема
+// (structure/ui/LayoutBoard.tsx CH-15), лише простіше: тут немає системи
+// відсотків, яку треба зберегти -- сітка з фіксованим розміром картки й
+// колонок МАЄ природний ("бажаний") розмір, порахований напряму з кількості
+// карток (ARCHIVE_CARD_SIZE x колонки/рядки), і CSS transform: scale()
+// стискає готову сітку під РЕАЛЬНИЙ розмір видимої зони, якщо вона не
+// влазить. Фіксована кількість колонок (не responsive breakpoints, як було)
+// -- сам розмір картки тепер підлаштовується масштабом, а не колонки під
+// ширину екрана.
+const ARCHIVE_GRID_COLUMNS = 4;
+const ARCHIVE_CARD_SIZE = 160;
+const ARCHIVE_GRID_GAP = 12;
+const ARCHIVE_MIN_SCALE = 0.4;
 
 export interface ArchiveScreenProps {
   /**
@@ -43,6 +59,13 @@ export interface ArchiveScreenProps {
    * архіву без повторного GET.
    */
   onRestoreCard: (cardId: string) => Promise<void>;
+  /**
+   * CH-16 (docs/features/life-area-card/changes.md): видаляє архівовану
+   * картку НАЗАВЖДИ (DELETE /cards/{id}/permanent, не PATCH-архівація) --
+   * опційна, той самий патерн, що onDelete/onEdit у MetricBlockCard: без
+   * пропу кнопка "Видалити" взагалі не рендериться.
+   */
+  onDeleteCardPermanently?: (cardId: string) => Promise<void>;
   /**
    * AC-18 ("історія записів видима"): завантажує історію записів обраної
    * архівованої картки для режиму перегляду. Read-only -- на відміну від
@@ -77,9 +100,66 @@ const DEFAULT_HISTORY_ERROR = 'Не вдалося завантажити іст
 export function ArchiveScreen({
   loadArchivedCards,
   onRestoreCard,
+  onDeleteCardPermanently,
   loadArchivedCardHistory,
 }: ArchiveScreenProps): JSX.Element {
   const [state, setState] = useState<ScreenState>({ status: 'loading' });
+  // CH-16: картка, що чекає підтвердження permanent delete (ConfirmDialog з
+  // requireTypedWord, рендериться нижче поза station-специфічним рендером,
+  // щоб працювати однаково для list/card-view). null -- нікого не озброєно.
+  const [pendingDeleteCard, setPendingDeleteCard] = useState<DeckGridItem | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // CH-16 (scale-to-fit): вимірює РЕАЛЬНИЙ (доступний) розмір зони сітки --
+  // той самий ResizeObserver-підхід, що Схема (LayoutBoard.tsx CH-15),
+  // typeof-перевірка -- jsdom (тести) не має ResizeObserver.
+  const gridWrapperRef = useRef<HTMLDivElement>(null);
+  const [availableSize, setAvailableSize] = useState<{ width: number; height: number } | null>(null);
+  useEffect(() => {
+    const el = gridWrapperRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const measure = (width: number, height: number): void => {
+      if (width === 0 || height === 0) return;
+      setAvailableSize({ width, height });
+    };
+    measure(el.offsetWidth, el.offsetHeight);
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const box = entry.contentBoxSize?.[0];
+      if (box) {
+        measure(box.inlineSize, box.blockSize);
+      } else {
+        measure(entry.contentRect.width, entry.contentRect.height);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const dismissDeleteDialog = (): void => {
+    setPendingDeleteCard(null);
+    setDeleteError(null);
+    setIsDeleting(false);
+  };
+
+  const handleConfirmDelete = (afterDelete: (cardId: string) => void): void => {
+    if (!pendingDeleteCard || !onDeleteCardPermanently) return;
+    const cardId = pendingDeleteCard.id;
+    setIsDeleting(true);
+    setDeleteError(null);
+    onDeleteCardPermanently(cardId)
+      .then(() => {
+        dismissDeleteDialog();
+        afterDelete(cardId);
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : 'Не вдалося видалити картку назавжди';
+        setDeleteError(message);
+        setIsDeleting(false);
+      });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -218,27 +298,98 @@ export function ArchiveScreen({
       });
   };
 
+  // CH-16 (scale-to-fit): "бажаний" розмір сітки -- порахований НАПРЯМУ з
+  // кількості карток (не виміряний DOM), тож завжди відомий синхронно, без
+  // зайвого тіку рендеру. rows -- скільки рядків дає ARCHIVE_GRID_COLUMNS.
+  const rows = Math.max(1, Math.ceil(items.length / ARCHIVE_GRID_COLUMNS));
+  const naturalGridWidth = ARCHIVE_GRID_COLUMNS * ARCHIVE_CARD_SIZE + (ARCHIVE_GRID_COLUMNS - 1) * ARCHIVE_GRID_GAP;
+  const naturalGridHeight = rows * ARCHIVE_CARD_SIZE + (rows - 1) * ARCHIVE_GRID_GAP;
+  const gridScale = availableSize
+    ? Math.max(Math.min(availableSize.width / naturalGridWidth, availableSize.height / naturalGridHeight, 1), ARCHIVE_MIN_SCALE)
+    : 1;
+
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4 pb-20">
+    <div className="flex h-full min-h-0 flex-col gap-4 p-4">
       <h1 className="font-display text-xl font-bold leading-relaxed text-ink">Архів карток</h1>
-      {/* CH-09 (docs/features/life-area-card/changes.md, живе тестування
-          2026-09-21): сітка, не колода DeckGrid -- усі картки архіву видно
-          одразу (той самий принцип, що базове розташування нових карток на
-          Схемі, structure/LayoutBoard.tsx: рядками знизу, не стосом з
-          перегортанням). DeckGrid лишається лише для активної колоди
-          (DeckScreen.tsx) -- там перегортання самé по собі бажане. */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        {items.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => handleOpen(item.id)}
-            className="aspect-square overflow-hidden rounded-card border border-border bg-surface-solid p-3.5 text-left font-display text-sm font-semibold text-ink shadow-soft transition-transform hover:-translate-y-0.5 break-words"
-          >
-            {item.name}
-          </button>
-        ))}
+      {/* CH-09 (сітка, не колода DeckGrid -- усі картки архіву видно
+          одразу, той самий принцип, що базове розташування нових карток на
+          Схемі) + CH-16 (docs/features/life-area-card/changes.md, живе
+          тестування, Андрій): "Картки масштабуй завжди до
+          такого розміру щоб вони всі влазили в екран розкладки" -- сітка з
+          ФІКСОВАНИМ розміром картки (не responsive breakpoints, як було)
+          промасштабовується (CSS transform: scale, gridScale вище) під
+          реальний розмір видимої зони -- усі картки завжди видно одразу, без
+          скролу (той самий принцип, що Схема, CH-15). "Кнопка 'на зад' може
+          бути над блоками" (App.tsx, плаваюча) -- більше не резервуємо їй
+          місце (pb-20 прибрано), зона отримує максимум доступного простору. */}
+      <div ref={gridWrapperRef} className="relative flex flex-1 min-h-0 items-center justify-center overflow-hidden">
+        <div
+          className="grid content-start"
+          style={{
+            gridTemplateColumns: `repeat(${ARCHIVE_GRID_COLUMNS}, ${ARCHIVE_CARD_SIZE}px)`,
+            gap: ARCHIVE_GRID_GAP,
+            transform: `scale(${gridScale})`,
+          }}
+        >
+          {items.map((item) => (
+            // CH-16: не <button> -- усередині є ще одна інтерактивна кнопка
+            // "Видалити" (вкладені <button> заборонені в HTML), тож ціла
+            // картка -- div з role="button"/tabIndex/onKeyDown (Enter/Space),
+            // той самий доступний контракт, що справжня кнопка.
+            <div
+              key={item.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => handleOpen(item.id)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  handleOpen(item.id);
+                }
+              }}
+              style={{ width: ARCHIVE_CARD_SIZE, height: ARCHIVE_CARD_SIZE }}
+              className="relative flex cursor-pointer flex-col items-start overflow-hidden rounded-card border border-border bg-surface-solid p-3.5 text-left shadow-soft transition-transform hover:-translate-y-0.5"
+            >
+              {/* "Назви мають бути там де в колоді з ліва з верху" (Андрій)
+                  -- items-start на батькові вище + text-left тут: назва
+                  завжди у верхньому лівому куті картки, не по центру. */}
+              <span className="font-display text-sm font-semibold text-ink break-words">{item.name}</span>
+              {onDeleteCardPermanently && (
+                <button
+                  type="button"
+                  aria-label={`Видалити назавжди картку «${item.name}»`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setPendingDeleteCard(item);
+                  }}
+                  className="absolute -right-1.5 -top-1.5 flex h-7 w-7 items-center justify-center rounded-full border border-border bg-surface-solid text-ink-muted shadow-soft transition-colors hover:border-bad/40 hover:text-bad"
+                >
+                  <TrashIcon className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
+
+      {pendingDeleteCard && (
+        <ConfirmDialog
+          message={`Видалити назавжди картку «${pendingDeleteCard.name}»? Цю дію не можна скасувати -- усі її метрики й записи зникнуть без сліду.`}
+          confirmLabel="Видалити назавжди"
+          cancelLabel="Скасувати"
+          requireTypedWord="видалити"
+          confirmDisabled={isDeleting}
+          onCancel={dismissDeleteDialog}
+          onConfirm={() =>
+            handleConfirmDelete((deletedCardId) => setState({ status: 'list', items: items.filter((item) => item.id !== deletedCardId) }))
+          }
+        />
+      )}
+      {deleteError !== null && (
+        <div className="px-1">
+          <Banner variant="error" text={deleteError} />
+        </div>
+      )}
     </div>
   );
 }

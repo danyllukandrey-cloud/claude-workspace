@@ -57,6 +57,12 @@ function progressToneClasses(share: number): string {
 export function MetricBlockCard({ block, onDelete, onEdit, disabled = false }: MetricBlockCardProps): JSX.Element {
   const { progress } = block;
 
+  // Bug fix 2026-09-21 (живе тестування, Андрій: "відступи тексту від
+  // значень... гігантські") -- підписи нижче (постійний процес/+X понад
+  // ціль/очікує перевірки) раніше мали ВЛАСНИЙ mt-1 ПОВЕРХ gap-1 контейнера
+  // нижче -- у flex/grid margin і gap НЕ схлопуються (на відміну від margin
+  // між звичайними block-елементами), тож відступ фактично подвоювався
+  // (4+4=8px). Прибрано mt-1 -- єдине джерело відступу тепер gap-1.
   return (
     <div className="relative flex flex-col gap-1 rounded-card border border-border bg-surface p-2.5">
       {/* Кнопка "×" -- правий верхній кут, НАД зоною відсотка (`-top`/`-right`
@@ -99,7 +105,7 @@ export function MetricBlockCard({ block, onDelete, onEdit, disabled = false }: M
               {progress.accumulated} {block.unit}
             </span>
           </div>
-          <p className="mt-1 text-xs font-medium leading-relaxed text-ink-muted">постійний процес</p>
+          <p className="text-xs font-medium leading-relaxed text-ink-muted">постійний процес</p>
         </>
       ) : (
         <>
@@ -112,14 +118,14 @@ export function MetricBlockCard({ block, onDelete, onEdit, disabled = false }: M
             </span>
           </div>
           {progress.overGoal > 0 && (
-            <p className="mt-1 text-xs font-medium leading-relaxed text-ink-muted">
+            <p className="text-xs font-medium leading-relaxed text-ink-muted">
               +{progress.overGoal} {block.unit} понад ціль
             </p>
           )}
         </>
       )}
       {block.hasPendingEntry && (
-        <p className="mt-1 text-xs font-medium leading-relaxed text-ink-muted">Запис очікує перевірки агента</p>
+        <p className="text-xs font-medium leading-relaxed text-ink-muted">Запис очікує перевірки агента</p>
       )}
     </div>
   );

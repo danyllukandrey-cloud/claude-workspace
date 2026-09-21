@@ -22,6 +22,29 @@ export interface Db {
 }
 
 /**
+ * ISS-101/D-117: будь-який запис, що переводить картку в стан "у купці
+ * нерозкладених, ще НЕ переміщена цим візитом" (нова картка -- insertLayoutPosition
+ * нижче; чи розархівована картка -- reopenClosedLayoutPositionForCard нижче),
+ * навмисно отримує свідомо старий `position_updated_at` замість `now()`.
+ * Причина -- `resolvePositionConflict` (domain/layout.ts, ADR-0002) порівнює
+ * час БД (цей запис) з часом клієнта (перше ж перетягування) напряму, без
+ * толерантності: будь-яка розбіжність годинників клієнт/сервер (виміряно
+ * ~54мс проти dev Neon, ISS-101) робила б щойно записану позицію "новішою"
+ * за перше реальне переміщення користувача -- переміщення тихо ігнорувалось
+ * би, без помилки. Сентинел-час 1970 гарантує, що ПЕРШЕ реальне переміщення
+ * після будь-якого з цих двох записів завжди виграє, незалежно від
+ * розбіжності годинників -- саму функцію resolvePositionConflict і реальний
+ * конфлікт двох пристроїв (ADR-0002) це не чіпає: там обидва боки порівняння
+ * вже мають "справжні", недавні часові мітки.
+ *
+ * code-review 2026-09-21 (correctness): reopenClosedLayoutPositionForCard
+ * спершу писала `now()`, той самий баг-клас, що D-117 вже закрив для
+ * insertLayoutPosition -- відкритий знову іншим шляхом (архів -> розархів ->
+ * перше перетягування замість просто створення картки -> перше перетягування).
+ */
+const NEVER_MOVED_SENTINEL = new Date(0);
+
+/**
  * Закриває активну позицію картки в розкладці Структури (D-69, AC-16) --
  * status: 'active' -> 'closed'. Якщо активної позиції немає (картка ще не
  * розкладена, чи вже закрита раніше через structure's власний closeCard,
@@ -35,6 +58,23 @@ export async function closeActiveLayoutPositionForCard(db: Db, cardId: string): 
      SET status = 'closed', position_updated_at = now()
      WHERE card_id = $1 AND status = 'active'`,
     [cardId]
+  );
+}
+
+/**
+ * Дзеркало closeActiveLayoutPositionForCard вище (D-69, D-104, fix
+ * 2026-09-21) -- відкриває ЗАКРИТУ позицію картки знову: status 'closed' ->
+ * 'active', x/y скидаються в NULL (D-69: стара позиція не мапиться
+ * автоматично). Повний контекст, ЧОМУ цей крок узагалі потрібен --
+ * life-area-card/app/restore-card.ts, заголовок файлу. Якщо закритої позиції
+ * немає -- це НЕ помилка, той самий принцип, що вище.
+ */
+export async function reopenClosedLayoutPositionForCard(db: Db, cardId: string): Promise<void> {
+  await db.query(
+    `UPDATE structure_layout_position
+     SET status = 'active', position_x = NULL, position_y = NULL, position_updated_at = $2
+     WHERE card_id = $1 AND status = 'closed'`,
+    [cardId, NEVER_MOVED_SENTINEL]
   );
 }
 
@@ -187,21 +227,10 @@ function toLayoutPositionRecord(row: RawLayoutPositionRow): LayoutPositionRecord
 
 const LAYOUT_POSITION_COLUMNS = 'id, structure_id, card_id, position_x, position_y, status, position_updated_at, created_at';
 
-/**
- * ISS-101/D-117: щойно авто-розкладена позиція (нова картка, ще жодного разу
- * НЕ переміщена користувачем) навмисно отримує свідомо старий `position_updated_at`
- * замість дефолту `now()` колонки. Причина -- `resolvePositionConflict`
- * (domain/layout.ts, ADR-0002) порівнює час БД (цей запис) з часом клієнта
- * (перше ж перетягування) напряму, без толерантності: будь-яка розбіжність
- * годинників клієнт/сервер (виміряно ~54мс проти dev Neon) робила щойно
- * створену позицію "новішою" за перше реальне переміщення користувача --
- * переміщення тихо ігнорувалось, без помилки (move-card.integration.test.ts).
- * Сентинел-час 1970 гарантує, що ПЕРШЕ реальне переміщення завжди виграє,
- * незалежно від розбіжності годинників -- саму функцію resolvePositionConflict
- * і реальний конфлікт двох пристроїв (ADR-0002) це не чіпає: там обидва боки
- * порівняння вже мають "справжні", недавні часові мітки.
- */
-const NEVER_MOVED_SENTINEL = new Date(0);
+// ISS-101/D-117: NEVER_MOVED_SENTINEL оголошено вгорі файлу (одразу після
+// інтерфейсу Db) -- використовується і тут (нова картка), і в
+// reopenClosedLayoutPositionForCard (розархівована картка), той самий
+// клас "щойно потрапила в купку нерозкладених, ще НЕ переміщена".
 
 export async function insertLayoutPosition(
   db: Db,

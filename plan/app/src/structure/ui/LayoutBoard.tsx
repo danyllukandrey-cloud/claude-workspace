@@ -41,8 +41,9 @@
 //
 // CH-04 (docs/features/structure/changes.md): купка нерозкладених ("трей")
 // тепер ЗАВЖДИ доступна як ціль перетягування під час драгу (не лише коли в
-// ній уже щось лежить), а картки канви внизу візуально стискаються, щоб трей
-// їх не затуляв -- дивись canvasScaleY нижче.
+// ній уже щось лежить). П.1 цього рішення (візуальне стиснення карток канви
+// по Y, щоб трей їх не затуляв) СКАСОВАНО живим тестуванням нижче -- дивись
+// коментар над renderedPosition.
 //
 // CH-05/CH-06 (docs/features/structure/changes.md): "Закрити напрямок"
 // (структуроспецифічний POST /structure/layout/{cardId}/close) прибрано
@@ -54,7 +55,7 @@
 // "Готово до розкладання" переносить усі картки з канви в трей.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { PointerEvent as ReactPointerEvent } from 'react';
+import type { PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { Banner, Button, ConfirmDialog, EmptyState, Spinner } from '../../shared/ui';
 import { LayoutBoardArchiveDialog } from './LayoutBoardArchiveDialog';
 import type { LayoutBoardArchiveDialogMetricBlock, LayoutBoardArchiveDialogTargetCard } from './LayoutBoardArchiveDialog';
@@ -195,6 +196,34 @@ function isAppErrorShape(err: unknown): err is AppErrorShape {
 /** Обидва варіанти, які пропонує інструмент "Зв'язати" (вимога 5). */
 type LinkTool = 'line' | 'arrow';
 
+// CH-15 (docs/features/structure/changes.md, живе тестування, Андрій зі
+// скріншотами різних масштабів браузера): "картки накладаються одна на одну
+// при збільшенні масштабу" -- розмір чипів (текст/відступи) фіксований у
+// пікселях і НЕ залежить від розміру канви, тож коли сама канва фізично
+// стискається (більший масштаб браузера = МЕНШЕ CSS-пікселів на екрані),
+// чипи займають дедалі БІЛЬШУ частку дедалі МЕНШОЇ канви -- і зрештою
+// накладаються. Проста "згорнути всю канву" transform:scale() НЕ рішення --
+// і чипи, і "канва" (система відсотків) стискаються РАЗОМ в однаковій
+// пропорції, тож співвідношення чип/канва не змінюється (перевірено
+// розрахунком, не здогадкою). Реальне рішення -- ДВА окремі контейнери:
+// contentRef (нижче) має ЗАВЖДИ ОДИН І ТОЙ САМИЙ пиксельний розмір, тож уся
+// система відсотків (0-100) завжди рахується відносно ЦЬОГО фіксованого
+// розміру, і лише ПІСЛЯ цього готова "картинка" масштабується (CSS
+// transform: scale, canvasScale нижче) під РЕАЛЬНИЙ розмір canvasRef.
+//
+// Живе тестування, ІТЕРАЦІЯ 2 (Андрій, зі скріншотами 125%/159%/зменшеного
+// масштабу): перша версія мала ЖОРСТКО закодований "комфортний" розмір
+// (900x480, довільне число без виміру реального пристрою) -- на екрані,
+// де канва НІКОЛИ природно не сягає такого розміру, це змушувало сцену
+// стискатись ЗАВЖДИ, навіть на звичайному, некритичному масштабі. Замість
+// довільного числа -- REFERENCE калібрується сам, з РЕАЛЬНОГО розміру
+// canvasRef при першому вимірюванні (referenceSize нижче, useState,
+// пишеться РІВНО ОДИН РАЗ): "той розмір, який канва мала природно щойно
+// відкрили Схему" стає еталонним "масштаб=1", і лише ВІДХИЛЕННЯ від нього
+// (зменшення канви при збільшенні масштабу браузера) стискає сцену.
+// Жодного магічного числа -- калібрування під конкретний пристрій/вікно.
+const MIN_CANVAS_SCALE = 0.55;
+
 // CH-02: той самий колірний словник (chip-gloss/STATUS_DOT патерн, D-120/
 // D-126), що life-area-card/ui/CardFace.tsx's HEALTH_STATE_DOT -- НЕ спільний
 // імпорт (правило залежностей), окрема копія того самого факту.
@@ -256,15 +285,29 @@ export function LayoutBoard({
 
   // --- Драг мишею/дотиком (вимога 3) -- Pointer Events API -------------------
   const canvasRef = useRef<HTMLDivElement>(null);
+  // CH-15: РЕАЛЬНИЙ, змінного розміру контейнер (весь простір, що дає flex-
+  // розкладка сторінки) -- рендерить лише фон/рамку/onClick-скидання
+  // pendingDeleteConnectionId. Уся система відсотків (SVG-лінії, чипи, трей)
+  // живе у contentRef нижче, фіксованого розміру, відцентрованого й
+  // промасштабованого всередину canvasRef (canvasScale, ефект нижче).
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [canvasScale, setCanvasScale] = useState(1);
+  // CH-15, ІТЕРАЦІЯ 2: "масштаб=1" калібрується з РЕАЛЬНОГО розміру
+  // canvasRef при першому вимірюванні -- ref (не state!), щоб ResizeObserver-
+  // колбек (створений ОДИН раз при монтуванні, замикання не бачить пізніших
+  // state) завжди читав СВІЖЕ значення без переприв'язки ефекту. null -- ще
+  // не виміряно (перший рендер), contentRef тоді розтягується на 100%/100%
+  // (візуально ідентично canvasRef -- як і ДО цього рефакторингу), жодного
+  // стрибка контенту.
+  const referenceSizeRef = useRef<{ width: number; height: number } | null>(null);
   // Реальні DOM-вузли чипів на канві -- лінії зв'язків (нижче) відступають
   // від центру картки на ФАКТИЧНУ половину її розміру (ширина залежить від
   // довжини назви), а не на приблизну константу. Живе тестування (Андрій,
   // зі скріншотом): фіксований відступ ховав вістря стрілки під широким
   // чипом ("Філософія") -- константа була відкаліброва на вужчий чип.
   const cardElementsRef = useRef<Map<string, HTMLDivElement>>(new Map());
-  // CH-04: реальний DOM-вузол купки -- (а) canvasScaleY нижче вимірює його
-  // висоту, щоб стиснути відображення канви й не дати треєві затулити картки
-  // (п.1), (б) handleUp визначає, чи відпустили картку САМЕ в цій зоні (п.2).
+  // CH-04 п.2: реальний DOM-вузол купки -- handleUp визначає, чи відпустили
+  // картку САМЕ в цій зоні.
   const trayRef = useRef<HTMLDivElement>(null);
   const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
   // Джерело правди для позиції картки, що ЗАРАЗ тягнеться -- ref (синхронний
@@ -276,6 +319,45 @@ export function LayoutBoard({
   // --- Інструмент "Зв'язати" (вимоги 4/5) -------------------------------------
   const [linkTool, setLinkTool] = useState<LinkTool | null>(null);
   const [linkFirstCardId, setLinkFirstCardId] = useState<string | null>(null);
+  /** CH-12: id зв'язку, що чекає підтвердження видалення (кнопка "Видалити" показана саме для нього), або null -- нікого не озброєно. */
+  const [pendingDeleteConnectionId, setPendingDeleteConnectionId] = useState<string | null>(null);
+
+  // CH-15: вимірює РЕАЛЬНИЙ (природний, до будь-якого transform) розмір
+  // canvasRef -- offsetWidth/offsetHeight/ResizeObserver.contentRect НЕ
+  // залежать від CSS transform (лише від layout, transform -- суто paint),
+  // тож жодного зациклення "вимірюємо вже промасштабоване" тут немає.
+  // typeof-перевірка -- jsdom (тести) не має ResizeObserver: без неї scale
+  // лишається 1 назавжди в тестах, поведінка й далі детермінована (той самий
+  // підхід, що try/catch навколо setPointerCapture вище).
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const measure = (width: number, height: number): void => {
+      if (width === 0 || height === 0) return;
+      // Перше вимірювання -- еталон "масштаб=1", НАЗАВЖДИ (не перезаписується).
+      if (referenceSizeRef.current === null) {
+        referenceSizeRef.current = { width, height };
+        setCanvasScale(1);
+        return;
+      }
+      const { width: refWidth, height: refHeight } = referenceSizeRef.current;
+      const scale = Math.min(width / refWidth, height / refHeight, 1);
+      setCanvasScale(Number.isFinite(scale) && scale > 0 ? Math.max(scale, MIN_CANVAS_SCALE) : 1);
+    };
+    measure(el.offsetWidth, el.offsetHeight);
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const box = entry.contentBoxSize?.[0];
+      if (box) {
+        measure(box.inlineSize, box.blockSize);
+      } else {
+        measure(entry.contentRect.width, entry.contentRect.height);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     loadLayout().then((loaded) => {
@@ -295,16 +377,24 @@ export function LayoutBoard({
   // тік ПІСЛЯ commit (dragTick, той самий лічильник, що й драг) змушує
   // перемалювати лінії вже зі свіжо-заповненими рефами. CH-04: той самий
   // тік тепер залежить і від кількості нерозкладених (unassignedCount нижче)
-  // -- поява/зникнення купки міняє canvasScaleY, лінії й чипи мусять
-  // перемалюватись зі свіжим виміром trayRef.
+  // -- поява/зникнення купки переносить картки між канвою й треєм (різні
+  // DOM-вузли), cardElementsRef мусить оновитись свіжими рефами.
   const unassignedCount = state.cards.filter((card) => card.x === null || pendingUnassignedIds.has(card.cardId)).length;
   useLayoutEffect(() => {
     setDragTick((tick) => tick + 1);
   }, [state.cards.length, state.connections.length, unassignedCount, draggingCardId]);
 
-  /** Пікселі вказівника -> відсоток канви (0-100), клемплені -- той самий clampPercent, що сервер (domain/layout.ts). */
+  /**
+   * Пікселі вказівника -> відсоток канви (0-100), клемплені -- той самий
+   * clampPercent, що сервер (domain/layout.ts). CH-15: contentRef (не
+   * canvasRef) -- саме contentRef несе систему відсотків (0-100), і
+   * getBoundingClientRect() на трансформованому (масштабованому) елементі
+   * коректно повертає ВЖЕ візуальний (після transform) прямокутник у
+   * координатах вьюпорта -- той самий простір, що clientX/clientY, тож жодної
+   * додаткової математики під масштаб не треба.
+   */
   function toCanvasPercent(clientX: number, clientY: number): { x: number; y: number } {
-    const rect = canvasRef.current?.getBoundingClientRect();
+    const rect = contentRef.current?.getBoundingClientRect();
     if (!rect || rect.width === 0 || rect.height === 0) {
       return { x: clampPercent(Number.NaN), y: clampPercent(Number.NaN) };
     }
@@ -312,21 +402,6 @@ export function LayoutBoard({
       x: clampPercent(((clientX - rect.left) / rect.width) * 100),
       y: clampPercent(((clientY - rect.top) / rect.height) * 100),
     };
-  }
-
-  // CH-04 п.1: коли купка нерозкладених видима, вона МОГЛА Б затулити картки
-  // канви в її нижній частині (та сама зона, absolute bottom-0 всередині
-  // канви) -- множник стискає ВІДОБРАЖЕННЯ (не збережене значення) y так, щоб
-  // 100% домену завжди малювався ВИЩЕ за купку. Запобіжник (>0.4): на дуже
-  // вузькому екрані, де купка займає майже всю висоту, не стискаємо канву до
-  // нечитабельного розміру -- легке накладання краще за картки завтовшки в
-  // піксель.
-  function canvasScaleY(): number {
-    const canvasRect = canvasRef.current?.getBoundingClientRect();
-    const trayRect = trayRef.current?.getBoundingClientRect();
-    if (!canvasRect || canvasRect.height === 0 || !trayRect || trayRect.height === 0) return 1;
-    const free = 1 - trayRect.height / canvasRect.height;
-    return free > 0.4 ? free : 1;
   }
 
   useEffect(() => {
@@ -398,6 +473,30 @@ export function LayoutBoard({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draggingCardId]);
+
+  // CH-11 (docs/features/structure/changes.md): правий клік будь-де на
+  // екрані Схеми скасовує активний інструмент "Лінія"/"Стрілка" -- той самий
+  // ефект, що повторний клік на ту саму кнопку інструменту (нижче в JSX),
+  // лише додатковий спосіб. preventDefault -- не показуємо системне
+  // контекстне меню браузера, поки інструмент активний.
+  useEffect(() => {
+    if (linkTool === null) return undefined;
+    const handleContextMenu = (event: MouseEvent): void => {
+      event.preventDefault();
+      setLinkTool(null);
+      setLinkFirstCardId(null);
+    };
+    window.addEventListener('contextmenu', handleContextMenu);
+    return () => window.removeEventListener('contextmenu', handleContextMenu);
+  }, [linkTool]);
+
+  // CH-12: озброєна (очікує підтвердження) кнопка видалення зв'язку не має
+  // пережити перехід в режим інструмента "Зв'язати" -- інакше кнопка
+  // "Видалити" від попереднього клікання могла б лишитись видимою поверх
+  // нового режиму.
+  useEffect(() => {
+    if (linkTool !== null) setPendingDeleteConnectionId(null);
+  }, [linkTool]);
 
   if (loading) {
     return <Spinner />;
@@ -606,7 +705,21 @@ export function LayoutBoard({
       });
   };
 
-  /** Тап по наявній лінії/стрілці -- миттєве видалення (не архівація, легша дія, D-131-наступне рішення). */
+  /**
+   * CH-12 (докладніше docs/features/structure/changes.md): клік на лінію/
+   * стрілку більше НЕ видаляє одразу -- лише озброює кнопку підтвердження
+   * "Видалити" (рендериться біля середини лінії, нижче в JSX). Справжнє
+   * видалення -- лише клік на ЦЮ кнопку (handleDeleteConnection).
+   * stopPropagation -- канва має свій onClick, що скидає pendingDeleteConnectionId
+   * при кліку "деінде" (вимога 4); без stopPropagation той самий клік одразу
+   * скасував би щойно озброєний стан.
+   */
+  const handleConnectionClick = (connectionId: string) => (event: ReactMouseEvent<SVGLineElement>): void => {
+    event.stopPropagation();
+    setPendingDeleteConnectionId(connectionId);
+  };
+
+  /** Клік на кнопку підтвердження "Видалити" -- справжнє видалення (не архівація, легша дія, D-131-наступне рішення). */
   const handleDeleteConnection = (connectionId: string): void => {
     setState((prev) => ({ ...prev, connections: prev.connections.filter((c) => c.id !== connectionId) }));
     onDeleteConnection({ connectionId }).catch((err: unknown) => {
@@ -622,6 +735,14 @@ export function LayoutBoard({
       handleLinkTap(cardId);
       return;
     }
+    // Bug fix 2026-09-21 (живе тестування, Андрій: "все працює окрім оцієї
+    // чортівні" -- скріншот з банером помилки, хоча картка на канві вже
+    // реально стояла на місці): банер помилки НІЧИМ не скидався сам, окрім
+    // одного місця (dismissArchiveDialog) -- раз показаний "мережева
+    // помилка" міг лишатись видимим НАЗАВЖДИ, навіть після того, як наступні
+    // перетягування вже проходили успішно. Новий драг -- явний сигнал "юзер
+    // намагається знову", старий банер більше не описує поточний стан.
+    setBanner(null);
     event.preventDefault();
     const target = event.currentTarget;
     try {
@@ -630,33 +751,48 @@ export function LayoutBoard({
       // jsdom/старі браузери -- pointer capture best-effort, window-рівневі
       // слухачі (useEffect вище) працюють і без нього.
     }
-    // Стартова "жива" позиція -- поточна збережена (чи центр канви 50/50,
-    // якщо картка досі в купці нерозкладених) -- так чип не смикається до
-    // першого pointermove.
+    // Стартова "жива" позиція -- поточна збережена, чи (картка досі в купці
+    // нерозкладених, x/y === null) РЕАЛЬНЕ місце курсора в момент pointerdown
+    // -- так чип не смикається до першого pointermove.
+    //
+    // Bug fix 2026-09-21 (живе тестування, Андрій): тут раніше стояло жорстке
+    // "50/50" (центр канви) замість реального курсора -- між pointerdown і
+    // першим pointermove React встигав перемалювати з ЦИМ заглушковим
+    // значенням (setDraggingCardId нижче -- це state, викликає рендер), тож
+    // картку з купки на мить "закидало" в центр канви, а вже тоді вона
+    // стрибала під курсор -- саме той "тікає з-під миші" ефект.
     const existing = state.cards.find((c) => c.cardId === cardId);
+    const pointerPosition = toCanvasPercent(event.clientX, event.clientY);
     setDraggingCardId(cardId);
-    liveDragRef.current = { cardId, x: existing?.x ?? 50, y: existing?.y ?? 50 };
+    liveDragRef.current = {
+      cardId,
+      x: existing?.x ?? pointerPosition.x,
+      y: existing?.y ?? pointerPosition.y,
+    };
   };
 
   /**
    * Позиція картки для рендеру -- жива (під час драгу, 1:1 з
-   * курсором/пальцем, БЕЗ стиснення) чи збережена (стиснута по Y, CH-04
-   * п.1, canvasScaleY вище -- інакше картка "відривалась" би від пальця під
-   * час активного драгу).
+   * курсором/пальцем) чи збережена (card.x/card.y як є, БЕЗ жодного
+   * стиснення чи авто-переформатування).
    *
-   * code-review 2026-09-21 (efficiency): `scaleY` -- параметр, не виклик
-   * `canvasScaleY()` тут -- значення однакове для ВСІХ карток і кінців
-   * зв'язків в межах одного рендеру (той самий `canvasRect`/`trayRect`),
-   * а сама функція робить 2 `getBoundingClientRect()`. Викликач рахує її
-   * РІВНО ОДИН раз на рендер і передає сюди готове число, замість 2*(N
-   * карток + 2*M кінців зв'язків) зайвих вимірювань DOM.
+   * Bug fix 2026-09-21 (живе тестування, Андрій): "єдине правило, коли
+   * блок може стояти будь-де -- це якщо я його туди фізично пересунув" --
+   * раніше тут стояло стиснення по Y (CH-04 п.1, canvasScaleY), що
+   * автоматично підтискало ВСІ картки вгору, щойно з'являвся трей нерозкладених
+   * (навіть на самому початку драгу, ДО того, як користувач хоч кудись
+   * рухнув курсор) -- і той самий множник міг РАПТОВО зʼявитись/зникнути
+   * між рендерами (трей показався/сховався), тож щойно відпущена картка
+   * "стрибала" вище точки, де її фізично відпустили. Тепер трей просто
+   * лежить ПОВЕРХ канви (як є, може накривати картку, що стоїть у самому
+   * низу) -- жодного автоматичного перерозташування чужих карток.
    */
-  function renderedPosition(card: LayoutBoardCard, scaleY: number): { x: number; y: number } | null {
+  function renderedPosition(card: LayoutBoardCard): { x: number; y: number } | null {
     if (draggingCardId === card.cardId && liveDragRef.current?.cardId === card.cardId) {
       return { x: liveDragRef.current.x, y: liveDragRef.current.y };
     }
     if (card.x === null || card.y === null) return null;
-    return { x: card.x, y: card.y * scaleY };
+    return { x: card.x, y: card.y };
   }
 
   /**
@@ -702,11 +838,6 @@ export function LayoutBoard({
   const isEffectivelyUnassigned = (card: LayoutBoardCard): boolean => card.x === null || pendingUnassignedIds.has(card.cardId);
   const unassigned = state.cards.filter((card) => isEffectivelyUnassigned(card) && card.cardId !== draggingCardId);
   const canvasCards = state.cards.filter((card) => !isEffectivelyUnassigned(card) || card.cardId === draggingCardId);
-  // code-review 2026-09-21 (efficiency): рахуємо ОДИН раз на рендер, не в
-  // кожному виклику renderedPosition (дивись коментар там) -- значення
-  // однакове для всіх карток/зв'язків цього рендеру.
-  const scaleY = canvasScaleY();
-
   // CH-04: купка -- явна ціль перетягування, доступна ще ДО того, як у ній
   // щось лежить (п.2's "давало явний вибір визначено/невизначено") -- тому
   // рендериться і коли є вже нерозкладені картки, і поки триває будь-який
@@ -763,7 +894,30 @@ export function LayoutBoard({
         ref={canvasRef}
         data-testid="canvas"
         className="relative mb-16 flex-1 min-h-0 overflow-hidden"
+        onClick={pendingDeleteConnectionId !== null ? () => setPendingDeleteConnectionId(null) : undefined}
       >
+        {/* CH-15 (docs/features/structure/changes.md): фіксований (розмір --
+            referenceSizeRef, калібрований з РЕАЛЬНОГО canvasRef при першому
+            вимірюванні, не довільне число) внутрішній контейнер -- уся
+            система відсотків (0-100) рахується ВІДНОСНО НЬОГО, не поточного
+            розміру canvasRef вище. left-1/2/top-1/2 + translate(-50%,-50%)
+            центрують його всередині canvasRef; потім той самий transform
+            домасштабовує (canvasScale) готову "картинку" під РЕАЛЬНИЙ
+            розмір canvasRef -- чипи й канва стискаються РАЗОМ, в одній
+            пропорції, замість накладання одне на одне. Поки еталон ще не
+            виміряно (referenceSizeRef.current===null, перший рендер) --
+            100%/100% (=canvasRef, той самий вигляд, що ДО рефакторингу),
+            жодного стрибка контенту при переході на каліброване число. */}
+        <div
+          ref={contentRef}
+          data-testid="canvas-content"
+          className="absolute left-1/2 top-1/2"
+          style={{
+            width: referenceSizeRef.current?.width ?? '100%',
+            height: referenceSizeRef.current?.height ?? '100%',
+            transform: `translate(-50%, -50%) scale(${canvasScale})`,
+          }}
+        >
         {/* SVG-шар зв'язків -- viewBox 0..100 у ЄДИНИХ одиницях з
             left/top-відсотками карток нижче, тож лінія завжди влучає в центр
             чипа, незалежно від реального пропорцій канви (вимога 4). */}
@@ -782,8 +936,19 @@ export function LayoutBoard({
             const a = cardById.get(connection.cardIdA);
             const b = cardById.get(connection.cardIdB);
             if (!a || !b) return null;
-            const posA = renderedPosition(a, scaleY);
-            const posB = renderedPosition(b, scaleY);
+            // Bug fix 2026-09-21 (живе тестування, Андрій, зі скріншотом):
+            // "перетягнув блок в низ... звязки з екрану потрібно автоматично
+            // прибрати" -- renderedPosition нижче враховує лише card.x===null
+            // (СЕРВЕРНО непризначена), не pendingUnassignedIds (CH-04,
+            // КЛІЄНТСЬКИЙ "невизначено" стан) -- лінія тяглась до старої
+            // реальної позиції картки, навіть коли сам чип уже намальований у
+            // треї. isEffectivelyUnassigned -- той самий предикат, що вже
+            // ховає чип із канви (canvasCards вище), тепер і для лінії.
+            // Суто візуальне приховування: сам звʼязок НЕ видаляється, повернеш
+            // картку на канву -- лінія з'явиться знову з тим самим звʼязком.
+            if (isEffectivelyUnassigned(a) || isEffectivelyUnassigned(b)) return null;
+            const posA = renderedPosition(a);
+            const posB = renderedPosition(b);
             if (!posA || !posB) return null;
             // Живе тестування (Андрій): "При зєднання стрілкою стрілки самої
             // не видно" -- чип картки в DOM йде ПІСЛЯ svg-шару (рендериться
@@ -800,7 +965,9 @@ export function LayoutBoard({
             const dist = Math.hypot(dx, dy);
             const ux = dist > 0 ? dx / dist : 0;
             const uy = dist > 0 ? dy / dist : 0;
-            const canvasRect = canvasRef.current?.getBoundingClientRect();
+            // CH-15: contentRef -- ця % математика теж рахується відносно
+            // масштабованого контейнера, не природного canvasRef.
+            const canvasRect = contentRef.current?.getBoundingClientRect();
             const rectPullback = (cardId: string): number => {
               const el = cardElementsRef.current.get(cardId);
               if (!el || !canvasRect || canvasRect.width === 0 || canvasRect.height === 0) return 4;
@@ -839,14 +1006,49 @@ export function LayoutBoard({
                 strokeWidth={1.5}
                 vectorEffect="non-scaling-stroke"
                 markerEnd={connection.directed ? 'url(#layout-board-arrowhead)' : undefined}
-                onClick={linkTool === null ? () => handleDeleteConnection(connection.id) : undefined}
+                onClick={linkTool === null ? handleConnectionClick(connection.id) : undefined}
               />
             );
           })}
         </svg>
 
+        {/* CH-12: кнопка підтвердження "Видалити" для озброєного зв'язку --
+            окремий HTML-шар ПІСЛЯ svg (не сам svg -- кнопці потрібен звичайний
+            DOM для стилю/фокусу), позиціюється по середині лінії тими самими
+            posA/posB, що й сама лінія вище (без rectPullback -- для кнопки
+            досить приблизної середини, точний відступ від чипа тут не
+            принциповий). */}
+        {(() => {
+          if (pendingDeleteConnectionId === null) return null;
+          const connection = state.connections.find((c) => c.id === pendingDeleteConnectionId);
+          if (!connection) return null;
+          const a = cardById.get(connection.cardIdA);
+          const b = cardById.get(connection.cardIdB);
+          if (!a || !b || isEffectivelyUnassigned(a) || isEffectivelyUnassigned(b)) return null;
+          const posA = renderedPosition(a);
+          const posB = renderedPosition(b);
+          if (!posA || !posB) return null;
+          const midX = (posA.x + posB.x) / 2;
+          const midY = (posA.y + posB.y) / 2;
+          return (
+            <button
+              type="button"
+              data-testid="connection-delete-confirm"
+              className="pointer-events-auto absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-control border border-border bg-surface-solid px-2 py-1 text-xs font-semibold text-ink shadow-soft hover:border-ink/40"
+              style={{ left: `${midX}%`, top: `${midY}%` }}
+              onClick={(event) => {
+                event.stopPropagation();
+                handleDeleteConnection(connection.id);
+                setPendingDeleteConnectionId(null);
+              }}
+            >
+              Видалити
+            </button>
+          );
+        })()}
+
         {canvasCards.map((card) => {
-          const pos = renderedPosition(card, scaleY);
+          const pos = renderedPosition(card);
           if (!pos) return null;
           return (
             <div
@@ -855,16 +1057,10 @@ export function LayoutBoard({
                 if (el) cardElementsRef.current.set(card.cardId, el);
                 else cardElementsRef.current.delete(card.cardId);
               }}
-              // code-review 2026-09-21 (language-pitfall): `showTray` (і тому
-              // canvasScaleY()) стає true/<1 на ввесь час БУДЬ-ЯКОГО драгу,
-              // не лише переносу в трей -- щойно драг завершується (і трей
-              // ховається, бо нерозкладених нема), масштаб миттєво
-              // повертається до 1, і всі картки на канві "стрибають" в один
-              // кадр. Плавний перехід (transition) для карток, що ЗАРАЗ НЕ
-              // тягнуться, ховає цей стрибок за коротку анімацію; сама
-              // картка, що тягнеться, transition НЕ отримує -- інакше вона
-              // відставала б від пальця (той самий принцип "1:1 з курсором",
-              // що canvasScaleY вище вже враховує для неї окремо).
+              // Плавний перехід для карток, що ЗАРАЗ НЕ тягнуться -- пом'якшує
+              // масові зміни позиції (напр. застосування нової авто-розкладки).
+              // Сама картка, що тягнеться, transition НЕ отримує -- інакше вона
+              // відставала б від пальця (1:1 з курсором під час драгу).
               className={card.cardId === draggingCardId ? undefined : 'transition-all duration-150 ease-out'}
               style={{ position: 'absolute', left: `${pos.x}%`, top: `${pos.y}%`, transform: 'translate(-50%, -50%)' }}
             >
@@ -872,6 +1068,7 @@ export function LayoutBoard({
             </div>
           );
         })}
+        </div>
 
         {/* Купка нерозкладених -- ВСЕРЕДИНІ тієї самої зони, доклеєна до її
             низу (absolute bottom-0), напівпрозорий фон-підклад, щоб читалась
@@ -881,12 +1078,20 @@ export function LayoutBoard({
             вище) -- "явний вибір визначено/невизначено" (п.2) означає
             користувачу є куди відпустити картку ще ДО того, як там щось
             з'явилось; підсвічування (ring) під час драгу -- та сама
-            "затемнена зона", про яку каже юзер-кейс. */}
+            "затемнена зона", про яку каже юзер-кейс.
+            CH-15, ІТЕРАЦІЯ 2 (Андрій, живе тестування різних масштабів):
+            купка -- ПОЗА contentRef (не частина сцени, що масштабується
+            CH-15 вище) -- "зона базової розкладки має залишатись над
+            кнопками", не "летіти" разом зі стисненою сценою. inset-x-10 (не
+            inset-x-0) -- та сама ширина, що тонка риска-розділювач нижче
+            (inset-x-10): "по ширині має завжди бути як промінь". Без
+            min-h -- висота тепер природна, під реальний вміст (чипи), а не
+            довільна rem-константа. */}
         {showTray && (
           <div
             ref={trayRef}
             data-testid="unassigned-tray"
-            className={`absolute inset-x-0 bottom-0 flex max-h-28 min-h-[3.5rem] flex-wrap content-center items-center justify-center gap-2 overflow-y-auto p-2 backdrop-blur-sm transition-colors ${
+            className={`absolute inset-x-10 bottom-0 flex max-h-28 flex-wrap content-center items-center justify-center gap-2 overflow-y-auto p-2 backdrop-blur-sm transition-colors ${
               draggingCardId !== null ? 'bg-ink/15 ring-2 ring-inset ring-ink/30' : 'bg-surface/85'
             }`}
           >
