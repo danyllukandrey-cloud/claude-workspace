@@ -498,7 +498,11 @@ export function App({
                 }}
                 className="w-full rounded-control px-3 py-2 text-left text-sm font-medium text-ink transition-colors hover:bg-border"
               >
-                Налаштування правил
+                {/* agent CH-01 (docs/features/agent/changes.md): точніше передає,
+                    що там налаштовується -- сам екран (RuleSettingsScreen.tsx)
+                    лишає свій заголовок "Налаштування правил" без змін, це поза
+                    межами підтвердженого юзер-кейсу CH-01. */}
+                Планування правил спілкування з Агентом
               </button>
               <button
                 type="button"
