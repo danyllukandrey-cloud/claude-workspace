@@ -55,6 +55,8 @@ export interface DeckFrontCardProps {
   onCreateMetricBlock?: (cardId: string, values: MetricBlockFormValues) => Promise<void>;
   /** Видаляє (архівує) блок-метрику -- опційно, як і в CardBack. */
   onArchiveMetricBlock?: (cardId: string, metricBlockId: string) => Promise<void>;
+  /** CH-16: швидкий запис (додати/відняти) прямо з картки -- опційно, як і в CardBack. */
+  onCreateEntry?: (cardId: string, metricBlockId: string, amount: number) => Promise<void>;
   /** CH-02: зберігає режим відстеження картки -- опційно, як і в CardBack. */
   onUpdateTracking?: (cardId: string, input: { trackingMode: CardTrackingMode; healthState: CardHealthState | null }) => Promise<void>;
   /** CH-03: зберігає перейменування/налаштування блоку-метрики -- опційно, як і в CardBack. */
@@ -79,6 +81,7 @@ export function DeckFrontCard({
   onFlagEntry,
   onCreateMetricBlock,
   onArchiveMetricBlock,
+  onCreateEntry,
   onUpdateTracking,
   onUpdateMetricBlock,
   onTransferMetricBlock,
@@ -115,6 +118,7 @@ export function DeckFrontCard({
           onFlagEntry={onFlagEntry ? (entryId) => onFlagEntry(cardId, entryId) : undefined}
           onCreateMetricBlock={onCreateMetricBlock ? (values) => onCreateMetricBlock(cardId, values) : undefined}
           onArchiveMetricBlock={onArchiveMetricBlock ? (metricBlockId) => onArchiveMetricBlock(cardId, metricBlockId) : undefined}
+          onCreateEntry={onCreateEntry ? (metricBlockId, amount) => onCreateEntry(cardId, metricBlockId, amount) : undefined}
           onUpdateTracking={onUpdateTracking ? (input) => onUpdateTracking(cardId, input) : undefined}
           onUpdateMetricBlock={onUpdateMetricBlock ? (metricBlockId, values) => onUpdateMetricBlock(cardId, metricBlockId, values) : undefined}
           onTransferMetricBlock={onTransferMetricBlock ? (metricBlockId, targetCardId) => onTransferMetricBlock(cardId, metricBlockId, targetCardId) : undefined}

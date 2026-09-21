@@ -286,11 +286,11 @@ test('card-view -> "Розархівувати" при помилці лишає
   expect(button.disabled).toBe(false);
 });
 
-// CH-16 (docs/features/life-area-card/changes.md): "Видалити" в Архіві
+// CH-15 (docs/features/life-area-card/changes.md): "Видалити" в Архіві
 // карток -- назавжди, з підтвердженням через ввід слова "видалити" (той
 // самий ConfirmDialog-патерн, що видалення блоку-метрики/акаунту).
 
-test('CH-16: без injected onDeleteCardPermanently кнопка "Видалити" не рендериться взагалі', async () => {
+test('CH-15: без injected onDeleteCardPermanently кнопка "Видалити" не рендериться взагалі', async () => {
   const loadArchivedCards = vi.fn().mockResolvedValue([{ id: 'card-1', name: 'Читання' }]);
 
   render(
@@ -305,7 +305,7 @@ test('CH-16: без injected onDeleteCardPermanently кнопка "Видали�
   expect(screen.queryByRole('button', { name: /Видалити назавжди/ })).toBeNull();
 });
 
-test('CH-16: клік на "Видалити" в списку архіву НЕ відкриває картку (stopPropagation) -- показує підтвердження', async () => {
+test('CH-15: клік на "Видалити" в списку архіву НЕ відкриває картку (stopPropagation) -- показує підтвердження', async () => {
   const loadArchivedCards = vi.fn().mockResolvedValue([{ id: 'card-1', name: 'Читання' }]);
 
   render(
@@ -325,7 +325,7 @@ test('CH-16: клік на "Видалити" в списку архіву НЕ 
   expect(screen.getByRole('button', { name: 'Видалити назавжди' })).toBeTruthy();
 });
 
-test('CH-16: кнопка підтвердження вимкнена, поки не введено точне слово «видалити»', async () => {
+test('CH-15: кнопка підтвердження вимкнена, поки не введено точне слово «видалити»', async () => {
   const loadArchivedCards = vi.fn().mockResolvedValue([{ id: 'card-1', name: 'Читання' }]);
 
   render(
@@ -347,7 +347,7 @@ test('CH-16: кнопка підтвердження вимкнена, поки 
   expect(confirmButton.disabled).toBe(false);
 });
 
-test('CH-16: підтвердження викликає onDeleteCardPermanently(cardId), картка зникає зі списку', async () => {
+test('CH-15: підтвердження викликає onDeleteCardPermanently(cardId), картка зникає зі списку', async () => {
   const items = [
     { id: 'card-1', name: 'Читання' },
     { id: 'card-2', name: 'Медитація' },
@@ -375,7 +375,7 @@ test('CH-16: підтвердження викликає onDeleteCardPermanently
   expect(screen.queryByRole('button', { name: 'Видалити назавжди' })).toBeNull(); // діалог закрився
 });
 
-test('CH-16: клік "Скасувати" закриває підтвердження без виклику onDeleteCardPermanently, картка лишається', async () => {
+test('CH-15: клік "Скасувати" закриває підтвердження без виклику onDeleteCardPermanently, картка лишається', async () => {
   const loadArchivedCards = vi.fn().mockResolvedValue([{ id: 'card-1', name: 'Читання' }]);
   const onDeleteCardPermanently = vi.fn();
 
@@ -397,7 +397,7 @@ test('CH-16: клік "Скасувати" закриває підтвердже
   expect(screen.queryByRole('button', { name: 'Видалити назавжди' })).toBeNull();
 });
 
-test('CH-16: провал onDeleteCardPermanently показує Banner з помилкою, картка НЕ зникає', async () => {
+test('CH-15: провал onDeleteCardPermanently показує Banner з помилкою, картка НЕ зникає', async () => {
   const loadArchivedCards = vi.fn().mockResolvedValue([{ id: 'card-1', name: 'Читання' }]);
   const onDeleteCardPermanently = vi.fn().mockRejectedValue(new Error('Не вдалося видалити'));
 

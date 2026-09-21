@@ -87,7 +87,7 @@ export interface AppProps {
   loadArchivedCards: () => Promise<DeckGridItem[]>;
   /** Розархівовує картку (ArchiveScreen.onRestoreCard, ISS-55 stage 3). */
   onRestoreCard: (cardId: string) => Promise<void>;
-  /** CH-16 (docs/features/life-area-card/changes.md) -- видаляє архівовану картку назавжди (ArchiveScreen.onDeleteCardPermanently, DELETE /cards/{id}/permanent). */
+  /** CH-15 (docs/features/life-area-card/changes.md) -- видаляє архівовану картку назавжди (ArchiveScreen.onDeleteCardPermanently, DELETE /cards/{id}/permanent). */
   onDeleteCardPermanently: (cardId: string) => Promise<void>;
   /** Завантажує історію записів архівованої картки (ArchiveScreen.loadArchivedCardHistory, ISS-55 stage 3). */
   loadArchivedCardHistory: (cardId: string) => Promise<EntryViewModel[]>;
@@ -97,6 +97,8 @@ export interface AppProps {
   createMetricBlock: (cardId: string, values: MetricBlockFormValues) => Promise<void>;
   /** Видаляє (архівує) блок-метрику обраної картки (DELETE /cards/{id}/metric-blocks/{metricBlockId}, CardBack.onArchiveMetricBlock). */
   archiveMetricBlock: (cardId: string, metricBlockId: string) => Promise<void>;
+  /** CH-16 (docs/features/life-area-card/changes.md) -- швидкий запис "Додати"/"Відняти" прямо з картки (POST /cards/{id}/metric-blocks/{metricBlockId}/entries, CardBack.onCreateEntry). */
+  onCreateEntry: (cardId: string, metricBlockId: string, amount: number) => Promise<void>;
   /** CH-02 (docs/features/life-area-card/changes.md) -- зберігає режим відстеження обраної картки (PATCH /cards/{id}, CardBack.onUpdateTracking). */
   onUpdateTracking: (cardId: string, input: { trackingMode: CardTrackingMode; healthState: CardHealthState | null }) => Promise<void>;
   /** CH-03 (docs/features/life-area-card/changes.md) -- зберігає перейменування/налаштування блоку-метрики (PATCH /cards/{cardId}/metric-blocks/{metricBlockId}, CardBack.onUpdateMetricBlock). */
@@ -254,6 +256,7 @@ export function App({
   archiveCard,
   createMetricBlock,
   archiveMetricBlock,
+  onCreateEntry,
   onUpdateTracking,
   onUpdateMetricBlock,
   onTransferMetricBlock,
@@ -677,6 +680,7 @@ export function App({
               onFlagEntry={onFlagEntry}
               onCreateMetricBlock={createMetricBlock}
               onArchiveMetricBlock={archiveMetricBlock}
+              onCreateEntry={onCreateEntry}
               onUpdateTracking={onUpdateTracking}
               onUpdateMetricBlock={onUpdateMetricBlock}
               onTransferMetricBlock={onTransferMetricBlock}

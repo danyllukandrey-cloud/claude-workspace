@@ -75,6 +75,15 @@ export interface MetricBlockFormProps {
    * цей проп їй не потрібен.
    */
   onCancel?: () => void;
+  /**
+   * Bug fix 2026-09-21 (живе тестування, Андрій зі скріншотом): "дубль,
+   * слово редагування тут лишнє" -- панель редагування наявного блоку
+   * (CardBack.tsx) уже має власний заголовок "Редагування «label»" НАД
+   * цією формою (з назвою блоку, на відміну від голого "Редагування" тут).
+   * За замовчуванням true -- форма створення нового блоку (CardBack.tsx,
+   * інший виклик) НЕ має власного зовнішнього заголовка, їй цей потрібен.
+   */
+  showHeading?: boolean;
 }
 
 const EMPTY_VALUES: MetricBlockFormValues = {
@@ -85,7 +94,7 @@ const EMPTY_VALUES: MetricBlockFormValues = {
   targetDate: null,
 };
 
-export function MetricBlockForm({ initialValues, onSubmit, mode = 'goals', onCancel }: MetricBlockFormProps): JSX.Element {
+export function MetricBlockForm({ initialValues, onSubmit, mode = 'goals', onCancel, showHeading = true }: MetricBlockFormProps): JSX.Element {
   // CH-08 (docs/features/life-area-card/changes.md, живе тестування
   // 2026-09-21): заголовок форми -- "Редагування" саме коли відкрито через
   // олівець наявної метрики (initialValues переданий), "Новий блок-метрика"
@@ -138,9 +147,11 @@ export function MetricBlockForm({ initialValues, onSubmit, mode = 'goals', onCan
       onSubmit={handleSubmit}
       className="flex flex-col gap-4 rounded-card border border-border bg-surface-solid p-4"
     >
-      <h2 className="font-display text-lg font-bold leading-relaxed text-ink">
-        {isEditing ? 'Редагування' : 'Новий блок-метрика'}
-      </h2>
+      {showHeading && (
+        <h2 className="font-display text-lg font-bold leading-relaxed text-ink">
+          {isEditing ? 'Редагування' : 'Новий блок-метрика'}
+        </h2>
+      )}
       {submitError && <Banner variant="error" text={submitError} />}
       {/* D-111 (docs/DECISIONS.md): порядок полів -- що рахуємо -> постійний
           процес одразу після -> одиниця -> ціль+дата в одному рядку. Живе

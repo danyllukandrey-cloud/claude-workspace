@@ -33,6 +33,14 @@ export interface MetricBlockCardProps {
    */
   onEdit?: () => void;
   /**
+   * CH-16 (docs/features/life-area-card/changes.md): розгортає форму
+   * "Додати/відняти показник" під цим блоком -- швидкий запис без участі
+   * агента-чату. Той самий опційний патерн, що onDelete/onEdit: без пропу
+   * кнопка "+" взагалі не рендериться. Сама форма -- на рівень вище
+   * (CardBack.tsx), тут лише факт кліку.
+   */
+  onQuickAdjust?: () => void;
+  /**
    * CH-02 (docs/features/life-area-card/changes.md): true, коли картка -- в
    * режимі "стан без вимірювань" -- справжній HTML `disabled` на "×"/"✎", не
    * лише CSS `pointer-events-none` на предку (CardBack.tsx): pointer-events
@@ -54,8 +62,31 @@ function progressToneClasses(share: number): string {
   return 'border-bad/25 bg-bad/10 text-bad';
 }
 
-export function MetricBlockCard({ block, onDelete, onEdit, disabled = false }: MetricBlockCardProps): JSX.Element {
+export function MetricBlockCard({ block, onDelete, onEdit, onQuickAdjust, disabled = false }: MetricBlockCardProps): JSX.Element {
   const { progress } = block;
+
+  // CH-16: "+" по центру, між назвою й показником -- grid-cols-[1fr_auto_1fr]
+  // (не flex justify-between) тримає показник у ПРАВІЙ колонці незалежно від
+  // того, чи рендериться сама кнопка: без onQuickAdjust середня колонка все
+  // одно займає місце (порожній <span/>), інакше показник з'їжджав би в
+  // середню колонку замість правої.
+  const quickAdjustSlot = onQuickAdjust ? (
+    <button
+      type="button"
+      aria-label={`Додати або відняти показник «${block.label}»`}
+      onClick={onQuickAdjust}
+      disabled={disabled}
+      // Живе тестування 2026-09-21 (Андрій): "зроби кружечок плюсу зеленим"
+      // -- той самий тональний словник (border-good/25 bg-good/10 text-good),
+      // що Banner.tsx's success-варіант/progressToneClasses вище, замість
+      // нейтрального border-border + зелений лише на hover.
+      className="flex h-5 w-5 items-center justify-center justify-self-center rounded-full border border-good/25 bg-good/10 text-sm font-bold leading-none text-good shadow-soft transition-colors hover:bg-good/20 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-good/10"
+    >
+      +
+    </button>
+  ) : (
+    <span />
+  );
 
   // Bug fix 2026-09-21 (живе тестування, Андрій: "відступи тексту від
   // значень... гігантські") -- підписи нижче (постійний процес/+X понад
@@ -99,9 +130,10 @@ export function MetricBlockCard({ block, onDelete, onEdit, disabled = false }: M
       )}
       {progress.kind === 'ongoing' ? (
         <>
-          <div className="flex items-baseline justify-between gap-2">
+          <div className="grid grid-cols-[1fr_auto_1fr] items-baseline gap-2">
             <span className="text-sm font-medium text-ink">{block.label}</span>
-            <span className="font-display text-sm font-semibold text-ink">
+            {quickAdjustSlot}
+            <span className="justify-self-end font-display text-sm font-semibold text-ink">
               {progress.accumulated} {block.unit}
             </span>
           </div>
@@ -109,10 +141,11 @@ export function MetricBlockCard({ block, onDelete, onEdit, disabled = false }: M
         </>
       ) : (
         <>
-          <div className="flex items-baseline justify-between gap-2">
+          <div className="grid grid-cols-[1fr_auto_1fr] items-baseline gap-2">
             <span className="text-sm font-medium text-ink">{block.label}</span>
+            {quickAdjustSlot}
             <span
-              className={`inline-flex items-center rounded-full border px-2 py-0.5 font-display text-sm font-semibold ${progressToneClasses(progress.share)}`}
+              className={`justify-self-end inline-flex items-center rounded-full border px-2 py-0.5 font-display text-sm font-semibold ${progressToneClasses(progress.share)}`}
             >
               {Math.round(progress.share * 100)}%
             </span>

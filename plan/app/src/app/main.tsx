@@ -621,7 +621,7 @@ async function onRestoreCard(cardId: string): Promise<void> {
   }
 }
 
-/** CH-16 (docs/features/life-area-card/changes.md): "Видалити" в Архіві карток -- назавжди, не архівація (та вже є, onRestoreCard/archiveCard поруч). */
+/** CH-15 (docs/features/life-area-card/changes.md): "Видалити" в Архіві карток -- назавжди, не архівація (та вже є, onRestoreCard/archiveCard поруч). */
 async function onDeleteCardPermanently(cardId: string): Promise<void> {
   const response = await fetch(`/api/v1/cards/${cardId}/permanent`, {
     method: 'DELETE',
@@ -755,6 +755,27 @@ async function archiveMetricBlock(cardId: string, metricBlockId: string): Promis
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { message?: string } | null;
     throw new Error(body?.message ?? 'Не вдалося видалити метрику');
+  }
+}
+
+/**
+ * CH-16 (docs/features/life-area-card/changes.md): реальний POST
+ * /cards/{cardId}/metric-blocks/{metricBlockId}/entries -- CardBack.onCreateEntry
+ * (форма "Додати/відняти показник"). ТОЙ САМИЙ ендпоінт, що вже пише агент
+ * (entry-handlers.ts) -- жодного нового бекенду не треба, лише `amount` зі
+ * знаком (додатне для "Додати", від'ємне для "Відняти" -- CardBack.tsx сам
+ * рахує знак перед викликом).
+ */
+async function onCreateEntry(cardId: string, metricBlockId: string, amount: number): Promise<void> {
+  const response = await fetch(`/api/v1/cards/${cardId}/metric-blocks/${metricBlockId}/entries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ amount }),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? 'Не вдалося зберегти запис');
   }
 }
 
@@ -1868,6 +1889,7 @@ createRoot(root).render(
       archiveCard={archiveCard}
       createMetricBlock={createMetricBlock}
       archiveMetricBlock={archiveMetricBlock}
+      onCreateEntry={onCreateEntry}
       onUpdateTracking={onUpdateTracking}
       onUpdateMetricBlock={onUpdateMetricBlock}
       onTransferMetricBlock={onTransferMetricBlock}

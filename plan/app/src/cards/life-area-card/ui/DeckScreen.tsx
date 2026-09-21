@@ -81,6 +81,8 @@ export interface DeckScreenProps {
   onFlagEntry?: (cardId: string, entryId: string) => Promise<CardBackData>;
   onCreateMetricBlock?: (cardId: string, values: MetricBlockFormValues) => Promise<void>;
   onArchiveMetricBlock?: (cardId: string, metricBlockId: string) => Promise<void>;
+  /** CH-16: швидкий запис (додати/відняти) прямо з картки -- опційно, той самий DI-патерн, що решта дій вище. */
+  onCreateEntry?: (cardId: string, metricBlockId: string, amount: number) => Promise<void>;
   /** CH-02: зберігає режим відстеження картки -- опційно, той самий DI-патерн, що решта дій вище. */
   onUpdateTracking?: (cardId: string, input: { trackingMode: CardTrackingMode; healthState: CardHealthState | null }) => Promise<void>;
   /** CH-03: зберігає перейменування/налаштування блоку-метрики -- опційно, той самий DI-патерн, що решта дій вище. */
@@ -109,6 +111,7 @@ export function DeckScreen({
   onFlagEntry,
   onCreateMetricBlock,
   onArchiveMetricBlock,
+  onCreateEntry,
   onUpdateTracking,
   onUpdateMetricBlock,
   onTransferMetricBlock,
@@ -291,6 +294,7 @@ export function DeckScreen({
             onFlagEntry={onFlagEntry}
             onCreateMetricBlock={onCreateMetricBlock}
             onArchiveMetricBlock={onArchiveMetricBlock}
+            onCreateEntry={onCreateEntry}
             onUpdateTracking={onUpdateTracking}
             onUpdateMetricBlock={onUpdateMetricBlock}
             onTransferMetricBlock={onTransferMetricBlock}

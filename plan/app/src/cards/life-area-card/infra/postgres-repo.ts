@@ -233,7 +233,7 @@ export async function updateCard(
 }
 
 /**
- * Card CH-16 (docs/features/life-area-card/changes.md): назавжди видаляє
+ * Card CH-15 (docs/features/life-area-card/changes.md): назавжди видаляє
  * картку (не архівація -- справжній DELETE рядка). Усі пов'язані таблиці
  * (metric_block/entry/card_lifecycle_event/structure_layout_position/
  * structure_history_event/structure_connection) мають `ON DELETE CASCADE`

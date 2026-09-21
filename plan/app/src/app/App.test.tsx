@@ -67,7 +67,7 @@ function baseProps() {
     // (T36) при перемиканні на 'archive'.
     loadArchivedCards: vi.fn().mockReturnValue(new Promise<DeckGridItem[]>(() => {})),
     onRestoreCard: vi.fn().mockResolvedValue(undefined),
-    // CH-16 (docs/features/life-area-card/changes.md): реальний DELETE
+    // CH-15 (docs/features/life-area-card/changes.md): реальний DELETE
     // /cards/{id}/permanent (main.tsx), той самий стиль, що onRestoreCard.
     onDeleteCardPermanently: vi.fn().mockResolvedValue(undefined),
     loadArchivedCardHistory: vi.fn().mockResolvedValue([] as EntryViewModel[]),
@@ -80,6 +80,8 @@ function baseProps() {
     // Реальний DELETE /cards/{id}/metric-blocks/{metricBlockId} (main.tsx) --
     // App замикає над cardId, той самий стиль, що createMetricBlock/onRename.
     archiveMetricBlock: vi.fn().mockResolvedValue(undefined),
+    // CH-16 (docs/features/life-area-card/changes.md): реальний POST .../entries (main.tsx), той самий стиль, що archiveMetricBlock.
+    onCreateEntry: vi.fn().mockResolvedValue(undefined),
     // CH-02 (docs/features/life-area-card/changes.md): реальний PATCH
     // /cards/{cardId} (trackingMode/healthState, main.tsx) -- App замикає над
     // cardId, той самий стиль, що createMetricBlock/onRename.
