@@ -257,7 +257,14 @@ export function CardBack({
   // показуємо "Режим картки" одразу (не за меню), і вже під ним -- залежно
   // від вибору -- або мячики (state), або "+ Додати" (ongoing/goals).
   const hasNoMetrics = data.metricBlocks.length === 0;
-  const showTrackingModePicker = isEditingBack || hasNoMetrics;
+  // Review-fix (живе тестування 2026-09-21): 'state' -- ЗАВЖДИ показуємо
+  // пікер, незалежно від isEditingBack/hasNoMetrics. Без цього картка, що
+  // вже в режимі "стан" МАЄ старі блоки (перемкнули раніше, в іншій
+  // сесії) -- при звичайному відкритті (isEditingBack скидається на
+  // false при кожному новому loadBack) показувала б порожньо: метрик-
+  // секція вже не рендериться в 'state' (нижче), а пікер теж не рендерився
+  // без явного відкриття меню. У режимі "стан" пікер сам Є єдиним вмістом.
+  const showTrackingModePicker = isEditingBack || hasNoMetrics || trackingMode === 'state';
 
   const handleFlagEntry = (entryId: string): void => {
     if (!onFlagEntry || isFlaggingEntry) return;
@@ -289,20 +296,48 @@ export function CardBack({
    * injected дію, потім refresh()" підхід, що handleCreateMetricBlock нижче.
    * Захищено isSavingTracking від подвійного кліку (радіо-кнопки лишаються
    * disabled, поки перший запит не завершився).
+   *
+   * CH-12 (живе тестування 2026-09-21): перехід САМЕ на "постійний процес"
+   * додатково стирає ціль/дату з усіх наявних блоків-метрик цієї картки --
+   * одразу, як явний наслідок цієї дії, а не мовчки при наступному
+   * випадковому редагуванні окремого блоку (те й дало підставу видалити
+   * review-fix CH-10 вище). Перехід назад на "з цілями" НІЧОГО не
+   * відновлює -- Андрій підтвердив: користувач сам заново вводить ціль/
+   * дату, якщо хоче їх повернути.
    */
   const handleUpdateTracking = (input: { trackingMode: CardTrackingMode; healthState: CardHealthState | null }): void => {
     if (!onUpdateTracking || isSavingTracking) return;
     setTrackingError(null);
     setIsSavingTracking(true);
     onUpdateTracking(input)
-      .then(() => {
-        // Review-fix: локальний патч замість повного refresh() -- input уже
-        // несе точну нову пару trackingMode/healthState (сервер підтвердив),
-        // жодне інше поле CardBackData від режиму не залежить (метрики й
-        // агрегат рахуються незалежно, лише візуально притлумлюються тут же).
-        // Той самий "не перезавантажуй, патч того, що вже знаєш" підхід, що
-        // CardFace.saveEdit і DeckScreen.handleRename вже мають у цьому diff.
-        setData((prev) => (prev ? { ...prev, trackingMode: input.trackingMode, healthState: input.healthState } : prev));
+      .then(async () => {
+        if (input.trackingMode === 'ongoing' && onUpdateMetricBlock) {
+          const blocksToStrip = data.metricBlocks.filter((block) => block.settings?.isOngoing !== true);
+          await Promise.all(
+            blocksToStrip.map((block) =>
+              onUpdateMetricBlock(block.id, {
+                label: block.label,
+                unit: block.unit,
+                targetCount: null,
+                isOngoing: true,
+                targetDate: null,
+              }),
+            ),
+          );
+        }
+        if (input.trackingMode === 'ongoing') {
+          // Блоки могли щойно змінитись вище (stripped) -- потрібен
+          // справжній refetch, локального патча тут не досить.
+          refresh();
+        } else {
+          // Review-fix: локальний патч замість повного refresh() -- input уже
+          // несе точну нову пару trackingMode/healthState (сервер підтвердив),
+          // жодне інше поле CardBackData від режиму не залежить (метрики й
+          // агрегат рахуються незалежно, лише візуально притлумлюються тут же).
+          // Той самий "не перезавантажуй, патч того, що вже знаєш" підхід, що
+          // CardFace.saveEdit і DeckScreen.handleRename вже мають у цьому diff.
+          setData((prev) => (prev ? { ...prev, trackingMode: input.trackingMode, healthState: input.healthState } : prev));
+        }
       })
       .catch((err: unknown) => {
         setTrackingError(err instanceof Error ? err.message : 'Не вдалося зберегти режим картки');
@@ -503,10 +538,16 @@ export function CardBack({
           <fieldset className="m-0 flex flex-col gap-2 rounded-card border border-border bg-surface-solid p-3.5" disabled={isSavingTracking}>
             <div className="flex items-center justify-between gap-2">
               <legend className="px-1 text-xs font-bold uppercase tracking-wide text-ink-muted">Режим картки</legend>
-              {/* "Закрити" має сенс лише коли панель ВІДКРИЛИ (меню на
-                  картці, що вже має блоки) -- для порожньої картки це й так
-                  єдиний видимий вміст, нема куди "закривати". */}
-              {isEditingBack && <Button label="Закрити" onClick={closeEditBack} />}
+              {/* Review-fix (живе тестування 2026-09-21): "Закрити" НЕ
+                  показуємо, поки обрано "стан без вимірювань" -- закриття
+                  вело на приглушені старі блоки-метрики без жодного
+                  видимого шляху назад до вибору мячика (лише через "..."),
+                  користувачу це не очевидно. У режимі "стан" вибір мячика й
+                  Є єдиним сенсом цієї панелі -- нема куди "закривати", той
+                  самий принцип, що вже діє для порожньої картки. "Закрити"
+                  повертається одразу, як обрано "постійний процес"/"з
+                  цілями" -- там дійсно є що закривати (список блоків). */}
+              {isEditingBack && trackingMode !== 'state' && <Button label="Закрити" onClick={closeEditBack} />}
             </div>
             {/* CH-10 (живе тестування 2026-09-21): 3 варіанти замість 2 --
                 той самий напис "Постійний процес з метриками (без дати)"
@@ -580,38 +621,31 @@ export function CardBack({
             Review 2026-09-07 A4 (AC-07/AC-08): рендериться НЕЗАЛЕЖНО від
             metricBlocks.length -- раніше з'являлась лише в порожньому стані,
             тож у картки з хоч одним блоком не було способу додати другий.
-            CH-10 review (живе тестування 2026-09-21): для ПОРОЖНЬОЇ картки в
-            режимі "стан" (hasNoMetrics && trackingMode === 'state') ця секція
-            взагалі не рендериться -- вибір мячика (вище, "Режим картки") і Є
-            єдиним вмістом, показувати ще й приглушену порожню секцію метрик
-            під ним нема сенсу. Для порожньої картки в 'ongoing'/'goals'
-            секція лишається (кнопка "+ Додати"), лише без EmptyState-напису
-            -- сама кнопка вже показує порожнечу, дублювати текстом зайве. */}
-        {/* CH-02: "стан без вимірювань" -- усі налаштування метрик стають
-            неактивними (disabled), не зникають: колишні блоки лишаються
-            видимими (історія прогресу не губиться), просто без можливості
-            їх чіпати, поки картка в цьому режимі. `pointer-events-none` +
-            приглушений вигляд -- лише ВІЗУАЛЬНИЙ шар (миша/дотик); code
-            review 2026-09-19 (CH-02/CH-03 diff): CSS pointer-events НЕ
-            блокує Enter/Space-активацію фокусованої кнопки з клавіатури,
-            тож кожен інтерактивний елемент нижче ДОДАТКОВО отримує СПРАВЖНІЙ
-            `disabled` -- "+ Додати" явно, MetricBlockCard's ×/✎ через свій
-            proп (той самий принцип, що <fieldset disabled> вище). */}
-        {!(hasNoMetrics && trackingMode === 'state') && (
-          <div
-            className={trackingMode === 'state' ? 'pointer-events-none flex flex-col gap-3 opacity-40' : 'flex flex-col gap-3'}
-            aria-disabled={trackingMode === 'state'}
-          >
-            {trackingMode === 'state' && (
-              <p className="text-xs italic text-ink-faint">Картка в режимі "стан без вимірювань" -- метрики не використовуються.</p>
-            )}
+            Review-fix (живе тестування 2026-09-21): для режиму "стан" ця
+            секція НЕ рендериться взагалі -- незалежно від того, чи в картки
+            вже Є блоки (раніше колишні блоки лишались видимими, приглушені;
+            саме це й плутало -- користувач бачив порожню/приглушену секцію
+            метрик і не розумів, що вибір мячика ховається за "..."). Вибір
+            мячика (вище, "Режим картки") -- Є єдиним вмістом цього режиму,
+            той самий вигляд, що й у щойно створеної картки. Дані старих
+            блоків нікуди не зникають (лише не показуються тут) -- знову
+            з'являться, щойно картку повернуть у 'ongoing'/'goals'. */}
+        {trackingMode !== 'state' && (
+          <div className="flex flex-col gap-3">
             {onCreateMetricBlock &&
               (isCreatingBlock ? (
-                // CH-10: режим картки визначає, ЯКІ поля форма показує --
-                // 'state' сюди не доходить (кнопка вище вже disabled).
-                <MetricBlockForm onSubmit={handleCreateMetricBlock} mode={trackingMode === 'ongoing' ? 'ongoing' : 'goals'} />
+                // CH-10: режим картки визначає, ЯКІ поля форма показує.
+                // Review-fix: `disabled`/'state'-перевірки на цьому шляху
+                // прибрано -- 'state' сюди більше не доходить узагалі (уся
+                // ця секція ховається на рівень вище), TS сам підтвердив
+                // порівняння з 'state' тут неможливим.
+                <MetricBlockForm
+                  onSubmit={handleCreateMetricBlock}
+                  mode={trackingMode === 'ongoing' ? 'ongoing' : 'goals'}
+                  onCancel={() => setIsCreatingBlock(false)}
+                />
               ) : (
-                <Button label="+ Додати блок-метрику" onClick={() => setIsCreatingBlock(true)} disabled={trackingMode === 'state'} />
+                <Button label="+ Додати блок-метрику" onClick={() => setIsCreatingBlock(true)} />
               ))}
 
             {data.metricBlocks.length > 0 && (
@@ -622,21 +656,90 @@ export function CardBack({
                 </p>
               )}
               {data.metricBlocks.map((block) => (
-                <MetricBlockCard
-                  key={block.id}
-                  block={block}
-                  disabled={trackingMode === 'state'}
-                  onDelete={onArchiveMetricBlock ? () => setPendingDeleteBlock(block) : undefined}
-                  onEdit={
-                    onUpdateMetricBlock || onTransferMetricBlock
-                      ? () => {
-                          setTransferTargetId('');
-                          setTransferError(undefined);
-                          setEditingBlock(block);
-                        }
-                      : undefined
-                  }
-                />
+                // Review-fix (живе тестування 2026-09-21): редагування ЦЬОГО
+                // блоку розгортається ПРЯМО ТУТ, під ним -- не окремою
+                // панеллю в самому кінці списку (де користувач, що
+                // редагував перший блок довгого списку, її просто не
+                // знаходив). `key` переїхав на цю обгортку -- MetricBlockCard
+                // і панель редагування тепер один логічний рядок списку.
+                <div key={block.id} className="flex flex-col gap-2">
+                  <MetricBlockCard
+                    block={block}
+                    onDelete={onArchiveMetricBlock ? () => setPendingDeleteBlock(block) : undefined}
+                    onEdit={
+                      onUpdateMetricBlock || onTransferMetricBlock
+                        ? () => {
+                            setTransferTargetId('');
+                            setTransferError(undefined);
+                            setEditingBlock(block);
+                          }
+                        : undefined
+                    }
+                  />
+                  {editingBlock?.id === block.id && (onUpdateMetricBlock || onTransferMetricBlock) && (
+                    <div className="flex flex-col gap-3 rounded-card border border-border bg-surface-solid p-3.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="font-display text-sm font-bold leading-relaxed text-ink">
+                          Редагування «{editingBlock.label}»
+                        </h3>
+                        <Button label="Закрити" onClick={() => setEditingBlock(null)} />
+                      </div>
+
+                      {onUpdateMetricBlock && (
+                        <MetricBlockForm
+                          key={editingBlock.id}
+                          initialValues={{
+                            label: editingBlock.label,
+                            unit: editingBlock.unit,
+                            targetCount: editingBlock.settings?.targetCount ?? null,
+                            isOngoing: editingBlock.settings?.isOngoing ?? false,
+                            targetDate: editingBlock.settings?.targetDate ?? null,
+                          }}
+                          // CH-12 (живе тестування 2026-09-21): режим тут --
+                          // з ПОТОЧНОГО режиму картки, як і форма створення
+                          // нижче. Раніше (review-fix CH-10) брали власні
+                          // налаштування блоку саме щоб перемикання картки
+                          // НЕ стирало ціль/дату при випадковому редагуванні
+                          // одруківки -- але Андрій підтвердив, що стирання
+                          // тут САМЕ бажане: перемикання картки на "постійний
+                          // процес" -- явна дія, і вона одразу (handleUpdateTracking
+                          // вище) стирає ціль/дату з усіх наявних блоків.
+                          // Форма редагування більше не мусить сама
+                          // "рятувати" ці дані -- на момент відкриття форми
+                          // блок уже у формі, що відповідає картці.
+                          mode={trackingMode === 'ongoing' ? 'ongoing' : 'goals'}
+                          onSubmit={handleSaveMetricBlockEdit}
+                        />
+                      )}
+
+                      {onTransferMetricBlock && transferTargetCards && transferTargetCards.length > 0 && (
+                        <div className="flex flex-col gap-2 border-t border-border pt-3">
+                          <label className="flex flex-col gap-1.5 text-sm font-medium text-ink">
+                            Перенести на іншу картку
+                            <select
+                              value={transferTargetId}
+                              onChange={(event) => setTransferTargetId(event.target.value)}
+                              className="rounded-control border border-border bg-surface-solid px-3.5 py-2.5 text-sm font-normal text-ink focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
+                            >
+                              <option value="">Оберіть картку</option>
+                              {transferTargetCards.map((card) => (
+                                <option key={card.id} value={card.id}>
+                                  {card.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          {transferError !== undefined && <Banner variant="error" text={transferError} />}
+                          <Button
+                            label="Перенести"
+                            onClick={handleTransferMetricBlock}
+                            disabled={!transferTargetId || isTransferring}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
             )}
@@ -654,81 +757,6 @@ export function CardBack({
             onArchive={handleArchiveMetricBlock}
             onCancel={() => setPendingDeleteBlock(null)}
           />
-        )}
-
-        {/* CH-03 (docs/features/life-area-card/changes.md): редагування блоку-
-            метрики -- олівець на MetricBlockCard відкриває цю панель саме для
-            того блоку (editingBlock). Два незалежних дійства всередині:
-            (1) MetricBlockForm перевикористаний як є (initialValues із
-            поточних label/unit/settings, onSubmit -- update, не create) для
-            перейменування/зміни налаштувань; (2) вибір картки-цілі +
-            "Перенести" -- наявна transferMetricBlock, окремий виклик. */}
-        {editingBlock && (onUpdateMetricBlock || onTransferMetricBlock) && (
-          <div className="flex flex-col gap-3 rounded-card border border-border bg-surface-solid p-3.5">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="font-display text-sm font-bold leading-relaxed text-ink">
-                Редагування «{editingBlock.label}»
-              </h3>
-              <Button label="Закрити" onClick={() => setEditingBlock(null)} />
-            </div>
-
-            {onUpdateMetricBlock && (
-              <MetricBlockForm
-                key={editingBlock.id}
-                initialValues={{
-                  label: editingBlock.label,
-                  unit: editingBlock.unit,
-                  targetCount: editingBlock.settings?.targetCount ?? null,
-                  isOngoing: editingBlock.settings?.isOngoing ?? false,
-                  targetDate: editingBlock.settings?.targetDate ?? null,
-                }}
-                // Review-fix (CH-10): режим тут -- з ВЛАСНИХ налаштувань
-                // блоку, НЕ з поточного режиму картки. Картку могли
-                // перемкнути на "постійний процес" ПІСЛЯ того, як цей блок
-                // уже мав ціль+дату (створений під "з цілями") -- узявши
-                // режим картки, форма мовчки стерла б ціль/дату при
-                // звичайному виправленні одруківки в назві. Блок без
-                // settings (старі fixtures до CH-03) -- падаємо на режим
-                // картки, дані втрачати нема чого.
-                mode={
-                  editingBlock.settings
-                    ? editingBlock.settings.isOngoing
-                      ? 'ongoing'
-                      : 'goals'
-                    : trackingMode === 'ongoing'
-                      ? 'ongoing'
-                      : 'goals'
-                }
-                onSubmit={handleSaveMetricBlockEdit}
-              />
-            )}
-
-            {onTransferMetricBlock && transferTargetCards && transferTargetCards.length > 0 && (
-              <div className="flex flex-col gap-2 border-t border-border pt-3">
-                <label className="flex flex-col gap-1.5 text-sm font-medium text-ink">
-                  Перенести на іншу картку
-                  <select
-                    value={transferTargetId}
-                    onChange={(event) => setTransferTargetId(event.target.value)}
-                    className="rounded-control border border-border bg-surface-solid px-3.5 py-2.5 text-sm font-normal text-ink focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15"
-                  >
-                    <option value="">Оберіть картку</option>
-                    {transferTargetCards.map((card) => (
-                      <option key={card.id} value={card.id}>
-                        {card.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {transferError !== undefined && <Banner variant="error" text={transferError} />}
-                <Button
-                  label="Перенести"
-                  onClick={handleTransferMetricBlock}
-                  disabled={!transferTargetId || isTransferring}
-                />
-              </div>
-            )}
-          </div>
         )}
 
         <button

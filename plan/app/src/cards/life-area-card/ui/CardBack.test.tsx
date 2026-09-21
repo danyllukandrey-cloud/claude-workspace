@@ -676,6 +676,69 @@ test('CH-10: перемикання зі стану на "з цілями та �
   expect(onUpdateTracking).toHaveBeenCalledWith({ trackingMode: 'goals', healthState: null });
 });
 
+test('CH-12: перемикання на "постійний процес" стирає ціль/дату з усіх наявних блоків-метрик', async () => {
+  const goalsBlock = metricBlock({ settings: { targetCount: 10, isOngoing: false, targetDate: '2026-12-31' } });
+  const data: CardBackData = {
+    metricBlocks: [goalsBlock],
+    aggregateProgress: 0.5,
+    entries: [],
+    trackingMode: 'goals',
+    healthState: null,
+  };
+  const onUpdateTracking = vi.fn().mockResolvedValue(undefined);
+  const onUpdateMetricBlock = vi.fn().mockResolvedValue(undefined);
+  const loadBack = vi.fn().mockResolvedValue(data);
+  render(
+    <CardBack
+      cardName="Картка"
+      loadBack={loadBack}
+      onFlip={vi.fn()}
+      onUpdateTracking={onUpdateTracking}
+      onUpdateMetricBlock={onUpdateMetricBlock}
+    />,
+  );
+
+  await openBackEdit();
+  fireEvent.click(screen.getByRole('radio', { name: 'Картка: постійний процес' }));
+
+  await vi.waitFor(() => expect(onUpdateTracking).toHaveBeenCalledWith({ trackingMode: 'ongoing', healthState: null }));
+  await vi.waitFor(() =>
+    expect(onUpdateMetricBlock).toHaveBeenCalledWith(
+      'mb1',
+      expect.objectContaining({ label: 'Тренування', unit: 'раз', targetCount: null, isOngoing: true, targetDate: null }),
+    ),
+  );
+  await vi.waitFor(() => expect(loadBack).toHaveBeenCalledTimes(2));
+});
+
+test('CH-12: перемикання на "постійний процес" НЕ чіпає блок, що вже без цілі/дати', async () => {
+  const ongoingBlock = metricBlock({ settings: { targetCount: null, isOngoing: true, targetDate: null } });
+  const data: CardBackData = {
+    metricBlocks: [ongoingBlock],
+    aggregateProgress: null,
+    entries: [],
+    trackingMode: 'goals',
+    healthState: null,
+  };
+  const onUpdateTracking = vi.fn().mockResolvedValue(undefined);
+  const onUpdateMetricBlock = vi.fn().mockResolvedValue(undefined);
+  render(
+    <CardBack
+      cardName="Картка"
+      loadBack={() => Promise.resolve(data)}
+      onFlip={vi.fn()}
+      onUpdateTracking={onUpdateTracking}
+      onUpdateMetricBlock={onUpdateMetricBlock}
+    />,
+  );
+
+  await openBackEdit();
+  fireEvent.click(screen.getByRole('radio', { name: 'Картка: постійний процес' }));
+
+  await vi.waitFor(() => expect(onUpdateTracking).toHaveBeenCalledWith({ trackingMode: 'ongoing', healthState: null }));
+  expect(onUpdateMetricBlock).not.toHaveBeenCalled();
+});
+
 test('CH-10: форма нового блоку-метрики в режимі "постійний процес" не показує чекбокс/ціль/дату', async () => {
   const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'ongoing', healthState: null };
   render(
@@ -714,12 +777,14 @@ test('CH-10: форма нового блоку в режимі "постійн�
   );
 });
 
-// CH-10 review (живе тестування 2026-09-21): "+ Додати блок-метрику"
-// приглушена-але-видима лише коли в картки ВЖЕ Є блоки (перемкнули в
-// "стан" пізніше, старі блоки лишаються видимими без можливості чіпати) --
-// для ПОРОЖНЬОЇ картки в режимі "стан" секція метрик не рендериться взагалі
-// (окремий тест нижче), лише вибір мячика.
-test('CH-02: у режимі "стан без вимірювань" з наявним блоком кнопка "+ Додати блок-метрику" стає СПРАВЖНЬО неактивною (disabled), клік нічого не робить', async () => {
+// Review-fix, ІТЕРАЦІЯ 2 (живе тестування 2026-09-21): раніше колишні
+// блоки лишались видимими-але-приглушеними в режимі "стан" (CH-02) --
+// Андрій прямо вказав, що це плутає: закриття панелі "Режим картки" вело
+// на приглушену секцію без жодного видимого шляху назад до вибору мячика.
+// Тепер режим "стан" уніфіковано -- секція метрик НЕ рендериться взагалі,
+// незалежно від того, чи в картки вже Є блоки. Дані блоків нікуди не
+// зникають (лише не показуються), з'являться знову в 'ongoing'/'goals'.
+test('CH-02 review-fix: у режимі "стан без вимірювань" з НАЯВНИМ блоком секція метрик теж не рендериться взагалі (уніфіковано з порожньою карткою)', async () => {
   const data: CardBackData = {
     metricBlocks: [
       { id: 'mb1', label: 'Тренування', unit: 'раз', progress: { kind: 'bounded', share: 0.5, overGoal: 0 }, hasPendingEntry: false },
@@ -729,26 +794,22 @@ test('CH-02: у режимі "стан без вимірювань" з наяв�
     trackingMode: 'state',
     healthState: 'active',
   };
-  const onCreateMetricBlock = vi.fn();
   render(
     <CardBack
       cardName="Картка"
       loadBack={() => Promise.resolve(data)}
       onFlip={vi.fn()}
       onUpdateTracking={vi.fn()}
-      onCreateMetricBlock={onCreateMetricBlock}
+      onCreateMetricBlock={vi.fn()}
+      onArchiveMetricBlock={vi.fn()}
+      onUpdateMetricBlock={vi.fn()}
     />,
   );
 
-  const addButton = await screen.findByRole('button', { name: '+ Додати блок-метрику' });
-  // pointer-events-none на предку -- візуальний шар (миша/дотик).
-  expect(addButton.closest('[aria-disabled="true"]')).toBeTruthy();
-  // Code review 2026-09-19: СПРАВЖНІЙ HTML disabled -- блокує й
-  // Enter/Space-активацію фокусованої кнопки клавіатурою, не лише клік.
-  expect(addButton.hasAttribute('disabled')).toBe(true);
-  fireEvent.click(addButton);
-  expect(screen.queryByLabelText('Що рахуємо/вимірюємо:')).toBeNull();
-  expect(onCreateMetricBlock).not.toHaveBeenCalled();
+  await screen.findByText('використовується');
+  expect(screen.queryByText('Тренування')).toBeNull();
+  expect(screen.queryByRole('button', { name: '+ Додати блок-метрику' })).toBeNull();
+  expect(screen.queryByText(/метрики не використовуються/)).toBeNull();
 });
 
 test('CH-10 review: у режимі "стан без вимірювань" на ПОРОЖНІЙ картці секція метрик не рендериться взагалі -- лише вибір мячика', async () => {
@@ -766,32 +827,6 @@ test('CH-10 review: у режимі "стан без вимірювань" на 
   await screen.findByText('використовується');
   expect(screen.queryByRole('button', { name: '+ Додати блок-метрику' })).toBeNull();
   expect(screen.queryByText(/метрики не використовуються/)).toBeNull();
-});
-
-test('CH-02: у режимі "стан без вимірювань" кнопки "×"/"✎" наявного блоку-метрики теж справжньо disabled', async () => {
-  const data: CardBackData = {
-    metricBlocks: [
-      { id: 'mb1', label: 'Тренування', unit: 'раз', progress: { kind: 'bounded', share: 0.5, overGoal: 0 }, hasPendingEntry: false },
-    ],
-    aggregateProgress: 0.5,
-    entries: [],
-    trackingMode: 'state',
-    healthState: 'active',
-  };
-  render(
-    <CardBack
-      cardName="Картка"
-      loadBack={() => Promise.resolve(data)}
-      onFlip={vi.fn()}
-      onUpdateTracking={vi.fn()}
-      onArchiveMetricBlock={vi.fn()}
-      onUpdateMetricBlock={vi.fn()}
-    />,
-  );
-
-  await screen.findByText('Тренування');
-  expect(screen.getByRole('button', { name: 'Видалити метрику «Тренування»' }).hasAttribute('disabled')).toBe(true);
-  expect(screen.getByRole('button', { name: 'Редагувати метрику «Тренування»' }).hasAttribute('disabled')).toBe(true);
 });
 
 // CH-03 (docs/features/life-area-card/changes.md): олівець на блоці-метриці
@@ -849,12 +884,12 @@ test('CH-03: збереження форми редагування виклик
   expect(screen.queryByText('Редагування «Тренування»')).toBeNull();
 });
 
-// CH-10 review-fix (docs/features/life-area-card/changes.md): редагування
-// НАЯВНОГО блоку мусить триматись ЙОГО ВЛАСНИХ налаштувань (ціль+дата чи
-// ні), а не поточного режиму картки -- інакше перемикання картки на
-// "постійний процес" ПІСЛЯ того, як блок уже мав ціль, і звичайне
-// виправлення одруківки в назві тихо стирали б ціль/дату блоку.
-test('CH-10 review-fix: редагування блоку зі своєю ціллю/датою лишає поля видимими й ЦІЛІСНИМИ, навіть якщо картка зараз у режимі "постійний процес"', async () => {
+// CH-12 (живе тестування 2026-09-21): редагування НАЯВНОГО блоку тримається
+// ПОТОЧНОГО режиму картки, не власних налаштувань блоку, що лишились з
+// попереднього режиму -- перехід картки на "постійний процес" уже одразу
+// (handleUpdateTracking) стирає ціль/дату з усіх блоків, тож на момент
+// відкриття форми редагування блок і так у формі, що відповідає картці.
+test('CH-12: редагування блоку показує поля цілі/дати відповідно до ПОТОЧНОГО режиму картки, не старих налаштувань блоку', async () => {
   const goalsBlock = metricBlock({ settings: { targetCount: 10, isOngoing: false, targetDate: '2026-12-31' } });
   const data: CardBackData = {
     metricBlocks: [goalsBlock],
@@ -869,9 +904,10 @@ test('CH-10 review-fix: редагування блоку зі своєю ціл
   await screen.findByText('Тренування');
   fireEvent.click(screen.getByRole('button', { name: 'Редагувати метрику «Тренування»' }));
 
-  // Поля цілі/дати НЕ приховані -- форма показує повний набір, як і мав блок.
-  expect(screen.getByLabelText('Ціль:')).toBeTruthy();
-  expect(screen.getByLabelText('До:')).toBeTruthy();
+  // Картка в режимі "постійний процес" -- поля цілі/дати ПРИХОВАНІ, навіть
+  // якщо блок ще пам'ятає стару ціль+дату з режиму "з цілями".
+  expect(screen.queryByLabelText('Ціль:')).toBeNull();
+  expect(screen.queryByLabelText('До:')).toBeNull();
 
   fireEvent.change(screen.getByLabelText('Що рахуємо/вимірюємо:'), { target: { value: 'Біг' } });
   fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
@@ -879,7 +915,7 @@ test('CH-10 review-fix: редагування блоку зі своєю ціл
   await vi.waitFor(() =>
     expect(onUpdateMetricBlock).toHaveBeenCalledWith(
       'mb1',
-      expect.objectContaining({ label: 'Біг', targetCount: 10, targetDate: '2026-12-31', isOngoing: false }),
+      expect.objectContaining({ label: 'Біг', targetCount: null, targetDate: null, isOngoing: true }),
     ),
   );
 });

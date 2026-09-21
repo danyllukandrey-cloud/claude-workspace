@@ -66,6 +66,15 @@ export interface MetricBlockFormProps {
   // поняття (тут 'ongoing'/'goals', там 'state'/'ongoing'/'goals') інакше
   // синхронізуються вручну без жодного зв'язку типів.
   mode?: Exclude<CardTrackingMode, 'state'>;
+  /**
+   * Живе тестування 2026-09-21 (Андрій): без цього пропу нема способу
+   * вийти з форми СТВОРЕННЯ нового блоку без збереження -- лише
+   * "Зберегти". Опційний, той самий "без пропу афорданс не рендериться"
+   * принцип, що решта опційних дій цього продукту -- форма редагування
+   * наявного блоку вже має власне "Закрити" на рівні панелі (CardBack.tsx),
+   * цей проп їй не потрібен.
+   */
+  onCancel?: () => void;
 }
 
 const EMPTY_VALUES: MetricBlockFormValues = {
@@ -76,7 +85,7 @@ const EMPTY_VALUES: MetricBlockFormValues = {
   targetDate: null,
 };
 
-export function MetricBlockForm({ initialValues, onSubmit, mode = 'goals' }: MetricBlockFormProps): JSX.Element {
+export function MetricBlockForm({ initialValues, onSubmit, mode = 'goals', onCancel }: MetricBlockFormProps): JSX.Element {
   // CH-08 (docs/features/life-area-card/changes.md, живе тестування
   // 2026-09-21): заголовок форми -- "Редагування" саме коли відкрито через
   // олівець наявної метрики (initialValues переданий), "Новий блок-метрика"
@@ -202,7 +211,10 @@ export function MetricBlockForm({ initialValues, onSubmit, mode = 'goals' }: Met
           )}
         </div>
       )}
-      <Button label="Зберегти" type="submit" disabled={isSubmitting} />
+      <div className="flex items-center gap-3">
+        {onCancel && <Button label="На зад" type="button" onClick={onCancel} disabled={isSubmitting} />}
+        <Button label="Зберегти" type="submit" disabled={isSubmitting} />
+      </div>
     </form>
   );
 }
