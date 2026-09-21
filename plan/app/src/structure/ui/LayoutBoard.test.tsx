@@ -13,16 +13,29 @@
 // 4/5. Інструмент "Зв'язати" (лінія/стрілка) -- тап по двох картках створює
 //    зв'язок; тап по наявній лінії видаляє.
 //
+// CH-03/CH-04/CH-05/CH-06/CH-10 (docs/features/structure/changes.md,
+// 2026-09-21): "На зад" на CONFIG, купка -- явна ціль перетягування навіть
+// порожньою (CH-04), "Закрити напрямок" -> "Архівувати" через ТОЙ САМИЙ
+// injected archiveCard, що колода (CH-05/CH-06), перемикання на "Готово до
+// розкладання" переносить картки канви в трей (CH-10).
+//
 // getBoundingClientRect мокається ГЛОБАЛЬНО для файлу -- jsdom за
 // замовчуванням повертає нулі, а формула переведення клієнтських
 // координат у відсоток канви (LayoutBoard.tsx's toCanvasPercent) ділить на
-// rect.width/height.
+// rect.width/height. CH-04: купка (data-testid="unassigned-tray") тепер має
+// ВЛАСНИЙ прямокутник (TRAY_RECT, вузька смуга внизу CANVAS_RECT) -- без
+// цього купка (порожня, під час драгу) мала б ТОЙ САМИЙ прямокутник, що й
+// канва (загальний фолбек для "не чіп картки"), і будь-яке відпускання
+// картки хибно розпізнавалось би як "у треї".
 
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { LayoutBoard } from './LayoutBoard';
 import type { LayoutBoardState } from './LayoutBoard';
 
 const CANVAS_RECT = { x: 0, y: 0, left: 0, top: 0, width: 300, height: 210, right: 300, bottom: 210 };
+// Вузька смуга внизу канви (40px із 210) -- реалістична пропорція max-h-28
+// (7rem) на типовому мобільному екрані, окрема від CANVAS_RECT (CH-04).
+const TRAY_RECT = { x: 0, y: 170, left: 0, top: 170, width: 300, height: 40, right: 300, bottom: 210 };
 
 /**
  * jsdom 25 (this project's version) has NO `PointerEvent` implementation at
@@ -61,6 +74,12 @@ let originalGetBoundingClientRect: typeof Element.prototype.getBoundingClientRec
 beforeEach(() => {
   originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
   Element.prototype.getBoundingClientRect = function (this: Element) {
+    // CH-04: купка -- ВЛАСНИЙ прямокутник, перевіряється ПЕРШИМ (інакше
+    // непорожня купка хибно розпізналась би як "чип картки" нижче, бо її
+    // прямі діти -- чипи з data-card-id).
+    if (this.getAttribute('data-testid') === 'unassigned-tray') {
+      return { ...TRAY_RECT, toJSON: () => TRAY_RECT } as DOMRect;
+    }
     // "card chip" -- сам чип (data-card-id на собі) АБО card-wrapper, чия
     // ПРЯМА дитина -- чип (LayoutBoard.tsx's ref на wrapper-div). НЕ
     // querySelector (глибокий пошук) -- канва теж МІСТИТЬ чипи як нащадків
@@ -160,6 +179,89 @@ test('default: нерозкладена картка (x/y null) показана
   // позиціонована вільно (style left/top) як розкладена картка канви.
   expect(tray.contains(trayCard)).toBe(true);
   expect(trayCard.style.left).toBe('');
+});
+
+// CH-04 (docs/features/structure/changes.md): купка -- явна ціль
+// перетягування, зона внизу не затуляє канву (рескейл), "невизначено" ---
+// власний стан, до якого можна повернутись перетягуванням.
+
+describe('CH-04: купка як явна ціль "визначено/невизначено"', () => {
+  test('без жодної нерозкладеної картки купка НЕ рендериться поза драгом', async () => {
+    const props = baseProps(); // обидві картки визначені.
+    render(<LayoutBoard {...props} />);
+
+    await screen.findByTestId('canvas');
+    expect(screen.queryByTestId('unassigned-tray')).toBeNull();
+  });
+
+  test('під час будь-якого драгу купка з\'являється як ціль, навіть порожня, з підказкою', async () => {
+    const props = baseProps(); // обидві картки визначені, купки на старті немає.
+    render(<LayoutBoard {...props} />);
+
+    const card = await screen.findByTestId('card-card-a');
+    firePointer(card, 'pointerdown', 60, 63);
+
+    const tray = await screen.findByTestId('unassigned-tray');
+    expect(tray.textContent).toMatch(/відпустіть|невизначен/i);
+
+    firePointer(window, 'pointerup', 150, 105);
+  });
+
+  test('відпустив картку в зоні купки (TRAY_RECT) -- onMoveCard НЕ викликається, картка залишається в треї', async () => {
+    const props = baseProps();
+    render(<LayoutBoard {...props} />);
+
+    const card = await screen.findByTestId('card-card-a');
+    firePointer(card, 'pointerdown', 60, 63);
+    // (150, 190) -- усередині TRAY_RECT (top:170..bottom:210).
+    firePointer(window, 'pointermove', 150, 190);
+    firePointer(window, 'pointerup', 150, 190);
+
+    const tray = await screen.findByTestId('unassigned-tray');
+    await waitFor(() => expect(tray.contains(screen.getByTestId('card-card-a'))).toBe(true));
+    expect(props.onMoveCard).not.toHaveBeenCalled();
+  });
+
+  test('перетягнув картку з купки назад на канву -- знову "визначена" (onMoveCard викликається)', async () => {
+    const props = baseProps();
+    render(<LayoutBoard {...props} />);
+
+    const card = await screen.findByTestId('card-card-a');
+    firePointer(card, 'pointerdown', 60, 63);
+    firePointer(window, 'pointermove', 150, 190); // спершу в трей.
+    firePointer(window, 'pointerup', 150, 190);
+
+    await waitFor(() => {
+      const tray = screen.getByTestId('unassigned-tray');
+      expect(tray.contains(screen.getByTestId('card-card-a'))).toBe(true);
+    });
+
+    // Другий драг тієї самої картки -- назад на канву (за межами TRAY_RECT).
+    firePointer(screen.getByTestId('card-card-a'), 'pointerdown', 60, 63);
+    firePointer(window, 'pointermove', 150, 105);
+    firePointer(window, 'pointerup', 150, 105);
+
+    await waitFor(() => expect(props.onMoveCard).toHaveBeenCalledWith({ cardId: 'card-a', x: 50, y: 50 }));
+  });
+
+  test('коли купка видима (реальна нерозкладена картка), картки канви рендеряться вище (стиснуто по Y)', async () => {
+    const props = baseProps({
+      cards: [
+        { cardId: 'card-a', cardTitle: 'Картка A', x: 20, y: 30, healthState: null },
+        { cardId: 'card-b', cardTitle: 'Картка B', x: 60, y: 70, healthState: null },
+        { cardId: 'card-tray', cardTitle: 'У треї', x: null, y: null, healthState: null },
+      ],
+    });
+    render(<LayoutBoard {...props} />);
+
+    await screen.findByTestId('unassigned-tray');
+    const cardB = screen.getByTestId('card-card-b');
+    // free = 1 - 40/210 = 170/210 -- top стиснуто МЕНШЕ за сирі 70%, картка
+    // не ховається за трей (TRAY_RECT top=170 з 210 -- 80.95% канви).
+    const top = Number(cardB.parentElement?.style.top?.replace('%', ''));
+    expect(top).toBeLessThan(70);
+    expect(top).toBeCloseTo(56.67, 1);
+  });
 });
 
 describe('вимога 3 (чат): реальний драг мишею/дотиком через Pointer Events', () => {
@@ -336,49 +438,52 @@ describe('вимоги 4/5 (чат): два завжди видимі інстр
   });
 });
 
-// --- AC-12: вхід у SCR-04 "Закрити напрямок" прямо зі Схеми ------------------
+// --- AC-12, CH-05/CH-06: вхід в "Архівування" прямо зі Схеми -----------------
 
-function closeCapability(overrides: Record<string, unknown> = {}) {
+function archiveCapability(overrides: Record<string, unknown> = {}) {
   return {
     loadCloseCardOptions: vi.fn().mockResolvedValue({
       metricBlocks: [{ metricBlockId: 'mb-1', label: 'книги' }],
       targetCards: [{ cardId: 'card-b', cardTitle: 'Картка B' }],
     }),
-    onCloseCard: vi.fn().mockResolvedValue(undefined),
+    onArchiveCard: vi.fn().mockResolvedValue(undefined),
+    onTransferMetricBlock: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
 
-test('AC-12: без інжектованої можливості закриття кнопки "Закрити напрямок" немає', async () => {
+test('AC-12: без інжектованої можливості архівації кнопки "Архівувати" немає', async () => {
   const props = baseProps();
   render(<LayoutBoard {...props} />);
 
   await screen.findByTestId('canvas');
-  expect(screen.queryByRole('button', { name: /Закрити напрямок/ })).toBeNull();
+  expect(screen.queryByRole('button', { name: /Архівувати/ })).toBeNull();
 });
 
-test('AC-12: кожна картка має власну дію "Закрити напрямок", клік відкриває SCR-04 із назвою саме цієї картки', async () => {
-  const props = { ...baseProps(), ...closeCapability() };
+test('AC-12: кожна картка має власну дію "Архівувати", клік відкриває "Архівування" саме цієї картки', async () => {
+  const props = { ...baseProps(), ...archiveCapability() };
   render(<LayoutBoard {...props} />);
 
-  const openA = await screen.findByRole('button', { name: 'Закрити напрямок «Картка A»' });
-  expect(screen.getByRole('button', { name: 'Закрити напрямок «Картка B»' })).toBeTruthy();
+  const openA = await screen.findByRole('button', { name: 'Архівувати «Картка A»' });
+  expect(screen.getByRole('button', { name: 'Архівувати «Картка B»' })).toBeTruthy();
 
   fireEvent.click(openA);
 
   expect(props.loadCloseCardOptions).toHaveBeenCalledWith('card-a');
 
   const dialog = await screen.findByRole('dialog');
+  // CH-06 п.1: заголовок сторінки -- "Архівування", не "Закрити «Назва»".
+  expect(dialog.textContent).toContain('Архівування');
   expect(dialog.textContent).toContain('Картка A');
   expect(await screen.findByText('книги')).toBeTruthy();
 });
 
-test('AC-12: клік на "Закрити напрямок" не запускає драг картки (stopPropagation)', async () => {
-  const props = { ...baseProps(), ...closeCapability() };
+test('AC-12: клік на "Архівувати" не запускає драг картки (stopPropagation)', async () => {
+  const props = { ...baseProps(), ...archiveCapability() };
   render(<LayoutBoard {...props} />);
 
-  const closeButton = await screen.findByRole('button', { name: 'Закрити напрямок «Картка A»' });
-  firePointer(closeButton, 'pointerdown', 60, 63);
+  const archiveButton = await screen.findByRole('button', { name: 'Архівувати «Картка A»' });
+  firePointer(archiveButton, 'pointerdown', 60, 63);
 
   // pointerdown на кнопці не мусить стартувати драг батьківського чипа --
   // жодного onMoveCard навіть після pointerup деінде.
@@ -386,26 +491,37 @@ test('AC-12: клік на "Закрити напрямок" не запуска
   expect(props.onMoveCard).not.toHaveBeenCalled();
 });
 
-test('AC-12: підтвердження викликає onCloseCard з cardId цієї картки і обраними переносами метрик', async () => {
-  const props = { ...baseProps(), ...closeCapability() };
+test('CH-05/CH-06: чекбокс + вибір цільової картки + "Перенести" переносять метрику ОДРАЗУ (без чекання архівації)', async () => {
+  const props = { ...baseProps(), ...archiveCapability() };
   render(<LayoutBoard {...props} />);
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Закрити напрямок «Картка A»' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Архівувати «Картка A»' }));
   await screen.findByText('книги');
 
   fireEvent.click(screen.getByRole('checkbox'));
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'card-b' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Закрити' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Перенести' }));
 
   await waitFor(() =>
-    expect(props.onCloseCard).toHaveBeenCalledWith({
-      cardId: 'card-a',
-      metricTransfers: [{ metricBlockId: 'mb-1', targetCardId: 'card-b' }],
-    }),
+    expect(props.onTransferMetricBlock).toHaveBeenCalledWith('card-a', 'mb-1', 'card-b'),
   );
+  // Архівація ЩЕ не викликана -- перенесення й архівація тепер дві незалежні дії.
+  expect(props.onArchiveCard).not.toHaveBeenCalled();
 });
 
-test('AC-12: після успішного закриття діалог зникає, а розкладка перечитується з сервера', async () => {
+test('CH-05: "Архівувати без перенесення" викликає ТОЙ САМИЙ injected archiveCard з cardId цієї картки', async () => {
+  const props = { ...baseProps(), ...archiveCapability() };
+  render(<LayoutBoard {...props} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Архівувати «Картка A»' }));
+  await screen.findByText('книги');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Архівувати без перенесення' }));
+
+  await waitFor(() => expect(props.onArchiveCard).toHaveBeenCalledWith('card-a'));
+});
+
+test('AC-12: після успішної архівації діалог зникає, а розкладка перечитується з сервера', async () => {
   const loadLayout = vi
     .fn()
     .mockResolvedValueOnce(baseState())
@@ -417,13 +533,13 @@ test('AC-12: після успішного закриття діалог зни�
     onDeleteConnection: vi.fn().mockResolvedValue(undefined),
     onSaveLayoutMode: vi.fn().mockResolvedValue(undefined),
     onOpenArchive: vi.fn(),
-    ...closeCapability(),
+    ...archiveCapability(),
   };
   render(<LayoutBoard {...props} />);
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Закрити напрямок «Картка A»' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Архівувати «Картка A»' }));
   await screen.findByText('книги');
-  fireEvent.click(screen.getByRole('button', { name: 'Закрити' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Архівувати без перенесення' }));
 
   await waitFor(() => expect(loadLayout).toHaveBeenCalledTimes(2));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -431,29 +547,29 @@ test('AC-12: після успішного закриття діалог зни�
 });
 
 test('AC-12: "Скасувати" закриває діалог і нічого не надсилає', async () => {
-  const props = { ...baseProps(), ...closeCapability() };
+  const props = { ...baseProps(), ...archiveCapability() };
   render(<LayoutBoard {...props} />);
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Закрити напрямок «Картка A»' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Архівувати «Картка A»' }));
   await screen.findByText('книги');
   fireEvent.click(screen.getByRole('button', { name: 'Скасувати' }));
 
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-  expect(props.onCloseCard).not.toHaveBeenCalled();
+  expect(props.onArchiveCard).not.toHaveBeenCalled();
   expect(props.loadLayout).toHaveBeenCalledTimes(1);
 });
 
-test('AC-12 + купка нерозкладених: картку звідти теж можна закрити', async () => {
+test('AC-12 + купка нерозкладених: картку звідти теж можна архівувати', async () => {
   const props = {
     ...baseProps({
       cards: [{ cardId: 'card-a', cardTitle: 'Картка A', x: null, y: null, healthState: null }],
     }),
-    ...closeCapability(),
+    ...archiveCapability(),
   };
   render(<LayoutBoard {...props} />);
 
   const tray = await screen.findByTestId('unassigned-tray');
-  const openA = screen.getByRole('button', { name: 'Закрити напрямок «Картка A»' });
+  const openA = screen.getByRole('button', { name: 'Архівувати «Картка A»' });
   expect(tray.contains(openA)).toBe(true);
 
   fireEvent.click(openA);
@@ -487,6 +603,22 @@ test('живе тестування: плаваюча кнопка "Конфіг
     expect(screen.getByRole('radio', { name: label })).toBeTruthy();
   }
   expect((screen.getByRole('radio', { name: 'Вільна розкладка' }) as HTMLInputElement).checked).toBe(true);
+});
+
+// CH-03 (частина 1, docs/features/structure/changes.md): "На зад" на CONFIG.
+
+test('CH-03: "На зад" на CONFIG видима зліва від "Зберегти" й повертає на BOARD без збереження', async () => {
+  const props = baseProps({ layoutMode: 'free' });
+  render(<LayoutBoard {...props} />);
+
+  await screen.findByTestId('canvas');
+  fireEvent.click(screen.getByRole('button', { name: 'Конфігурація' }));
+
+  fireEvent.click(await screen.findByRole('radio', { name: 'Баланс навколо ядра' }));
+  fireEvent.click(screen.getByRole('button', { name: 'На зад' }));
+
+  expect(screen.queryByRole('radio', { name: 'Баланс навколо ядра' })).toBeNull();
+  expect(props.onSaveLayoutMode).not.toHaveBeenCalled();
 });
 
 test('AC-11: обрання нового layoutMode без уже розкладених карток застосовує його одразу, без ConfirmDialog, і повертає на BOARD', async () => {
@@ -609,6 +741,33 @@ test('staging: режим інший -- підказки немає навіть
 
   await screen.findByTestId('unassigned-tray');
   expect(screen.queryByText(/готово до розкладання/i)).toBeNull();
+});
+
+// CH-10 (docs/features/structure/changes.md): перемикання конфігурації на
+// "Готово до розкладання" переносить усі картки з канви в трей.
+
+test('CH-10: перемикання на "Готово до розкладання" з уже розкладеними картками переносить їх усі в трей', async () => {
+  const props = baseProps({ layoutMode: 'free' }); // baseState -- обидві картки з x/y.
+  render(<LayoutBoard {...props} />);
+
+  await screen.findByTestId('canvas');
+  fireEvent.click(screen.getByRole('button', { name: 'Конфігурація' }));
+  fireEvent.click(await screen.findByRole('radio', { name: 'Готово до розкладання' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+
+  // hasArrangedCards -- ConfirmDialog з'являється першим (AC-11b).
+  fireEvent.click(await screen.findByRole('button', { name: 'Змінити' }));
+
+  await waitFor(() => expect(props.onSaveLayoutMode).toHaveBeenCalledWith({ layoutMode: 'staging' }));
+
+  const tray = await screen.findByTestId('unassigned-tray');
+  await waitFor(() => {
+    expect(tray.contains(screen.getByTestId('card-card-a'))).toBe(true);
+    expect(tray.contains(screen.getByTestId('card-card-b'))).toBe(true);
+  });
+  // Канва порожня -- жодна картка не позиціонована style left/top.
+  expect(screen.getByTestId('card-card-a').style.left).toBe('');
+  expect(screen.getByTestId('card-card-b').style.left).toBe('');
 });
 
 // CH-02 (docs/features/structure/changes.md, скоординовано з life-area-card

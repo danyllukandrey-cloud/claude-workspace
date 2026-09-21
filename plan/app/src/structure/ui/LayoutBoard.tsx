@@ -34,16 +34,30 @@
 // в тулбар BOARD-екрана, поруч із "Конфігурація" -- друга точка входу в
 // архів (перша -- дубль на DeckScreen, life-area-card CH-01), обидві через
 // той самий onOpenArchive, який App.tsx підставляє однаково в обидва місця.
+//
+// CH-03 (частина 1 з 2, docs/features/structure/changes.md): "На зад" на
+// сторінці конфігурації -- зліва від "Зберегти", той самий патерн, що
+// MetricBlockForm.tsx's onCancel (life-area-card).
+//
+// CH-04 (docs/features/structure/changes.md): купка нерозкладених ("трей")
+// тепер ЗАВЖДИ доступна як ціль перетягування під час драгу (не лише коли в
+// ній уже щось лежить), а картки канви внизу візуально стискаються, щоб трей
+// їх не затуляв -- дивись canvasScaleY нижче.
+//
+// CH-05/CH-06 (docs/features/structure/changes.md): "Закрити напрямок"
+// (структуроспецифічний POST /structure/layout/{cardId}/close) прибрано
+// повністю -- дія на чипі картки тепер "Архівувати", той самий injected
+// archiveCard, що колода (life-area-card), і той самий injected
+// onTransferMetricBlock для перенесення метрик у ArchiveCardDialog.tsx.
+//
+// CH-10 (docs/features/structure/changes.md): перемикання конфігурації на
+// "Готово до розкладання" переносить усі картки з канви в трей.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { Banner, Button, ConfirmDialog, EmptyState, Spinner } from '../../shared/ui';
-import { CloseCardDialog } from './CloseCardDialog';
-import type {
-  CloseCardDialogMetricBlock,
-  CloseCardDialogTargetCard,
-  CloseCardMetricTransferInput,
-} from './CloseCardDialog';
+import { ArchiveCardDialog } from './ArchiveCardDialog';
+import type { ArchiveCardDialogMetricBlock, ArchiveCardDialogTargetCard } from './ArchiveCardDialog';
 import type { LayoutMode } from '../domain/layout';
 import { clampPercent } from '../domain/layout';
 
@@ -92,11 +106,11 @@ export interface LayoutBoardConnection {
   directed: boolean;
 }
 
-/** Те, що SCR-04 має знати про картку, яку закривають (AC-12). */
+/** Те, що SCR-04 (тепер "Архівування") має знати про картку, яку архівують (AC-12). */
 export interface LayoutBoardCloseCardOptions {
-  metricBlocks: CloseCardDialogMetricBlock[];
+  metricBlocks: ArchiveCardDialogMetricBlock[];
   /** Куди можна перенести метрику -- решта активних карток власника. */
-  targetCards: CloseCardDialogTargetCard[];
+  targetCards: ArchiveCardDialogTargetCard[];
 }
 
 export interface LayoutBoardState {
@@ -128,14 +142,34 @@ export interface LayoutBoardProps {
    */
   onSaveLayoutMode: (input: { layoutMode: LayoutMode }) => Promise<void>;
   /**
-   * AC-12 -- читає, що саме пропонувати перенести при закритті напрямку
-   * (GET /cards/{cardId}/metric-blocks + перелік карток-цілей). Опційний: поки
-   * composition root його не підставив, дії "Закрити напрямок" просто немає --
-   * краще ніж діалог, який нікуди не веде.
+   * AC-12 -- читає, що саме пропонувати перенести перед архівацією (GET
+   * /cards/{cardId}/metric-blocks + перелік карток-цілей). Назва проп
+   * лишається `loadCloseCardOptions` -- сам ендпоінт НЕ структуроспецифічний
+   * (генеричний GET .../metric-blocks, той самий, що вже живить
+   * CardBack.transferTargetCards), перейменування самого проп через
+   * App.tsx/main.tsx сюди навмисно не заходило (CH-05/CH-06 обмежені
+   * підключенням архівації, не рефактором назв уже робочого читання).
+   * Опційний: поки composition root його не підставив, дії "Архівувати" на
+   * чипі просто немає -- краще ніж діалог, який нікуди не веде.
    */
   loadCloseCardOptions?: (cardId: string) => Promise<LayoutBoardCloseCardOptions>;
-  /** AC-12 -- POST /structure/layout/{cardId}/close. Опційний разом із loadCloseCardOptions. */
-  onCloseCard?: (input: { cardId: string; metricTransfers: CloseCardMetricTransferInput[] }) => Promise<void>;
+  /**
+   * CH-05: замінює структуроспецифічний `onCloseCard` (POST
+   * /structure/layout/{cardId}/close, прибраний повністю) -- ТОЙ САМИЙ
+   * injected `archiveCard`, що вже архівує картку з колоди (life-area-card
+   * CardFace/CardBack "..." -> "Архівувати"; D-103: use-case сам закриває
+   * активну позицію картки в розкладці Структури). Опційний разом із
+   * loadCloseCardOptions -- без обох дія "Архівувати" на чипі не рендериться.
+   */
+  onArchiveCard?: (cardId: string) => Promise<void>;
+  /**
+   * CH-06: переносить один блок-метрику картки, що архівується, на іншу
+   * картку -- ТОЙ САМИЙ injected onTransferMetricBlock, що вже працює на
+   * звороті картки (CardBack.tsx). Опційний -- без нього рядки метрик у
+   * діалозі архівування рендеряться без кнопки "Перенести" (той самий "без
+   * пропу афорданс не рендериться" принцип, що CardBack.tsx).
+   */
+  onTransferMetricBlock?: (cardId: string, metricBlockId: string, targetCardId: string) => Promise<void>;
   /**
    * CH-01 (docs/features/structure/changes.md): кнопка "Архів карток" біля
    * "Конфігурація" -- та сама точка входу, що дубль на DeckScreen
@@ -188,22 +222,37 @@ export function LayoutBoard({
   onDeleteConnection,
   onSaveLayoutMode,
   loadCloseCardOptions,
-  onCloseCard,
+  onArchiveCard,
+  onTransferMetricBlock,
   onOpenArchive,
 }: LayoutBoardProps): JSX.Element {
   const [loading, setLoading] = useState(true);
   const [state, setState] = useState<LayoutBoardState>({ layoutMode: null, cards: [], connections: [] });
   const [banner, setBanner] = useState<{ variant: 'error' | 'info'; text: string } | null>(null);
 
-  // AC-12: яку картку закриваємо (null -- діалог закритий) і чим його наповнити.
-  const [closingCard, setClosingCard] = useState<{ cardId: string; cardTitle: string } | null>(null);
-  const [closeOptions, setCloseOptions] = useState<LayoutBoardCloseCardOptions | null>(null);
+  // AC-12: яку картку архівуємо (null -- діалог закритий) і чим його наповнити.
+  const [archivingCard, setArchivingCard] = useState<{ cardId: string; cardTitle: string } | null>(null);
+  const [archiveOptions, setArchiveOptions] = useState<LayoutBoardCloseCardOptions | null>(null);
 
   // Живе тестування (Андрій): "Конфігурація" -- локальний перемикач екрана.
   const [screenMode, setScreenMode] = useState<'board' | 'config'>('board');
   const [pendingLayoutMode, setPendingLayoutMode] = useState<LayoutMode>(null);
   const [configBanner, setConfigBanner] = useState<{ variant: 'error' | 'info'; text: string } | null>(null);
   const [confirmPending, setConfirmPending] = useState(false);
+
+  // CH-04/CH-10: картки, що ВІЗУАЛЬНО показані в треї client-side, попри
+  // збережену на сервері позицію -- (а) CH-04 п.2, картку перетягнули у
+  // затемнену зону й лишили, (б) CH-10, усі картки канви одразу після
+  // перемикання режиму на "Готово до розкладання" (сервер для staging нічого
+  // не пише, domain/layout.ts computeStagingLayout -- явний no-op).
+  // НАВМИСНО ефемерний client-only стан, не бекенд-виклик: PUT
+  // /structure/layout/{cardId} (docs/features/structure/contracts/
+  // openapi.yaml:204) приймає лише число, скидання позиції в null на сервері
+  // вимагало б розширення контракту -- поза межами цієї правки (LayoutBoard.tsx
+  // сам собою). Переживає лише цей візит на Схему: новий loadLayout() при
+  // монтуванні починає з чистого Set, як і мало бути -- сервер лишається
+  // джерелом правди для чогось, що НЕ було свідомо позначене тут.
+  const [pendingUnassignedIds, setPendingUnassignedIds] = useState<Set<string>>(new Set());
 
   // --- Драг мишею/дотиком (вимога 3) -- Pointer Events API -------------------
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -213,6 +262,10 @@ export function LayoutBoard({
   // зі скріншотом): фіксований відступ ховав вістря стрілки під широким
   // чипом ("Філософія") -- константа була відкаліброва на вужчий чип.
   const cardElementsRef = useRef<Map<string, HTMLDivElement>>(new Map());
+  // CH-04: реальний DOM-вузол купки -- (а) canvasScaleY нижче вимірює його
+  // висоту, щоб стиснути відображення канви й не дати треєві затулити картки
+  // (п.1), (б) handleUp визначає, чи відпустили картку САМЕ в цій зоні (п.2).
+  const trayRef = useRef<HTMLDivElement>(null);
   const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
   // Джерело правди для позиції картки, що ЗАРАЗ тягнеться -- ref (синхронний
   // читач на pointerup), `dragTick` лише змушує React перемалювати JSX із
@@ -240,10 +293,14 @@ export function LayoutBoard({
   // порожній -- лінії малювались з відступом-заглушкою (замість реального
   // розміру чипа), тому вістря ховалось під широким чипом. Один додатковий
   // тік ПІСЛЯ commit (dragTick, той самий лічильник, що й драг) змушує
-  // перемалювати лінії вже зі свіжо-заповненими рефами.
+  // перемалювати лінії вже зі свіжо-заповненими рефами. CH-04: той самий
+  // тік тепер залежить і від кількості нерозкладених (unassignedCount нижче)
+  // -- поява/зникнення купки міняє canvasScaleY, лінії й чипи мусять
+  // перемалюватись зі свіжим виміром trayRef.
+  const unassignedCount = state.cards.filter((card) => card.x === null || pendingUnassignedIds.has(card.cardId)).length;
   useLayoutEffect(() => {
     setDragTick((tick) => tick + 1);
-  }, [state.cards.length, state.connections.length]);
+  }, [state.cards.length, state.connections.length, unassignedCount, draggingCardId]);
 
   /** Пікселі вказівника -> відсоток канви (0-100), клемплені -- той самий clampPercent, що сервер (domain/layout.ts). */
   function toCanvasPercent(clientX: number, clientY: number): { x: number; y: number } {
@@ -257,6 +314,21 @@ export function LayoutBoard({
     };
   }
 
+  // CH-04 п.1: коли купка нерозкладених видима, вона МОГЛА Б затулити картки
+  // канви в її нижній частині (та сама зона, absolute bottom-0 всередині
+  // канви) -- множник стискає ВІДОБРАЖЕННЯ (не збережене значення) y так, щоб
+  // 100% домену завжди малювався ВИЩЕ за купку. Запобіжник (>0.4): на дуже
+  // вузькому екрані, де купка займає майже всю висоту, не стискаємо канву до
+  // нечитабельного розміру -- легке накладання краще за картки завтовшки в
+  // піксель.
+  function canvasScaleY(): number {
+    const canvasRect = canvasRef.current?.getBoundingClientRect();
+    const trayRect = trayRef.current?.getBoundingClientRect();
+    if (!canvasRect || canvasRect.height === 0 || !trayRect || trayRect.height === 0) return 1;
+    const free = 1 - trayRect.height / canvasRect.height;
+    return free > 0.4 ? free : 1;
+  }
+
   useEffect(() => {
     if (!draggingCardId) return undefined;
 
@@ -266,11 +338,36 @@ export function LayoutBoard({
       setDragTick((tick) => tick + 1);
     };
 
-    const handleUp = (): void => {
+    const handleUp = (event: PointerEvent): void => {
       const final = liveDragRef.current;
       liveDragRef.current = null;
       setDraggingCardId(null);
       if (!final) return;
+
+      // CH-04 п.2/п.3: відпустив у затемненій зоні купки -- картка
+      // "невизначено" (клієнтський стан, коментар до pendingUnassignedIds
+      // вище); відпустив деінде на канві -- звичайна поведінка (onMoveCard),
+      // і якщо картка була ЛОКАЛЬНО позначена невизначеною раніше, тепер вона
+      // знову "визначена" (прибираємо з Set).
+      const trayRect = trayRef.current?.getBoundingClientRect();
+      const droppedInTray =
+        trayRect !== undefined &&
+        event.clientX >= trayRect.left &&
+        event.clientX <= trayRect.right &&
+        event.clientY >= trayRect.top &&
+        event.clientY <= trayRect.bottom;
+
+      if (droppedInTray) {
+        setPendingUnassignedIds((prev) => new Set(prev).add(final.cardId));
+        return;
+      }
+
+      setPendingUnassignedIds((prev) => {
+        if (!prev.has(final.cardId)) return prev;
+        const next = new Set(prev);
+        next.delete(final.cardId);
+        return next;
+      });
 
       onMoveCard({ cardId: final.cardId, x: final.x, y: final.y }).catch((err: unknown) => {
         const message = err instanceof Error ? err.message : 'Не вдалося зберегти позицію';
@@ -278,7 +375,7 @@ export function LayoutBoard({
       });
       // Оптимістично лишаємо картку там, де її відпустили -- наступний
       // loadLayout() (наприклад, після зміни конфігурації) підтвердить
-      // реальний серверний стан, той самий принцип, що onCloseCard/
+      // реальний серверний стан, той самий принцип, що onArchiveCard/
       // onSaveLayoutMode нижче.
       setState((prev) => ({
         ...prev,
@@ -319,6 +416,15 @@ export function LayoutBoard({
     setScreenMode('config');
   };
 
+  // CH-03 (частина 1): "На зад" на сторінці конфігурації -- закриває CONFIG
+  // без збереження, той самий скид pendingLayoutMode, що вже робить
+  // handleCancelChange для ConfirmDialog нижче.
+  const handleBackFromConfig = (): void => {
+    setConfigBanner(null);
+    setPendingLayoutMode(state.layoutMode);
+    setScreenMode('board');
+  };
+
   const persistLayoutMode = (nextLayoutMode: LayoutMode): void => {
     onSaveLayoutMode({ layoutMode: nextLayoutMode })
       .then(() => {
@@ -327,7 +433,19 @@ export function LayoutBoard({
         // Джерело правди -- сервер (реальний авто-розклад нового режиму):
         // перечитуємо розкладку, а не вгадуємо новий стан локально.
         loadLayout()
-          .then(setState)
+          .then((loaded) => {
+            setState(loaded);
+            if (nextLayoutMode === 'staging') {
+              // CH-10: сервер для staging НІЧОГО не пише (domain/layout.ts
+              // computeStagingLayout -- явний no-op, apply-layout-mode.ts:51),
+              // тож картки канви лишаються з попередніми x/y. "Переїзд у
+              // список знизу" тому клієнтський (той самий pendingUnassignedIds,
+              // що CH-04) -- позначаємо ВСІ картки, що зараз мають позицію,
+              // невизначеними, щоб канва порожніла й користувач розкладав
+              // наново (юзер-кейс п.3-4).
+              setPendingUnassignedIds(new Set(loaded.cards.filter((card) => card.x !== null).map((card) => card.cardId)));
+            }
+          })
           .catch((err: unknown) => {
             const message = err instanceof Error ? err.message : 'Не вдалося оновити розкладку';
             setBanner({ variant: 'error', text: `Режим збережено, але розкладку не перечитано. ${message}` });
@@ -403,7 +521,10 @@ export function LayoutBoard({
           {configBanner !== null && <Banner variant={configBanner.variant} text={configBanner.text} />}
         </div>
 
-        <div className="absolute bottom-4 left-1/2 z-20 -translate-x-1/2">
+        {/* CH-03 (частина 1): "На зад" зліва від "Зберегти" -- той самий
+            патерн, що MetricBlockForm.tsx's onCancel (life-area-card). */}
+        <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-3">
+          <Button label="На зад" onClick={handleBackFromConfig} />
           <Button label="Зберегти" onClick={handleSaveConfig} />
         </div>
 
@@ -422,29 +543,29 @@ export function LayoutBoard({
 
   // --- BOARD -------------------------------------------------------------
 
-  const canCloseCard = loadCloseCardOptions !== undefined && onCloseCard !== undefined;
+  const canArchiveCard = loadCloseCardOptions !== undefined && onArchiveCard !== undefined;
 
-  const openCloseDialog = (card: LayoutBoardCard): void => {
+  const openArchiveDialog = (card: LayoutBoardCard): void => {
     if (loadCloseCardOptions === undefined) {
       return;
     }
 
     setBanner(null);
-    setCloseOptions(null);
-    setClosingCard({ cardId: card.cardId, cardTitle: card.cardTitle });
+    setArchiveOptions(null);
+    setArchivingCard({ cardId: card.cardId, cardTitle: card.cardTitle });
 
     loadCloseCardOptions(card.cardId)
-      .then(setCloseOptions)
+      .then(setArchiveOptions)
       .catch((err: unknown) => {
-        setClosingCard(null);
+        setArchivingCard(null);
         const message = err instanceof Error ? err.message : 'Не вдалося прочитати метрики картки';
-        setBanner({ variant: 'error', text: `Не вдалося відкрити закриття напрямку. ${message}` });
+        setBanner({ variant: 'error', text: `Не вдалося відкрити архівування. ${message}` });
       });
   };
 
-  const dismissCloseDialog = (): void => {
-    setClosingCard(null);
-    setCloseOptions(null);
+  const dismissArchiveDialog = (): void => {
+    setArchivingCard(null);
+    setArchiveOptions(null);
   };
 
   /** Тап по картці, поки активний інструмент зв'язування (вимога 4/5). */
@@ -507,17 +628,22 @@ export function LayoutBoard({
     liveDragRef.current = { cardId, x: existing?.x ?? 50, y: existing?.y ?? 50 };
   };
 
-  /** Позиція картки для рендеру -- жива (під час драгу) чи збережена. */
+  /**
+   * Позиція картки для рендеру -- жива (під час драгу, 1:1 з
+   * курсором/пальцем, БЕЗ стиснення) чи збережена (стиснута по Y, CH-04
+   * п.1, canvasScaleY вище -- інакше картка "відривалась" би від пальця під
+   * час активного драгу).
+   */
   function renderedPosition(card: LayoutBoardCard): { x: number; y: number } | null {
     if (draggingCardId === card.cardId && liveDragRef.current?.cardId === card.cardId) {
       return { x: liveDragRef.current.x, y: liveDragRef.current.y };
     }
     if (card.x === null || card.y === null) return null;
-    return { x: card.x, y: card.y };
+    return { x: card.x, y: card.y * canvasScaleY() };
   }
 
   /**
-   * Назва картки + (за наявності можливості) дія "Закрити напрямок". Спільний
+   * Назва картки + (за наявності можливості) дія "Архівувати". Спільний
    * рендер для канви й для купки нерозкладених.
    */
   const cardChip = (card: LayoutBoardCard, extraClassName = ''): JSX.Element => (
@@ -538,22 +664,33 @@ export function LayoutBoard({
         />
       )}
       <span className="max-w-full truncate text-xs font-semibold text-ink">{card.cardTitle}</span>
-      {canCloseCard && (
+      {canArchiveCard && (
         <button
           type="button"
-          aria-label={`Закрити напрямок «${card.cardTitle}»`}
+          aria-label={`Архівувати «${card.cardTitle}»`}
           onPointerDown={(event) => event.stopPropagation()}
-          onClick={() => openCloseDialog(card)}
+          onClick={() => openArchiveDialog(card)}
           className="text-[11px] font-medium text-ink-faint transition-colors hover:text-ink"
         >
-          Закрити напрямок
+          Архівувати
         </button>
       )}
     </div>
   );
 
-  const unassigned = state.cards.filter((card) => card.x === null && card.cardId !== draggingCardId);
-  const canvasCards = state.cards.filter((card) => card.x !== null || card.cardId === draggingCardId);
+  // CH-04: "невизначено" -- і справжнє (x===null з сервера), і клієнтське
+  // (pendingUnassignedIds, CH-04 п.2/CH-10) -- картка, що зараз тягнеться,
+  // завжди лишається виключеною з купки (рендериться на канві за живою
+  // позицією, canvasCards нижче).
+  const isEffectivelyUnassigned = (card: LayoutBoardCard): boolean => card.x === null || pendingUnassignedIds.has(card.cardId);
+  const unassigned = state.cards.filter((card) => isEffectivelyUnassigned(card) && card.cardId !== draggingCardId);
+  const canvasCards = state.cards.filter((card) => !isEffectivelyUnassigned(card) || card.cardId === draggingCardId);
+
+  // CH-04: купка -- явна ціль перетягування, доступна ще ДО того, як у ній
+  // щось лежить (п.2's "давало явний вибір визначено/невизначено") -- тому
+  // рендериться і коли є вже нерозкладені картки, і поки триває будь-який
+  // драг (щоб було куди відпустити, навіть якщо трей досі порожній).
+  const showTray = unassigned.length > 0 || draggingCardId !== null;
 
   // Вимога 15 ("Готово до розкладання"): купка нерозкладених лишається явним
   // стійким нагадуванням для цього режиму, поки лишається хоч одна картка без позиції.
@@ -707,13 +844,25 @@ export function LayoutBoard({
         {/* Купка нерозкладених -- ВСЕРЕДИНІ тієї самої зони, доклеєна до її
             низу (absolute bottom-0), напівпрозорий фон-підклад, щоб читалась
             навіть поверх картки на канві під нею. max-h -- приблизно 3 рядки
-            чипів (вимога Андрія "не більше"), далі власний внутрішній скрол. */}
-        {unassigned.length > 0 && (
+            чипів (вимога Андрія "не більше"), далі власний внутрішній скрол.
+            CH-04: рендериться і ПОРОЖНЬОЮ під час будь-якого драгу (showTray
+            вище) -- "явний вибір визначено/невизначено" (п.2) означає
+            користувачу є куди відпустити картку ще ДО того, як там щось
+            з'явилось; підсвічування (ring) під час драгу -- та сама
+            "затемнена зона", про яку каже юзер-кейс. */}
+        {showTray && (
           <div
+            ref={trayRef}
             data-testid="unassigned-tray"
-            className="absolute inset-x-0 bottom-0 flex max-h-28 flex-wrap content-start gap-2 overflow-y-auto bg-surface/85 p-2 backdrop-blur-sm"
+            className={`absolute inset-x-0 bottom-0 flex max-h-28 min-h-[3.5rem] flex-wrap content-center items-center justify-center gap-2 overflow-y-auto p-2 backdrop-blur-sm transition-colors ${
+              draggingCardId !== null ? 'bg-ink/15 ring-2 ring-inset ring-ink/30' : 'bg-surface/85'
+            }`}
           >
-            {unassigned.map((card) => cardChip(card))}
+            {unassigned.length === 0 ? (
+              <p className="text-center text-xs font-medium text-ink-faint">Відпустіть тут, щоб зробити позицію невизначеною</p>
+            ) : (
+              unassigned.map((card) => cardChip(card))
+            )}
           </div>
         )}
       </div>
@@ -724,39 +873,44 @@ export function LayoutBoard({
           та сама відстань, що mb-16 зони вище), над плаваючим тулбаром. */}
       <div className="pointer-events-none absolute inset-x-10 z-10 border-t border-border" style={{ bottom: '4rem' }} />
 
-      {/* AC-12 / SCR-04. */}
-      {closingCard !== null && (
+      {/* AC-12 / SCR-04 (тепер "Архівування", CH-05/CH-06). */}
+      {archivingCard !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm">
           <div
             role="dialog"
-            aria-label={`Закрити напрямок «${closingCard.cardTitle}»`}
+            aria-label={`Архівування «${archivingCard.cardTitle}»`}
             className="flex w-full max-w-sm flex-col gap-4 rounded-card border border-border bg-surface-solid p-6 shadow-soft"
           >
-            <h2 className="font-display text-lg font-semibold leading-relaxed text-ink">Закрити «{closingCard.cardTitle}»?</h2>
-            {closeOptions === null ? (
+            {/* CH-06 п.1: заголовок сторінки -- "Архівування", не "Закрити
+                «Назва картки»" -- назва картки лишається окремим підзаголовком. */}
+            <div>
+              <h2 className="font-display text-lg font-semibold leading-relaxed text-ink">Архівування</h2>
+              <p className="text-sm text-ink-muted">Картка «{archivingCard.cardTitle}»</p>
+            </div>
+            {archiveOptions === null ? (
               <Spinner />
             ) : (
-              <CloseCardDialog
-                key={closingCard.cardId}
-                cardTitle={closingCard.cardTitle}
-                metricBlocks={closeOptions.metricBlocks}
-                targetCards={closeOptions.targetCards}
-                onClose={({ metricTransfers }) =>
-                  (onCloseCard as NonNullable<LayoutBoardProps['onCloseCard']>)({
-                    cardId: closingCard.cardId,
-                    metricTransfers,
-                  })
+              <ArchiveCardDialog
+                key={archivingCard.cardId}
+                cardTitle={archivingCard.cardTitle}
+                metricBlocks={archiveOptions.metricBlocks}
+                targetCards={archiveOptions.targetCards}
+                onTransferMetricBlock={
+                  onTransferMetricBlock
+                    ? ({ metricBlockId, targetCardId }) => onTransferMetricBlock(archivingCard.cardId, metricBlockId, targetCardId)
+                    : undefined
                 }
-                onClosed={() => {
-                  dismissCloseDialog();
+                onArchive={() => (onArchiveCard as NonNullable<LayoutBoardProps['onArchiveCard']>)(archivingCard.cardId)}
+                onArchived={() => {
+                  dismissArchiveDialog();
                   loadLayout()
                     .then(setState)
                     .catch((err: unknown) => {
                       const message = err instanceof Error ? err.message : 'Не вдалося оновити розкладку';
-                      setBanner({ variant: 'error', text: `Напрямок закрито, але розкладку не перечитано. ${message}` });
+                      setBanner({ variant: 'error', text: `Картку архівовано, але розкладку не перечитано. ${message}` });
                     });
                 }}
-                onCancel={dismissCloseDialog}
+                onCancel={dismissArchiveDialog}
               />
             )}
           </div>

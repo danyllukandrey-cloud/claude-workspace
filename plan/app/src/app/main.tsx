@@ -61,7 +61,6 @@ import {
 import type {
   AnalyticsScreenState,
   AnalyticsTrend,
-  CloseCardMetricTransferInput,
   DeclarationScreenState,
   GapTrend,
   LayoutBoardCloseCardOptions,
@@ -1028,16 +1027,14 @@ async function onDeleteConnection(input: { connectionId: string }): Promise<void
 }
 
 /**
- * AC-12, SCR-04 -- що показати в діалозі "Закрити напрямок": метрики картки, що
- * закривається (GET /cards/{cardId}/metric-blocks), і куди їх можна перенести
- * (решта активних карток власника, GET /cards). Сама картка зі списку цілей
- * виключена -- переносити метрику в картку, яку закриваєш, безглуздо.
- *
- * ЕКСПОРТОВАНО, А НЕ ПЕРЕДАНО В <App>: AppProps (src/app/App.tsx) поля під
- * закриття напрямку поки не має, а App.tsx -- поза скоупом цього фіксу. Щойно
- * App.tsx отримає `loadCloseCardOptions`/`onCloseCard` і прокине їх у
- * <LayoutBoard> (LayoutBoardProps їх уже приймає), ці дві функції під'єднаються
- * без жодної зміни -- і AC-12 стане досяжним користувачу.
+ * AC-12, SCR-04 -- що показати в діалозі архівування (CH-05/CH-06,
+ * docs/features/structure/changes.md): метрики картки, що архівується (GET
+ * /cards/{cardId}/metric-blocks), і куди їх можна перенести (решта активних
+ * карток власника, GET /cards). Сама картка зі списку цілей виключена --
+ * переносити метрику в картку, яку архівуєш, безглуздо. Сам ендпоінт НЕ
+ * структуроспецифічний -- та сама точка, що вже живить
+ * CardBack.transferTargetCards, тож назва функції лишається історичною
+ * (loadCloseCardOptions), перейменування поза межами CH-05/CH-06.
  */
 export async function loadCloseCardOptions(cardId: string): Promise<LayoutBoardCloseCardOptions> {
   const [blocksResponse, cards] = await Promise.all([
@@ -1061,34 +1058,6 @@ export async function loadCloseCardOptions(cardId: string): Promise<LayoutBoardC
       .filter((card) => card.id !== cardId)
       .map((card) => ({ cardId: card.id, cardTitle: card.name })),
   };
-}
-
-/**
- * AC-12 -- POST /api/v1/structure/layout/{cardId}/close (LayoutBoard.onCloseCard).
- * Код помилки прокидається як є: SCR-04 розрізняє саме за ним
- * `metric_block.name_collision` (409 -> поле "нова назва") від
- * `structure.metric_transfer_target_invalid` (422 -> банер).
- *
- * Експортовано з тієї ж причини, що loadCloseCardOptions вище.
- */
-export async function onCloseCard(input: {
-  cardId: string;
-  metricTransfers: CloseCardMetricTransferInput[];
-}): Promise<void> {
-  const response = await fetch(`/api/v1/structure/layout/${input.cardId}/close`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify({ metricTransfers: input.metricTransfers }),
-  });
-
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
-    throw new AppError(
-      body?.code ?? 'structure.close_failed',
-      body?.message ?? 'Не вдалося закрити напрямок',
-      response.status,
-    );
-  }
 }
 
 /**
@@ -1898,7 +1867,6 @@ createRoot(root).render(
       onDeleteConnection={onDeleteConnection}
       loadAnalytics={loadAnalytics}
       loadCloseCardOptions={loadCloseCardOptions}
-      onCloseCard={onCloseCard}
       loadChatHistory={loadChatHistory}
       loadChatOnboarding={loadChatOnboarding}
       loadActiveChatProposal={loadActiveChatProposal}
