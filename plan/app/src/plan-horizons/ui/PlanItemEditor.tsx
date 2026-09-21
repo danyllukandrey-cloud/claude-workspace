@@ -74,6 +74,26 @@ export function PlanItemEditor({
     setValidationError(null);
   };
 
+  // CH-02 (docs/features/life-plan-levels/changes.md, живе тестування
+  // 2026-09-21): явна кнопка "Видалити" на наявному пункті -- та сама дія,
+  // що вже стоїть за жестом "очистити текст і зберегти" (AC-04), лише
+  // видима, без потреби здогадуватись про приховану поведінку.
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async (): Promise<void> => {
+    if (target.kind !== 'existing') return;
+    setSaveError(null);
+    setDeleting(true);
+    try {
+      await onDelete(target.item);
+      onClose();
+    } catch (err: unknown) {
+      setSaveError(err instanceof Error ? err.message : 'Не вдалося видалити');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const save = async (): Promise<void> => {
     const trimmed = planText.trim();
     setSaveError(null);
@@ -128,8 +148,17 @@ export function PlanItemEditor({
 
       {saveError !== null && <Banner variant="error" text={saveError} />}
 
-      <div className="self-start">
-        <Button label="Зберегти" onClick={() => void save()} disabled={saving} />
+      {/* CH-01/CH-02 (docs/features/life-plan-levels/changes.md, живе
+          тестування 2026-09-21): "На зад" зліва -- закриває редактор БЕЗ
+          збереження (і для нового, і для наявного пункту). "Видалити"
+          праворуч -- лише для наявного пункту, нема чого видаляти в
+          ненародженого. */}
+      <div className="flex items-center gap-3 self-start">
+        <Button label="На зад" onClick={onClose} disabled={saving || deleting} />
+        <Button label="Зберегти" onClick={() => void save()} disabled={saving || deleting} />
+        {target.kind === 'existing' && (
+          <Button label="Видалити" onClick={() => void handleDelete()} disabled={saving || deleting} />
+        )}
       </div>
     </div>
   );

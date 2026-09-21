@@ -137,6 +137,61 @@ test('AC-04: зміна тексту наявного пункту на інши
   expect(props.onCreate).not.toHaveBeenCalled();
 });
 
+test('CH-01: "На зад" на новому пункті закриває редактор без запиту, навіть коли поле порожнє', () => {
+  const props = baseProps();
+  render(<PlanItemEditor target={{ kind: 'new', horizon: 'tactical' }} {...props} />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'На зад' }));
+
+  expect(props.onClose).toHaveBeenCalledTimes(1);
+  expect(props.onCreate).not.toHaveBeenCalled();
+});
+
+test('CH-01: "На зад" на наявному пункті закриває редактор без збереження зміненого тексту', () => {
+  const props = baseProps();
+  const item = existingItem();
+  render(<PlanItemEditor target={{ kind: 'existing', item }} {...props} />);
+
+  fireEvent.change(field(), { target: { value: 'Змінений, але не збережений текст' } });
+  fireEvent.click(screen.getByRole('button', { name: 'На зад' }));
+
+  expect(props.onClose).toHaveBeenCalledTimes(1);
+  expect(props.onUpdate).not.toHaveBeenCalled();
+  expect(props.onDelete).not.toHaveBeenCalled();
+});
+
+test('CH-02: кнопка "Видалити" відсутня для нового пункту', () => {
+  const props = baseProps();
+  render(<PlanItemEditor target={{ kind: 'new', horizon: 'tactical' }} {...props} />);
+
+  expect(screen.queryByRole('button', { name: 'Видалити' })).toBeNull();
+});
+
+test('CH-02: "Видалити" на наявному пункті викликає onDelete і закриває редактор', async () => {
+  const props = baseProps();
+  const item = existingItem();
+  render(<PlanItemEditor target={{ kind: 'existing', item }} {...props} />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Видалити' }));
+
+  await waitFor(() => expect(props.onDelete).toHaveBeenCalledTimes(1));
+  expect(props.onDelete).toHaveBeenCalledWith(item);
+  expect(props.onUpdate).not.toHaveBeenCalled();
+  await waitFor(() => expect(props.onClose).toHaveBeenCalledTimes(1));
+});
+
+test('CH-02: збій видалення показує помилку і лишає користувача в редакторі', async () => {
+  const props = baseProps();
+  props.onDelete = vi.fn().mockRejectedValue(new Error('Мережа недоступна'));
+  const item = existingItem();
+  render(<PlanItemEditor target={{ kind: 'existing', item }} {...props} />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Видалити' }));
+
+  await waitFor(() => expect(screen.getByText(/Мережа недоступна/)).toBeTruthy());
+  expect(props.onClose).not.toHaveBeenCalled();
+});
+
 test('збій збереження: показує помилку і лишає користувача в редакторі', async () => {
   const props = baseProps();
   props.onCreate = vi.fn().mockRejectedValue(new Error('Мережа недоступна'));

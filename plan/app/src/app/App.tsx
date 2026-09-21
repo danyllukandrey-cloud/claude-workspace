@@ -703,7 +703,19 @@ export function App({
             це один код без дублювання, а не тим, що нав завжди на всю ширину
             фізично. */}
         <nav className="flex flex-wrap justify-center gap-2 border-t border-border bg-surface-solid px-3 py-3 sm:gap-3 sm:px-4 md:col-start-2 md:row-start-3">
-          <Button label="Декларація" onClick={() => setDirection('declaration')} />
+          {/* CH-02 (docs/app-shell.md, живе тестування 2026-09-21): активна
+              вкладка -- темніший фон (bg-border, той самий колір, що вже
+              показує hover на решті кнопок), щоб було видно, де користувач
+              зараз, без здогадок. `active`, не додатковий className -- перша
+              спроба (className="bg-border" ПОВЕРХ фіксованого bg-surface
+              кнопки) мовчки програвала порядку класів у зібраній
+              Tailwind-таблиці стилів, колір узагалі не мінявся (живе
+              тестування виявило). */}
+          <Button
+            label="Декларація"
+            onClick={() => setDirection('declaration')}
+            active={direction === 'declaration'}
+          />
           {/* CH-01 (docs/app-shell.md, виконано 2026-09-20): ПЛАН одразу
               після Декларації, не в кінці списку -- логічний порядок роботи
               з продуктом (картина світу -> план у часі -> конкретні зони ->
@@ -719,6 +731,7 @@ export function App({
               setDirection('plan');
               setPlanEditor(null);
             }}
+            active={direction === 'plan'}
           />
           {/* Живе тестування (Андрій): "Картки" тепер ЗАВЖДИ веде на саму
               колоду, навіть якщо перед цим був відкритий архів чи форма
@@ -732,12 +745,21 @@ export function App({
               setDirection('cards');
               setScreen({ screen: 'deck' });
             }}
+            active={direction === 'cards'}
           />
-          <Button label="Схема" onClick={() => setDirection('layout')} />
+          <Button
+            label="Схема"
+            onClick={() => setDirection('layout')}
+            active={direction === 'layout'}
+          />
           {/* D-125 (живе тестування): "Літопис-Аналітика" -> "Аналітика" --
               коротший підпис, той самий напрямок ('analytics') і той самий
               AnalyticsScreen під ним, назва напрямку в коді не змінилась. */}
-          <Button label="Аналітика" onClick={() => setDirection('analytics')} />
+          <Button
+            label="Аналітика"
+            onClick={() => setDirection('analytics')}
+            active={direction === 'analytics'}
+          />
         </nav>
 
         {/* D-121 (docs/app-shell.md): чат-панель -- ПОСТІЙНА, поза перемикачем

@@ -177,6 +177,18 @@ test('AC-01/AC-04: клік по тексту вже наявного пункт
   expect(props.onToggleDone).not.toHaveBeenCalled();
 });
 
+test('CH-03: олівчик поруч із пунктом теж відкриває редактор саме цього пункту', async () => {
+  const props = baseProps();
+  render(<PlanScreen {...props} />);
+
+  await waitFor(() => expect(screen.getByText('Побудувати дім')).toBeTruthy());
+
+  fireEvent.click(screen.getByRole('button', { name: 'Редагувати: Побудувати дім' }));
+
+  expect(props.onOpenPlanItem).toHaveBeenCalledWith(expect.objectContaining({ id: 'i3' }));
+  expect(props.onToggleDone).not.toHaveBeenCalled();
+});
+
 test('збій збереження чекбокса: показує помилку і повертає чекбокс у попередній стан', async () => {
   const props = baseProps();
   props.onToggleDone = vi.fn().mockRejectedValue(new Error('Мережа недоступна'));

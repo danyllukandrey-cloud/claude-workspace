@@ -235,6 +235,21 @@ export function PlanScreen({
                     {item.planText}
                   </span>
                   <span className="text-xs italic text-ink-faint">{formatAddedAt(item.createdAt)}</span>
+                  {/* CH-03 (docs/features/life-plan-levels/changes.md, живе
+                      тестування 2026-09-21): олівчик у кінці рядка -- клік по
+                      самому тексту лишається робочим, це лише видима підказка,
+                      що пункт редагується. Той самий гліф "✎", що олівець
+                      MetricBlockCard.tsx (CH-03, life-area-card), тут -- у
+                      звичайному рядку, не на картці, тож без rounded-full
+                      бейджа з абсолютним позиціюванням. */}
+                  <button
+                    type="button"
+                    aria-label={`Редагувати: ${item.planText}`}
+                    onClick={() => onOpenPlanItem(item)}
+                    className="shrink-0 text-sm text-ink-faint transition-colors hover:text-ink"
+                  >
+                    ✎
+                  </button>
                 </li>
               ))}
             </ul>
