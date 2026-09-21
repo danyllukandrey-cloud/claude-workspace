@@ -296,6 +296,34 @@ describe('вимога 3 (чат): реальний драг мишею/доти
     await waitFor(() => expect(props.onMoveCard).toHaveBeenCalledWith({ cardId: 'card-tray', x: 25, y: 20 }));
   });
 
+  // Живе тестування 2026-09-21 (Андрій): "картка тікає з-під миші на центр,
+  // де колись знаходилась" -- pointerdown на картці з купки (x/y === null)
+  // раніше ставив стартову "живу" позицію на жорсткий "50/50" (центр канви)
+  // замість реального місця курсора. React встигав перемалювати з ЦИМ
+  // заглушковим значенням ДО першого pointermove (setDraggingCardId --
+  // state, викликає рендер), тож картка на мить "стрибала" в центр. Тест
+  // перевіряє позицію ОДРАЗУ після pointerdown, БЕЗ жодного pointermove --
+  // саме той кадр, що глючив.
+  test('bug fix: одразу після pointerdown (без pointermove) картка з купки рендериться під курсором, не в центрі канви', async () => {
+    const props = baseProps({
+      cards: [{ cardId: 'card-tray', cardTitle: 'У треї', x: null, y: null, healthState: null }],
+    });
+    render(<LayoutBoard {...props} />);
+
+    const trayCard = await screen.findByTestId('card-card-tray');
+    // clientX=90/clientY=189 -> 30%/90% канви 300x210 (обидва рівно діляться,
+    // без плаваючої коми) -- курсор фізично над треєм (TRAY_RECT top=170),
+    // той самий сценарій, що звіт "переношу блок з низу в верх".
+    firePointer(trayCard, 'pointerdown', 90, 189);
+
+    // Драг стартував -- картка перейшла з треєвого рендеру (без обгортки) в
+    // канвовий (з позиційною обгorткою), React ЦЕ НОВИЙ DOM-вузол -- стара
+    // змінна `trayCard` тепер вказує на відʼєднаний вузол, перезапитуємо.
+    const wrapper = screen.getByTestId('card-card-tray').parentElement as HTMLElement;
+    expect(wrapper.style.left).toBe('30%');
+    expect(wrapper.style.top).toBe('90%');
+  });
+
   test('координати клемпляться в 0..100 -- перетягування за межі канви не виходить за них', async () => {
     const props = baseProps();
     render(<LayoutBoard {...props} />);

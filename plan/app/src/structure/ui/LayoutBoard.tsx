@@ -630,12 +630,24 @@ export function LayoutBoard({
       // jsdom/старі браузери -- pointer capture best-effort, window-рівневі
       // слухачі (useEffect вище) працюють і без нього.
     }
-    // Стартова "жива" позиція -- поточна збережена (чи центр канви 50/50,
-    // якщо картка досі в купці нерозкладених) -- так чип не смикається до
-    // першого pointermove.
+    // Стартова "жива" позиція -- поточна збережена, чи (картка досі в купці
+    // нерозкладених, x/y === null) РЕАЛЬНЕ місце курсора в момент pointerdown
+    // -- так чип не смикається до першого pointermove.
+    //
+    // Bug fix 2026-09-21 (живе тестування, Андрій): тут раніше стояло жорстке
+    // "50/50" (центр канви) замість реального курсора -- між pointerdown і
+    // першим pointermove React встигав перемалювати з ЦИМ заглушковим
+    // значенням (setDraggingCardId нижче -- це state, викликає рендер), тож
+    // картку з купки на мить "закидало" в центр канви, а вже тоді вона
+    // стрибала під курсор -- саме той "тікає з-під миші" ефект.
     const existing = state.cards.find((c) => c.cardId === cardId);
+    const pointerPosition = toCanvasPercent(event.clientX, event.clientY);
     setDraggingCardId(cardId);
-    liveDragRef.current = { cardId, x: existing?.x ?? 50, y: existing?.y ?? 50 };
+    liveDragRef.current = {
+      cardId,
+      x: existing?.x ?? pointerPosition.x,
+      y: existing?.y ?? pointerPosition.y,
+    };
   };
 
   /**
