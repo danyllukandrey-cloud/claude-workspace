@@ -51,7 +51,7 @@ test('клік "перегорнути →" на лицьовій стороні
 
   fireEvent.click(await screen.findByRole('button', { name: /перегорнути/ }));
 
-  expect(await screen.findByText('Ще немає жодної активної метрики')).toBeTruthy();
+  expect(await screen.findByRole('button', { name: /Історія записів/ })).toBeTruthy();
   expect(props.loadBack).toHaveBeenCalledWith('card-1');
   // Лицьова сторона (назва картки як CardFace її рендерить) більше не на екрані.
   expect(screen.queryByText('Спорт')).toBeNull();
@@ -62,7 +62,7 @@ test('клік "← перегорнути" на звороті перемика
   render(<DeckFrontCard {...props} />);
 
   fireEvent.click(await screen.findByRole('button', { name: /перегорнути/ }));
-  await screen.findByText('Ще немає жодної активної метрики');
+  await screen.findByRole('button', { name: /Історія записів/ });
 
   fireEvent.click(screen.getByRole('button', { name: /перегорнути/ }));
 
@@ -78,7 +78,7 @@ test('нова передня картка (ремонт через зміну k
   const { rerender } = render(<DeckFrontCard key="card-1" {...props} />);
 
   fireEvent.click(await screen.findByRole('button', { name: /перегорнути/ }));
-  await screen.findByText('Ще немає жодної активної метрики');
+  await screen.findByRole('button', { name: /Історія записів/ });
 
   const nextProps = { ...baseProps(), cardId: 'card-2', loadCard: vi.fn().mockResolvedValue({ ...FACE_DATA, name: 'Навчання' }) };
   rerender(<DeckFrontCard key="card-2" {...nextProps} />);
@@ -128,7 +128,7 @@ test('onFlagEntry/onCreateMetricBlock, якщо передані, прокида
   // Прокидання підтверджується непрямо (та сама поведінка, що
   // CardDetailScreen.test.tsx мав) -- власна поведінка CardBack уже покрита
   // CardBack.test.tsx ізольовано; тут важливе саме прокидання й cardId.
-  expect(await screen.findByText('Ще немає жодної активної метрики')).toBeTruthy();
+  expect(await screen.findByRole('button', { name: /Історія записів/ })).toBeTruthy();
   expect(screen.getByRole('button', { name: '+ Додати блок-метрику' })).toBeTruthy();
   expect(onFlagEntry).not.toHaveBeenCalled();
 });

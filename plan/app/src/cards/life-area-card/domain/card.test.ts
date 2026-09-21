@@ -4,8 +4,7 @@ import {
   markFilled,
   getLifecycleState,
   archiveCard,
-  setTrackingModeOngoing,
-  setTrackingModeGoals,
+  setTrackingModeNonState,
   setTrackingModeState,
   isCardHealthState,
   CardValidationError,
@@ -43,7 +42,7 @@ describe('createCard', () => {
   });
 });
 
-describe('setTrackingModeState / setTrackingModeOngoing / setTrackingModeGoals', () => {
+describe('setTrackingModeState / setTrackingModeNonState', () => {
   // CH-02: "картка: стан без вимірювань" -- перемикання в один із трьох
   // кольорових станів і назад у звичайний режим.
   it('switches into state tracking with the given health state', () => {
@@ -55,16 +54,16 @@ describe('setTrackingModeState / setTrackingModeOngoing / setTrackingModeGoals',
 
   it('switching to goals always clears healthState', () => {
     const card = setTrackingModeState(createCard({ id: 'card-1', name: 'Здоров’я' }), 'paused');
-    const goalsCard = setTrackingModeGoals(card);
+    const goalsCard = setTrackingModeNonState(card, 'goals');
     expect(goalsCard.trackingMode).toBe('goals');
     expect(goalsCard.healthState).toBeNull();
   });
 
-  // CH-10: третій режим -- "постійний процес", те саме "healthState завжди
-  // null поза 'state'" правило, окрема функція (не варіант goals).
+  // CH-10: третій режим -- "постійний процес", той самий параметризований
+  // сеттер (не окрема функція -- review-fix, domain/card.ts).
   it('switching to ongoing always clears healthState', () => {
     const card = setTrackingModeState(createCard({ id: 'card-1', name: 'Здоров’я' }), 'active');
-    const ongoingCard = setTrackingModeOngoing(card);
+    const ongoingCard = setTrackingModeNonState(card, 'ongoing');
     expect(ongoingCard.trackingMode).toBe('ongoing');
     expect(ongoingCard.healthState).toBeNull();
   });

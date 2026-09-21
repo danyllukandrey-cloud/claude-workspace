@@ -89,12 +89,16 @@ test('SCR-03 ongoing: постійний процес показує накоп�
   expect(screen.queryByText(/Загальний прогрес/)).toBeNull();
 });
 
-test('SCR-03 declarative: без жодного блоку-метрики показує порожній стан', async () => {
+// CH-10 review (живе тестування 2026-09-21): без onCreateMetricBlock/
+// onUpdateTracking (жодного дозволу щось міняти) і без жодного блоку --
+// метрик-секція взагалі не рендериться (нема onCreateMetricBlock -- кнопка
+// "+ Додати" не рендериться, EmptyState-напис прибрано -- дублював кнопку).
+test('SCR-03 declarative: без жодного блоку-метрики й без onCreateMetricBlock/onUpdateTracking -- лише "Історія записів"', async () => {
   const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
   render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
 
-  expect(await screen.findByText('Ще немає жодної активної метрики')).toBeTruthy();
-  expect(screen.getByText('Додайте блок-метрику, щоб почати відстежувати прогрес')).toBeTruthy();
+  expect(await screen.findByRole('button', { name: /Історія записів/ })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '+ Додати блок-метрику' })).toBeNull();
 });
 
 test('SCR-03 pending-entry: блок із записом, що очікує перевірки агента, позначений окремо (AC-06/AC-11)', async () => {
@@ -118,7 +122,7 @@ test('SCR-03 history-expanded: розгортає історію записів 
   };
   render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
 
-  await screen.findByText('Ще немає жодної активної метрики');
+  await screen.findByRole('button', { name: /Історія записів/ });
   expect(screen.queryByText('+1 тренування')).toBeNull();
 
   fireEvent.click(screen.getByRole('button', { name: /Історія записів/ }));
@@ -314,23 +318,21 @@ test('SCR-03: клік "← перегорнути" викликає onFlip', as
 // ПЕРЕД текстом "Ще немає...", а "← перегорнути" -- ОСТАННІМ елементом (унизу,
 // перед тим, як CardDetailScreen додасть "← Назад").
 
-test('D-111: порожній стан -- порядок "+ Додати блок-метрику" -> "Ще немає..." -> "Історія записів" -> "← перегорнути"', async () => {
+test('D-111: порожній стан -- порядок "+ Додати блок-метрику" -> "Історія записів" -> "← перегорнути"', async () => {
   const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
   const { container } = render(
     <CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateMetricBlock={vi.fn()} />,
   );
 
-  await screen.findByText('Ще немає жодної активної метрики');
+  await screen.findByRole('button', { name: '+ Додати блок-метрику' });
   const text = container.textContent ?? '';
 
   const idxCreate = text.indexOf('Додати блок-метрику');
-  const idxEmpty = text.indexOf('Ще немає жодної активної метрики');
   const idxHistory = text.indexOf('Історія записів');
   const idxFlip = text.indexOf('перегорнути');
 
   expect(idxCreate).toBeGreaterThan(-1);
-  expect(idxCreate).toBeLessThan(idxEmpty);
-  expect(idxEmpty).toBeLessThan(idxHistory);
+  expect(idxCreate).toBeLessThan(idxHistory);
   expect(idxHistory).toBeLessThan(idxFlip);
 });
 
@@ -338,7 +340,7 @@ test('ISS-60: без onCreateMetricBlock порожній стан не пока
   const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
   render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
 
-  await screen.findByText('Ще немає жодної активної метрики');
+  await screen.findByRole('button', { name: /Історія записів/ });
   expect(screen.queryByRole('button', { name: '+ Додати блок-метрику' })).toBeNull();
 });
 
@@ -348,8 +350,7 @@ test('ISS-60: з onCreateMetricBlock порожній стан показує к
     <CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateMetricBlock={vi.fn()} />,
   );
 
-  await screen.findByText('Ще немає жодної активної метрики');
-  fireEvent.click(screen.getByRole('button', { name: '+ Додати блок-метрику' }));
+  fireEvent.click(await screen.findByRole('button', { name: '+ Додати блок-метрику' }));
 
   expect(screen.getByLabelText('Що рахуємо/вимірюємо:')).toBeTruthy();
   expect(screen.getByLabelText('Одиниця:')).toBeTruthy();
@@ -369,8 +370,7 @@ test('ISS-60: успішне збереження форми викликає on
 
   render(<CardBack cardName="Картка" loadBack={loadBack} onFlip={vi.fn()} onCreateMetricBlock={onCreateMetricBlock} />);
 
-  await screen.findByText('Ще немає жодної активної метрики');
-  fireEvent.click(screen.getByRole('button', { name: '+ Додати блок-метрику' }));
+  fireEvent.click(await screen.findByRole('button', { name: '+ Додати блок-метрику' }));
 
   fireEvent.change(screen.getByLabelText('Що рахуємо/вимірюємо:'), { target: { value: 'Тренування' } });
   fireEvent.change(screen.getByLabelText('Одиниця:'), { target: { value: 'раз' } });
@@ -506,8 +506,7 @@ test('підтвердження видалення (ввід «видалити
   fireEvent.click(screen.getByRole('button', { name: 'Видалити' }));
 
   expect(onArchiveMetricBlock).toHaveBeenCalledWith('mb1');
-  await screen.findByText('Ще немає жодної активної метрики');
-  expect(loadBack).toHaveBeenCalledTimes(2);
+  await vi.waitFor(() => expect(loadBack).toHaveBeenCalledTimes(2));
   // Діалог закрився разом з успіхом.
   expect(screen.queryByText(/Видалити метрику/)).toBeNull();
 });
@@ -608,7 +607,7 @@ test('CH-02: без onUpdateTracking вибір режиму не рендери
   const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [] };
   render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
 
-  await screen.findByText('Ще немає жодної активної метрики');
+  await screen.findByRole('button', { name: /Історія записів/ });
   expect(screen.queryByText('Картка: стан без вимірювань')).toBeNull();
 });
 
@@ -715,8 +714,21 @@ test('CH-10: форма нового блоку в режимі "постійн�
   );
 });
 
-test('CH-02: у режимі "стан без вимірювань" кнопка "+ Додати блок-метрику" стає СПРАВЖНЬО неактивною (disabled), клік нічого не робить', async () => {
-  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'state', healthState: 'active' };
+// CH-10 review (живе тестування 2026-09-21): "+ Додати блок-метрику"
+// приглушена-але-видима лише коли в картки ВЖЕ Є блоки (перемкнули в
+// "стан" пізніше, старі блоки лишаються видимими без можливості чіпати) --
+// для ПОРОЖНЬОЇ картки в режимі "стан" секція метрик не рендериться взагалі
+// (окремий тест нижче), лише вибір мячика.
+test('CH-02: у режимі "стан без вимірювань" з наявним блоком кнопка "+ Додати блок-метрику" стає СПРАВЖНЬО неактивною (disabled), клік нічого не робить', async () => {
+  const data: CardBackData = {
+    metricBlocks: [
+      { id: 'mb1', label: 'Тренування', unit: 'раз', progress: { kind: 'bounded', share: 0.5, overGoal: 0 }, hasPendingEntry: false },
+    ],
+    aggregateProgress: 0.5,
+    entries: [],
+    trackingMode: 'state',
+    healthState: 'active',
+  };
   const onCreateMetricBlock = vi.fn();
   render(
     <CardBack
@@ -737,6 +749,23 @@ test('CH-02: у режимі "стан без вимірювань" кнопка
   fireEvent.click(addButton);
   expect(screen.queryByLabelText('Що рахуємо/вимірюємо:')).toBeNull();
   expect(onCreateMetricBlock).not.toHaveBeenCalled();
+});
+
+test('CH-10 review: у режимі "стан без вимірювань" на ПОРОЖНІЙ картці секція метрик не рендериться взагалі -- лише вибір мячика', async () => {
+  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'state', healthState: 'active' };
+  render(
+    <CardBack
+      cardName="Картка"
+      loadBack={() => Promise.resolve(data)}
+      onFlip={vi.fn()}
+      onUpdateTracking={vi.fn()}
+      onCreateMetricBlock={vi.fn()}
+    />,
+  );
+
+  await screen.findByText('використовується');
+  expect(screen.queryByRole('button', { name: '+ Додати блок-метрику' })).toBeNull();
+  expect(screen.queryByText(/метрики не використовуються/)).toBeNull();
 });
 
 test('CH-02: у режимі "стан без вимірювань" кнопки "×"/"✎" наявного блоку-метрики теж справжньо disabled', async () => {
@@ -820,6 +849,41 @@ test('CH-03: збереження форми редагування виклик
   expect(screen.queryByText('Редагування «Тренування»')).toBeNull();
 });
 
+// CH-10 review-fix (docs/features/life-area-card/changes.md): редагування
+// НАЯВНОГО блоку мусить триматись ЙОГО ВЛАСНИХ налаштувань (ціль+дата чи
+// ні), а не поточного режиму картки -- інакше перемикання картки на
+// "постійний процес" ПІСЛЯ того, як блок уже мав ціль, і звичайне
+// виправлення одруківки в назві тихо стирали б ціль/дату блоку.
+test('CH-10 review-fix: редагування блоку зі своєю ціллю/датою лишає поля видимими й ЦІЛІСНИМИ, навіть якщо картка зараз у режимі "постійний процес"', async () => {
+  const goalsBlock = metricBlock({ settings: { targetCount: 10, isOngoing: false, targetDate: '2026-12-31' } });
+  const data: CardBackData = {
+    metricBlocks: [goalsBlock],
+    aggregateProgress: 0.5,
+    entries: [],
+    trackingMode: 'ongoing',
+    healthState: null,
+  };
+  const onUpdateMetricBlock = vi.fn().mockResolvedValue(undefined);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateMetricBlock={onUpdateMetricBlock} />);
+
+  await screen.findByText('Тренування');
+  fireEvent.click(screen.getByRole('button', { name: 'Редагувати метрику «Тренування»' }));
+
+  // Поля цілі/дати НЕ приховані -- форма показує повний набір, як і мав блок.
+  expect(screen.getByLabelText('Ціль:')).toBeTruthy();
+  expect(screen.getByLabelText('До:')).toBeTruthy();
+
+  fireEvent.change(screen.getByLabelText('Що рахуємо/вимірюємо:'), { target: { value: 'Біг' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+
+  await vi.waitFor(() =>
+    expect(onUpdateMetricBlock).toHaveBeenCalledWith(
+      'mb1',
+      expect.objectContaining({ label: 'Біг', targetCount: 10, targetDate: '2026-12-31', isOngoing: false }),
+    ),
+  );
+});
+
 test('CH-03: без transferTargetCards секція перенесення не рендериться', async () => {
   const data: CardBackData = { metricBlocks: [metricBlock()], aggregateProgress: 0.5, entries: [] };
   render(
@@ -899,17 +963,62 @@ test('CH-02: помилка збереження режиму показує Ban
   expect(banner.getAttribute('data-variant')).toBe('error');
 });
 
+// Review-fix: успішна зміна режиму патчить дані локально (нова пара
+// trackingMode/healthState з input, сервер уже підтвердив), НЕ перезапитує
+// весь зворот -- раніше зайвий loadBack() на кожен клік радіо-кнопки.
+test('review-fix: успішна зміна режиму НЕ викликає повторний loadBack -- лише локальний патч', async () => {
+  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'goals', healthState: null };
+  const loadBack = vi.fn().mockResolvedValue(data);
+  const onUpdateTracking = vi.fn().mockResolvedValue(undefined);
+  render(<CardBack cardName="Картка" loadBack={loadBack} onFlip={vi.fn()} onUpdateTracking={onUpdateTracking} />);
+
+  await openBackEdit();
+  await screen.findByText('Картка: стан без вимірювань');
+  fireEvent.click(screen.getByRole('radio', { name: 'Картка: стан без вимірювань' }));
+
+  await vi.waitFor(() => expect(onUpdateTracking).toHaveBeenCalledWith({ trackingMode: 'state', healthState: 'active' }));
+  // Радіо переключилось на новий вибір -- підтверджує, що дані оновились
+  // локально (чекаємо саме на це, не лише на виклик injected-функції --
+  // .then()-патч стану виконується вже ПІСЛЯ резолву промісу, окремим тіком).
+  await vi.waitFor(() =>
+    expect((screen.getByRole('radio', { name: 'Картка: стан без вимірювань' }) as HTMLInputElement).checked).toBe(true),
+  );
+  expect(loadBack).toHaveBeenCalledTimes(1);
+});
+
 // CH-07 (docs/features/life-area-card/changes.md): зворот тепер має два
 // режими -- перегляд (типовий, "Режим картки" НЕ видно) і редагування (меню
 // "..." -> "Редагування"/"Архівувати", той самий патерн, що CardFace.tsx).
 
-test('CH-07: за замовчуванням "Режим картки" не видно, лише готові блоки й "Історія записів"', async () => {
+// CH-10 review (живе тестування 2026-09-21): "не видно за замовчуванням"
+// лишається правдою лише для картки, що ВЖЕ має хоч один блок -- для
+// ПОРОЖНЬОЇ картки (жодного блоку) картина навпаки, окремий тест нижче.
+test('CH-07: за замовчуванням (є блоки) "Режим картки" не видно, лише готові блоки й "Історія записів"', async () => {
+  const data: CardBackData = {
+    metricBlocks: [
+      { id: 'mb1', label: 'Тренування', unit: 'раз', progress: { kind: 'bounded', share: 0.5, overGoal: 0 }, hasPendingEntry: false },
+    ],
+    aggregateProgress: 0.5,
+    entries: [],
+    trackingMode: 'goals',
+    healthState: null,
+  };
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={vi.fn()} />);
+
+  await screen.findByText('Тренування');
+  expect(screen.queryByText('Картка: стан без вимірювань')).toBeNull();
+  expect(screen.getByRole('button', { name: /Історія записів/ })).toBeTruthy();
+});
+
+test('CH-10 review: за замовчуванням (немає жодного блоку) "Режим картки" видно одразу, без меню "..."', async () => {
   const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'goals', healthState: null };
   render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={vi.fn()} />);
 
-  await screen.findByText('Ще немає жодної активної метрики');
-  expect(screen.queryByText('Картка: стан без вимірювань')).toBeNull();
-  expect(screen.getByRole('button', { name: /Історія записів/ })).toBeTruthy();
+  expect(await screen.findByText('Картка: стан без вимірювань')).toBeTruthy();
+  expect(screen.getByText('Картка: постійний процес')).toBeTruthy();
+  expect(screen.getByText('Картка: з цілями та метриками')).toBeTruthy();
+  // Порожня картка -- нема куди "закривати" цю панель, кнопки "Закрити" тут немає.
+  expect(screen.queryByRole('button', { name: 'Закрити' })).toBeNull();
 });
 
 test('CH-07: меню "..." показує "Редагування" лише коли onUpdateTracking переданий (нема чого показати без нього)', async () => {
@@ -931,8 +1040,16 @@ test('CH-07 review-fix: без onUpdateTracking пункт "Редагуванн
   expect(screen.queryByRole('menuitem', { name: 'Архівувати' })).toBeNull();
 });
 
-test('CH-07: "Редагування" відкриває "Режим картки", "Закрити" ховає його назад', async () => {
-  const data: CardBackData = { metricBlocks: [], aggregateProgress: null, entries: [], trackingMode: 'goals', healthState: null };
+test('CH-07: "Редагування" відкриває "Режим картки", "Закрити" ховає його назад (картка вже має блок)', async () => {
+  const data: CardBackData = {
+    metricBlocks: [
+      { id: 'mb1', label: 'Тренування', unit: 'раз', progress: { kind: 'bounded', share: 0.5, overGoal: 0 }, hasPendingEntry: false },
+    ],
+    aggregateProgress: 0.5,
+    entries: [],
+    trackingMode: 'goals',
+    healthState: null,
+  };
   render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateTracking={vi.fn()} />);
 
   await openBackEdit();

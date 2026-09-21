@@ -28,7 +28,7 @@
 // чи поки composition root не готовий) use-case просто не робить цей крок --
 // не помилка, лише "Структура поки не підключена".
 
-import { markFilled, setTrackingModeOngoing, setTrackingModeGoals, setTrackingModeState, isCardHealthState, CardValidationError } from '../domain/card';
+import { markFilled, setTrackingModeNonState, setTrackingModeState, isCardHealthState, CardValidationError } from '../domain/card';
 import type { Card, CardTrackingMode, CardHealthState } from '../domain/card';
 import { findCardById, updateCard as updateCardRow, insertLifecycleEvent } from '../infra/postgres-repo';
 import type { CardRecord, Db } from '../infra/postgres-repo';
@@ -47,7 +47,7 @@ export interface UpdateCardInput {
    * CH-02/CH-10 (docs/features/life-area-card/changes.md): перемикає режим
    * відстеження картки. 'state' вимагає healthState у ЦЬОМУ Ж виклику
    * (domain/card.ts setTrackingModeState) -- 'ongoing'/'goals' завжди
-   * скидають healthState на null (setTrackingModeOngoing/setTrackingModeGoals),
+   * скидають healthState на null (setTrackingModeNonState),
    * незалежно від того, що передано в healthState.
    */
   trackingMode?: CardTrackingMode;
@@ -123,8 +123,7 @@ export async function updateCard(
       patch.trackingMode = switched.trackingMode;
       patch.healthState = switched.healthState;
     } else {
-      const switched =
-        input.trackingMode === 'ongoing' ? setTrackingModeOngoing(domainCard) : setTrackingModeGoals(domainCard);
+      const switched = setTrackingModeNonState(domainCard, input.trackingMode);
       patch.trackingMode = switched.trackingMode;
       patch.healthState = switched.healthState;
     }
@@ -156,7 +155,12 @@ export async function updateCard(
   // CH-06 зробив markFilled похідним від "Опис непорожній" і шле його на
   // КОЖНЕ збереження форми, тож без guard тут повторний перехід писався б
   // при кожному перейменуванні вже заповненої картки.
-  if (input.markFilled && !current.description) {
+  // Review-fix: `?.trim()`, не голий `!current.description` -- рядок із
+  // самих пробілів (можна зберегти окремим викликом без markFilled, той
+  // самий шлях, що onUpdateDescription в CardFace.tsx) технічно truthy,
+  // тож голий guard пропустив би СПРАВЖНІЙ перший перехід "порожньо ->
+  // заповнено", коли до цього збережено лише пробіл.
+  if (input.markFilled && !current.description?.trim()) {
     await insertLifecycleEvent(db, { id: crypto.randomUUID(), cardId: input.cardId, transition: 'filled' });
     if (recordAction) {
       await recordAction(db, { ownerUserId: input.ownerUserId, action: `Заповнено опис картки «${updated.name}»` });

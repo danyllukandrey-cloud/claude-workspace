@@ -14,7 +14,7 @@
 // Promise; компонент сам керує локальним станом (loading/error/
 // historyExpanded/колізія перейменування) навколо їхнього виклику.
 import { useEffect, useRef, useState } from 'react';
-import { Banner, Button, EmptyState, Spinner, TextField } from '../../../shared/ui';
+import { Banner, Button, Spinner, TextField } from '../../../shared/ui';
 import { ArchiveCardDialog } from './ArchiveCardDialog';
 import { ArchiveMetricBlockDialog } from './ArchiveMetricBlockDialog';
 import { EntryHistoryList } from './EntryHistoryList';
@@ -250,6 +250,14 @@ export function CardBack({
   // й сама база даних (postgres-repo.ts card.tracking_mode DEFAULT 'goals').
   const trackingMode = data.trackingMode ?? 'goals';
   const healthState = data.healthState ?? null;
+  // CH-10 review (живе тестування 2026-09-21): картка без жодного блоку-
+  // метрики ще не мала можливості явно обрати режим -- "Режим картки"
+  // ховався за меню "..." навіть тут, тож користувач одразу бачив "+
+  // Додати блок-метрику" без кроку вибору статусу взагалі. Для такої картки
+  // показуємо "Режим картки" одразу (не за меню), і вже під ним -- залежно
+  // від вибору -- або мячики (state), або "+ Додати" (ongoing/goals).
+  const hasNoMetrics = data.metricBlocks.length === 0;
+  const showTrackingModePicker = isEditingBack || hasNoMetrics;
 
   const handleFlagEntry = (entryId: string): void => {
     if (!onFlagEntry || isFlaggingEntry) return;
@@ -288,7 +296,13 @@ export function CardBack({
     setIsSavingTracking(true);
     onUpdateTracking(input)
       .then(() => {
-        refresh();
+        // Review-fix: локальний патч замість повного refresh() -- input уже
+        // несе точну нову пару trackingMode/healthState (сервер підтвердив),
+        // жодне інше поле CardBackData від режиму не залежить (метрики й
+        // агрегат рахуються незалежно, лише візуально притлумлюються тут же).
+        // Той самий "не перезавантажуй, патч того, що вже знаєш" підхід, що
+        // CardFace.saveEdit і DeckScreen.handleRename вже мають у цьому diff.
+        setData((prev) => (prev ? { ...prev, trackingMode: input.trackingMode, healthState: input.healthState } : prev));
       })
       .catch((err: unknown) => {
         setTrackingError(err instanceof Error ? err.message : 'Не вдалося зберегти режим картки');
@@ -416,8 +430,16 @@ export function CardBack({
           верхньому кутку звороту -- той самий патерн, що CardFace.tsx, лише
           для НАЛАШТУВАНЬ самої картки (Режим картки), не для метрик (ті --
           олівчик на MetricBlockCard). "Архівувати" -- лише коли onArchive
-          переданий (DeckFrontCard.tsx вже прокидає той самий, що на лиці). */}
-      <div className="absolute right-0 top-0 z-10">
+          переданий (DeckFrontCard.tsx вже прокидає той самий, що на лиці).
+          Живе тестування 2026-09-21: `absolute` тут накладало кнопку ПОВЕРХ
+          зони скролу нижче -- сама смуга прокрутки (браузерна) починається
+          від верхнього краю СКРОЛЬОВАНОГО елемента, тож внутрішній відступ
+          (pt-8, перша спроба) зсував лише вміст, не саму смугу. Замість
+          цього кнопка тепер займає СПРАВЖНЄ місце в розмітці (звичайний
+          рядок, не накладання) -- зона скролу нижче більше не ділить
+          вертикальний простір з кнопкою, `relative` тут лишається лише
+          точкою відліку для випадного меню. */}
+      <div className="relative flex justify-end">
         <button
           type="button"
           aria-label="Меню картки"
@@ -429,7 +451,12 @@ export function CardBack({
         {isMenuOpen && (
           <div
             role="menu"
-            className="absolute right-0 top-full mt-1 flex w-44 flex-col gap-0.5 rounded-control border border-border bg-surface-solid p-1.5 shadow-soft"
+            // Живе тестування 2026-09-21: `z-10` (був раніше на батьківському
+            // `absolute`-контейнері) загубився, коли той контейнер став
+            // звичайним рядком -- без нього випадне меню малювалось ПІД
+            // зоною скролу (наступний елемент у звичайному потоці), не
+            // поверх неї. Тепер z-10 -- на самому меню.
+            className="absolute right-0 top-full z-10 mt-1 flex w-44 flex-col gap-0.5 rounded-control border border-border bg-surface-solid p-1.5 shadow-soft"
           >
             {/* Review-fix: без onUpdateTracking немає чого показати в панелі
                 редагування (єдиний її вміст зараз -- Режим картки) -- клік
@@ -462,24 +489,24 @@ export function CardBack({
         <ArchiveCardDialog cardName={cardName} onArchive={confirmArchive} onCancel={cancelArchive} />
       )}
 
-      {/* Живе тестування 2026-09-21: "..." (absolute, правий верхній кут)
-          наїжджало на вміст під час скролу -- зона скролу починалась з
-          того самого верхнього краю. pt-8 -- висота самої кнопки-крапок
-          (px-2 py-1 text-lg), контент тепер стартує нижче неї. */}
-      <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-y-auto pt-8">
+      <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
         {/* Review 2026-09-07 E (T52): фоновий refresh невдалий -- НЕблокуючий
             банер над уже показаними даними, не заміна всього екрана. */}
         {refreshError !== null && <Banner variant="error" text={refreshError} />}
 
-        {/* CH-07: перенесено з "завжди видимо" під режим "Редагування" --
-            зворот тепер має два режими (перегляд/редагування), Режим картки
-            -- налаштування, не показник, тож ховається за меню "...",
-            замість займати місце над блоками-метриками щоразу. */}
-        {isEditingBack && onUpdateTracking && (
+        {/* CH-07: коли є хоч один блок-метрики, "Режим картки" -- налаштування,
+            не показник, ховається за меню "..." (isEditingBack), замість
+            займати місце над блоками щоразу. CH-10 review: поки блоків
+            узагалі нема (hasNoMetrics), це навпаки ПЕРШЕ, що бачить
+            користувач -- без обраного режиму нема що показувати нижче. */}
+        {showTrackingModePicker && onUpdateTracking && (
           <fieldset className="m-0 flex flex-col gap-2 rounded-card border border-border bg-surface-solid p-3.5" disabled={isSavingTracking}>
             <div className="flex items-center justify-between gap-2">
               <legend className="px-1 text-xs font-bold uppercase tracking-wide text-ink-muted">Режим картки</legend>
-              <Button label="Закрити" onClick={closeEditBack} />
+              {/* "Закрити" має сенс лише коли панель ВІДКРИЛИ (меню на
+                  картці, що вже має блоки) -- для порожньої картки це й так
+                  єдиний видимий вміст, нема куди "закривати". */}
+              {isEditingBack && <Button label="Закрити" onClick={closeEditBack} />}
             </div>
             {/* CH-10 (живе тестування 2026-09-21): 3 варіанти замість 2 --
                 той самий напис "Постійний процес з метриками (без дати)"
@@ -552,7 +579,14 @@ export function CardBack({
             блок-метрику" має бути першим, що бачить користувач згори).
             Review 2026-09-07 A4 (AC-07/AC-08): рендериться НЕЗАЛЕЖНО від
             metricBlocks.length -- раніше з'являлась лише в порожньому стані,
-            тож у картки з хоч одним блоком не було способу додати другий. */}
+            тож у картки з хоч одним блоком не було способу додати другий.
+            CH-10 review (живе тестування 2026-09-21): для ПОРОЖНЬОЇ картки в
+            режимі "стан" (hasNoMetrics && trackingMode === 'state') ця секція
+            взагалі не рендериться -- вибір мячика (вище, "Режим картки") і Є
+            єдиним вмістом, показувати ще й приглушену порожню секцію метрик
+            під ним нема сенсу. Для порожньої картки в 'ongoing'/'goals'
+            секція лишається (кнопка "+ Додати"), лише без EmptyState-напису
+            -- сама кнопка вже показує порожнечу, дублювати текстом зайве. */}
         {/* CH-02: "стан без вимірювань" -- усі налаштування метрик стають
             неактивними (disabled), не зникають: колишні блоки лишаються
             видимими (історія прогресу не губиться), просто без можливості
@@ -563,29 +597,25 @@ export function CardBack({
             тож кожен інтерактивний елемент нижче ДОДАТКОВО отримує СПРАВЖНІЙ
             `disabled` -- "+ Додати" явно, MetricBlockCard's ×/✎ через свій
             proп (той самий принцип, що <fieldset disabled> вище). */}
-        <div
-          className={trackingMode === 'state' ? 'pointer-events-none flex flex-col gap-3 opacity-40' : 'flex flex-col gap-3'}
-          aria-disabled={trackingMode === 'state'}
-        >
-          {trackingMode === 'state' && (
-            <p className="text-xs italic text-ink-faint">Картка в режимі "стан без вимірювань" -- метрики не використовуються.</p>
-          )}
-          {onCreateMetricBlock &&
-            (isCreatingBlock ? (
-              // CH-10: режим картки визначає, ЯКІ поля форма показує --
-              // 'state' сюди не доходить (кнопка вище вже disabled).
-              <MetricBlockForm onSubmit={handleCreateMetricBlock} mode={trackingMode === 'ongoing' ? 'ongoing' : 'goals'} />
-            ) : (
-              <Button label="+ Додати блок-метрику" onClick={() => setIsCreatingBlock(true)} disabled={trackingMode === 'state'} />
-            ))}
+        {!(hasNoMetrics && trackingMode === 'state') && (
+          <div
+            className={trackingMode === 'state' ? 'pointer-events-none flex flex-col gap-3 opacity-40' : 'flex flex-col gap-3'}
+            aria-disabled={trackingMode === 'state'}
+          >
+            {trackingMode === 'state' && (
+              <p className="text-xs italic text-ink-faint">Картка в режимі "стан без вимірювань" -- метрики не використовуються.</p>
+            )}
+            {onCreateMetricBlock &&
+              (isCreatingBlock ? (
+                // CH-10: режим картки визначає, ЯКІ поля форма показує --
+                // 'state' сюди не доходить (кнопка вище вже disabled).
+                <MetricBlockForm onSubmit={handleCreateMetricBlock} mode={trackingMode === 'ongoing' ? 'ongoing' : 'goals'} />
+              ) : (
+                <Button label="+ Додати блок-метрику" onClick={() => setIsCreatingBlock(true)} disabled={trackingMode === 'state'} />
+              ))}
 
-          {data.metricBlocks.length === 0 ? (
-            <EmptyState
-              message="Ще немає жодної активної метрики"
-              actionHint="Додайте блок-метрику, щоб почати відстежувати прогрес"
-            />
-          ) : (
-            <div className="flex flex-col gap-3">
+            {data.metricBlocks.length > 0 && (
+              <div className="flex flex-col gap-3">
               {data.aggregateProgress !== null && (
                 <p className="mt-1 font-display text-sm font-bold leading-relaxed text-ink">
                   Загальний прогрес: {Math.round(data.aggregateProgress * 100)}%
@@ -609,8 +639,9 @@ export function CardBack({
                 />
               ))}
             </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
         {/* Видалення блоку-метрики: клік "×" на MetricBlockCard відкриває
             ArchiveMetricBlockDialog саме для того блоку (pendingDeleteBlock).
@@ -651,7 +682,23 @@ export function CardBack({
                   isOngoing: editingBlock.settings?.isOngoing ?? false,
                   targetDate: editingBlock.settings?.targetDate ?? null,
                 }}
-                mode={trackingMode === 'ongoing' ? 'ongoing' : 'goals'}
+                // Review-fix (CH-10): режим тут -- з ВЛАСНИХ налаштувань
+                // блоку, НЕ з поточного режиму картки. Картку могли
+                // перемкнути на "постійний процес" ПІСЛЯ того, як цей блок
+                // уже мав ціль+дату (створений під "з цілями") -- узявши
+                // режим картки, форма мовчки стерла б ціль/дату при
+                // звичайному виправленні одруківки в назві. Блок без
+                // settings (старі fixtures до CH-03) -- падаємо на режим
+                // картки, дані втрачати нема чого.
+                mode={
+                  editingBlock.settings
+                    ? editingBlock.settings.isOngoing
+                      ? 'ongoing'
+                      : 'goals'
+                    : trackingMode === 'ongoing'
+                      ? 'ongoing'
+                      : 'goals'
+                }
                 onSubmit={handleSaveMetricBlockEdit}
               />
             )}

@@ -31,6 +31,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { Banner, Button, NumberField, TextField } from '../../../shared/ui';
+import type { CardTrackingMode } from '../domain/card';
 
 export interface MetricBlockFormValues {
   /** "Що рахуємо" -- обов'язкове. */
@@ -60,7 +61,11 @@ export interface MetricBlockFormProps {
    * раніше. Картки в режимі 'state' сюди взагалі не доходять (CardBack.tsx
    * не рендерить форму блоку-метрики в цьому режимі).
    */
-  mode?: 'ongoing' | 'goals';
+  // Review-fix: перевикористовує CardTrackingMode (Exclude 'state') замість
+  // окремого локального union -- дві паралельні "мови" для того самого
+  // поняття (тут 'ongoing'/'goals', там 'state'/'ongoing'/'goals') інакше
+  // синхронізуються вручну без жодного зв'язку типів.
+  mode?: Exclude<CardTrackingMode, 'state'>;
 }
 
 const EMPTY_VALUES: MetricBlockFormValues = {

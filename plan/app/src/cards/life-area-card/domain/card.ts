@@ -75,13 +75,15 @@ export function createCard(input: { id: string; name: string }): Card {
 // мутування). Use-case (app/update-card.ts) викликає їх, а не будує патч
 // вручну -- "healthState завжди null у режимах без стану" лишається ОДНИМ
 // правилом, тут, а не повтореним у кожному викликачі.
+//
+// Review-fix (CH-10): 'ongoing' і 'goals' раніше були двома окремими
+// функціями, що відрізнялись лише літералом -- одна спільна, параметризована
+// режимом, той самий підхід, що міграція вже застосувала до health_state
+// CHECK (булева еквівалентність, а не перелік значень) -- наступний
+// не-'state' режим не вимагатиме нової функції.
 
-export function setTrackingModeOngoing(card: Card): Card {
-  return { ...card, trackingMode: 'ongoing', healthState: null };
-}
-
-export function setTrackingModeGoals(card: Card): Card {
-  return { ...card, trackingMode: 'goals', healthState: null };
+export function setTrackingModeNonState(card: Card, mode: Exclude<CardTrackingMode, 'state'>): Card {
+  return { ...card, trackingMode: mode, healthState: null };
 }
 
 export function setTrackingModeState(card: Card, healthState: CardHealthState): Card {
