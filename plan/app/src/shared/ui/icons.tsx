@@ -48,7 +48,7 @@ export function ChevronIcon({ className }: IconProps): JSX.Element {
   );
 }
 
-/** CH-16 (docs/features/life-area-card/changes.md) -- "Видалити" назавжди в Архіві карток, той самий контурний стиль (stroke, не fill), що решта значків цього файлу. */
+/** CH-15 (docs/features/life-area-card/changes.md) -- "Видалити" назавжди в Архіві карток, той самий контурний стиль (stroke, не fill), що решта значків цього файлу. */
 export function TrashIcon({ className }: IconProps): JSX.Element {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">

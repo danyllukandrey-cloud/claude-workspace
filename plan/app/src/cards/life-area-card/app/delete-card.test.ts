@@ -1,4 +1,4 @@
-// CH-16 (docs/features/life-area-card/changes.md): unit-тест deleteCard --
+// CH-15 (docs/features/life-area-card/changes.md): unit-тест deleteCard --
 // підроблений db (vi.fn), без мережі. Той самий стиль, що restore-card.test.ts.
 
 import { describe, it, expect, vi } from 'vitest';

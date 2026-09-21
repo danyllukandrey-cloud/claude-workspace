@@ -14,7 +14,7 @@
 // Promise; компонент сам керує локальним станом (loading/error/
 // historyExpanded/колізія перейменування) навколо їхнього виклику.
 import { useEffect, useRef, useState } from 'react';
-import { Banner, Button, Spinner, TextField } from '../../../shared/ui';
+import { Banner, Button, NumberField, Spinner, TextField } from '../../../shared/ui';
 import { ArchiveCardDialog } from './ArchiveCardDialog';
 import { ArchiveMetricBlockDialog } from './ArchiveMetricBlockDialog';
 import { EntryHistoryList } from './EntryHistoryList';
@@ -77,6 +77,15 @@ export interface CardBackProps {
    */
   onArchiveMetricBlock?: (metricBlockId: string) => Promise<void>;
   /**
+   * CH-16 (docs/features/life-area-card/changes.md): швидкий запис прямо з
+   * картки, без участі агента-чату -- позитивне число для "Додати", те саме
+   * число зі знаком мінус для "Відняти" (той самий ендпоінт, що вже пише
+   * агент, POST .../entries; запис одразу confirmed, бо користувач сам
+   * вписав точне число). Опційний, той самий DI-патерн, що onCreateMetricBlock
+   * -- без пропу кнопка "+" на MetricBlockCard не рендериться взагалі.
+   */
+  onCreateEntry?: (metricBlockId: string, amount: number) => Promise<void>;
+  /**
    * CH-02 (docs/features/life-area-card/changes.md): зберігає режим
    * відстеження картки ("картка: стан без вимірювань" чи звичайний
    * метричний режим). Опційний, той самий DI-патерн, що onCreateMetricBlock
@@ -129,6 +138,7 @@ export function CardBack({
   onRenameTransferredBlock,
   onCreateMetricBlock,
   onArchiveMetricBlock,
+  onCreateEntry,
   onUpdateTracking,
   onUpdateMetricBlock,
   onTransferMetricBlock,
@@ -164,6 +174,12 @@ export function CardBack({
   const [transferTargetId, setTransferTargetId] = useState('');
   const [isTransferring, setIsTransferring] = useState(false);
   const [transferError, setTransferError] = useState<string | undefined>(undefined);
+  // CH-16: блок, для якого зараз відкрита форма "Додати/відняти показник" --
+  // той самий "null -- жоден" toggle-стан, що editingBlock/pendingDeleteBlock.
+  const [adjustingBlock, setAdjustingBlock] = useState<MetricBlockViewModel | null>(null);
+  const [quickAdjustAmount, setQuickAdjustAmount] = useState<number | null>(null);
+  const [isQuickAdjusting, setIsQuickAdjusting] = useState(false);
+  const [quickAdjustError, setQuickAdjustError] = useState<string | undefined>(undefined);
   // Review 2026-09-07, post-ship follow-up review (AC-12/E remainder):
   // handleFlagEntry нижче мав ТОЙ САМИЙ баг, що refresh() уже виправлено
   // (setState('error') на невдачі стирало всі дані) -- пропущено окремо,
@@ -420,6 +436,34 @@ export function CardBack({
       });
   };
 
+  /**
+   * CH-16 (docs/features/life-area-card/changes.md): "Додати"/"Відняти" --
+   * той самий injected onCreateEntry (реальний виклик -- вже наявний
+   * ендпоінт POST .../entries, той самий, що пише агент), лише зі знаком
+   * `sign` перед введеним числом. Поле приймає лише ДОДАТНЄ число (сама
+   * величина зміни) -- напрям задають дві окремі кнопки, не мінус у полі.
+   */
+  const handleQuickAdjust = (sign: 1 | -1): void => {
+    if (!onCreateEntry || !adjustingBlock || isQuickAdjusting) return;
+    if (quickAdjustAmount === null || quickAdjustAmount <= 0) {
+      setQuickAdjustError('Вкажіть число більше нуля');
+      return;
+    }
+    setQuickAdjustError(undefined);
+    setIsQuickAdjusting(true);
+    onCreateEntry(adjustingBlock.id, sign * quickAdjustAmount)
+      .then(() => {
+        setAdjustingBlock(null);
+        setQuickAdjustAmount(null);
+        setIsQuickAdjusting(false);
+        refresh();
+      })
+      .catch((err: unknown) => {
+        setIsQuickAdjusting(false);
+        setQuickAdjustError(err instanceof Error ? err.message : 'Не вдалося зберегти запис');
+      });
+  };
+
   const handleCreateMetricBlock = (values: MetricBlockFormValues): Promise<void> => {
     // CH-02 (code review 2026-09-19): захист у глибині, ДРУГИЙ бар'єр поза
     // disabled-кнопкою вище -- "стан без вимірювань" не додає жодного нового
@@ -522,7 +566,20 @@ export function CardBack({
           рядок, не накладання) -- зона скролу нижче більше не ділить
           вертикальний простір з кнопкою, `relative` тут лишається лише
           точкою відліку для випадного меню. */}
-      <div className="relative flex justify-end">
+      {/* Bug fix 2026-09-21 (живе тестування, Андрій): "кнопку '+Додати
+          блок-метрику' потрібно закріпити біля крапок з ліва щоб вона не
+          скролилась з усім списком метрик" -- переїхала сюди, на цей самий
+          рядок, що "..." (обидва тепер ПОЗА скрольованою зоною нижче,
+          justify-between розводить їх по краях). Порожній <span/>, коли
+          кнопка не рендериться (той самий "завжди займай слот" прийом, що
+          MetricBlockCard.tsx's quickAdjustSlot) -- інакше "..." стрибав би
+          вліво замість лишатись справа. */}
+      <div className="relative flex items-center justify-between gap-2">
+        {trackingMode !== 'state' && onCreateMetricBlock && !isCreatingBlock ? (
+          <Button label="+ Додати блок-метрику" onClick={() => setIsCreatingBlock(true)} disabled={isSavingTracking} />
+        ) : (
+          <span />
+        )}
         {/* `contents` -- div існує лише як носій ref для click-outside, не
             бере участі в розкладці (той самий трюк, що App.tsx, задача 9). */}
         <div ref={menuButtonRef} className="contents">
@@ -694,35 +751,27 @@ export function CardBack({
             з'являться, щойно картку повернуть у 'ongoing'/'goals'. */}
         {trackingMode !== 'state' && (
           <div className="flex flex-col gap-3">
-            {onCreateMetricBlock &&
-              (isCreatingBlock ? (
-                // CH-10: режим картки визначає, ЯКІ поля форма показує.
-                // Review-fix: `disabled`/'state'-перевірки на цьому шляху
-                // прибрано -- 'state' сюди більше не доходить узагалі (уся
-                // ця секція ховається на рівень вище), TS сам підтвердив
-                // порівняння з 'state' тут неможливим.
-                <MetricBlockForm
-                  onSubmit={handleCreateMetricBlock}
-                  // code-review 2026-09-21 (simplification): `trackingMode`
-                  // тут уже звужений компілятором до 'ongoing'|'goals' (той
-                  // самий факт, що коментар вище про 'state' підтверджує) --
-                  // передавати напряму, без повторного вибору тернарним
-                  // оператором в кожному з двох місць виклику форми.
-                  mode={trackingMode}
-                  onCancel={() => setIsCreatingBlock(false)}
-                />
-              ) : (
-                // code-review 2026-09-21 (race-condition): заблоковано під
-                // час isSavingTracking -- перехід картки на "постійний
-                // процес" очищає ціль/дату з блоків, ЩО ІСНУВАЛИ на момент
-                // кліку (handleUpdateTracking вище); без цього нова метрика,
-                // створена саме в цю мить, уникала б очищення.
-                <Button
-                  label="+ Додати блок-метрику"
-                  onClick={() => setIsCreatingBlock(true)}
-                  disabled={isSavingTracking}
-                />
-              ))}
+            {/* Bug fix 2026-09-21: сама КНОПКА переїхала на закріплений
+                верхній рядок (біля "..."), тут лишається лише ФОРМА --
+                багатоpольова, їй природніше бути в потоці контенту, не
+                закріпленою вгорі. */}
+            {onCreateMetricBlock && isCreatingBlock && (
+              // CH-10: режим картки визначає, ЯКІ поля форма показує.
+              // Review-fix: `disabled`/'state'-перевірки на цьому шляху
+              // прибрано -- 'state' сюди більше не доходить узагалі (уся
+              // ця секція ховається на рівень вище), TS сам підтвердив
+              // порівняння з 'state' тут неможливим.
+              <MetricBlockForm
+                onSubmit={handleCreateMetricBlock}
+                // code-review 2026-09-21 (simplification): `trackingMode`
+                // тут уже звужений компілятором до 'ongoing'|'goals' (той
+                // самий факт, що коментар вище про 'state' підтверджує) --
+                // передавати напряму, без повторного вибору тернарним
+                // оператором в кожному з двох місць виклику форми.
+                mode={trackingMode}
+                onCancel={() => setIsCreatingBlock(false)}
+              />
+            )}
 
             {data.metricBlocks.length > 0 && (
               <div className="flex flex-col gap-3">
@@ -749,13 +798,65 @@ export function CardBack({
                     onEdit={
                       onUpdateMetricBlock || onTransferMetricBlock
                         ? () => {
+                            // Bug fix 2026-09-21 (живе тестування, Андрій):
+                            // повторний клік на олівець ЦЬОГО Ж блоку, поки
+                            // його панель редагування вже відкрита, згортає
+                            // її -- той самий перемикач (toggle), що кнопка
+                            // "Закрити редагування" нижче, не просто
+                            // переоткриває той самий стан.
+                            if (editingBlock?.id === block.id) {
+                              setEditingBlock(null);
+                              return;
+                            }
                             setTransferTargetId('');
                             setTransferError(undefined);
                             setEditingBlock(block);
                           }
                         : undefined
                     }
+                    onQuickAdjust={
+                      onCreateEntry
+                        ? () => {
+                            // Той самий toggle-принцип, що onEdit вище --
+                            // повторний клік на "+" ЦЬОГО Ж блоку згортає форму.
+                            if (adjustingBlock?.id === block.id) {
+                              setAdjustingBlock(null);
+                              return;
+                            }
+                            setQuickAdjustAmount(null);
+                            setQuickAdjustError(undefined);
+                            setAdjustingBlock(block);
+                          }
+                        : undefined
+                    }
                   />
+                  {adjustingBlock?.id === block.id && onCreateEntry && (
+                    <div className="flex flex-col gap-3 rounded-card border border-border bg-surface-solid p-3.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="font-display text-sm font-bold leading-relaxed text-ink">
+                          Додати/відняти «{adjustingBlock.label}»
+                        </h3>
+                        <Button
+                          label="Закрити"
+                          onClick={() => {
+                            setAdjustingBlock(null);
+                            setQuickAdjustAmount(null);
+                            setQuickAdjustError(undefined);
+                          }}
+                        />
+                      </div>
+                      <NumberField
+                        label="Число"
+                        value={quickAdjustAmount}
+                        onChange={setQuickAdjustAmount}
+                        error={quickAdjustError}
+                      />
+                      <div className="flex gap-3">
+                        <Button label="Додати" onClick={() => handleQuickAdjust(1)} disabled={isQuickAdjusting} />
+                        <Button label="Відняти" onClick={() => handleQuickAdjust(-1)} disabled={isQuickAdjusting} />
+                      </div>
+                    </div>
+                  )}
                   {editingBlock?.id === block.id && (onUpdateMetricBlock || onTransferMetricBlock) && (
                     <div className="flex flex-col gap-3 rounded-card border border-border bg-surface-solid p-3.5">
                       <div className="flex items-center justify-between gap-2">
@@ -773,6 +874,13 @@ export function CardBack({
                       {onUpdateMetricBlock && (
                         <MetricBlockForm
                           key={editingBlock.id}
+                          // Bug fix 2026-09-21 (живе тестування, Андрій зі
+                          // скріншотом): "дубль, слово редагування тут
+                          // лишнє" -- панель уже має власний заголовок
+                          // "Редагування «{editingBlock.label}»" вище
+                          // (з назвою блоку), форма своєму голому
+                          // "Редагування" тут не потрібна.
+                          showHeading={false}
                           initialValues={{
                             label: editingBlock.label,
                             unit: editingBlock.unit,
@@ -803,7 +911,7 @@ export function CardBack({
                       {onTransferMetricBlock && transferTargetCards && transferTargetCards.length > 0 && (
                         <div className="flex flex-col gap-2 border-t border-border pt-3">
                           <label className="flex flex-col gap-1.5 text-sm font-medium text-ink">
-                            Перенести на іншу картку
+                            Перенести метрику на іншу картку
                             <select
                               value={transferTargetId}
                               onChange={(event) => setTransferTargetId(event.target.value)}

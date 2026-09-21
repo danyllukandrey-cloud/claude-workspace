@@ -279,7 +279,7 @@ export async function restoreCard(
 }
 
 // --- deleteCard -- DELETE /api/v1/cards/{cardId}/permanent -----------------
-// CH-16 (docs/features/life-area-card/changes.md) -- назавжди, не архівація
+// CH-15 (docs/features/life-area-card/changes.md) -- назавжди, не архівація
 // (та вже є вище, archiveCard). 404 card.not_found (non-disclosure, AC-04) і
 // 409 card.not_archived (лише з архіву) кидає use-case сам -- пропускаємо як
 // є, той самий підхід, що решта хендлерів цього файлу.

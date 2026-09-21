@@ -26,7 +26,7 @@ import { Banner, Button, CardShell, ConfirmDialog, EmptyState, Spinner, TrashIco
 import type { DeckGridItem } from './DeckGrid';
 import type { EntryViewModel } from './types';
 
-// CH-16 (docs/features/life-area-card/changes.md, живе тестування, Андрій):
+// CH-15 (docs/features/life-area-card/changes.md, живе тестування, Андрій):
 // "Картки масштабуй завжди до такого розміру щоб вони всі влазили в екран
 // розкладки" -- той самий "масштабувати як одне ціле" принцип, що Схема
 // (structure/ui/LayoutBoard.tsx CH-15), лише простіше: тут немає системи
@@ -60,7 +60,7 @@ export interface ArchiveScreenProps {
    */
   onRestoreCard: (cardId: string) => Promise<void>;
   /**
-   * CH-16 (docs/features/life-area-card/changes.md): видаляє архівовану
+   * CH-15 (docs/features/life-area-card/changes.md): видаляє архівовану
    * картку НАЗАВЖДИ (DELETE /cards/{id}/permanent, не PATCH-архівація) --
    * опційна, той самий патерн, що onDelete/onEdit у MetricBlockCard: без
    * пропу кнопка "Видалити" взагалі не рендериться.
@@ -104,14 +104,14 @@ export function ArchiveScreen({
   loadArchivedCardHistory,
 }: ArchiveScreenProps): JSX.Element {
   const [state, setState] = useState<ScreenState>({ status: 'loading' });
-  // CH-16: картка, що чекає підтвердження permanent delete (ConfirmDialog з
+  // CH-15: картка, що чекає підтвердження permanent delete (ConfirmDialog з
   // requireTypedWord, рендериться нижче поза station-специфічним рендером,
   // щоб працювати однаково для list/card-view). null -- нікого не озброєно.
   const [pendingDeleteCard, setPendingDeleteCard] = useState<DeckGridItem | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // CH-16 (scale-to-fit): вимірює РЕАЛЬНИЙ (доступний) розмір зони сітки --
+  // CH-15 (scale-to-fit): вимірює РЕАЛЬНИЙ (доступний) розмір зони сітки --
   // той самий ResizeObserver-підхід, що Схема (LayoutBoard.tsx CH-15),
   // typeof-перевірка -- jsdom (тести) не має ResizeObserver.
   const gridWrapperRef = useRef<HTMLDivElement>(null);
@@ -298,7 +298,7 @@ export function ArchiveScreen({
       });
   };
 
-  // CH-16 (scale-to-fit): "бажаний" розмір сітки -- порахований НАПРЯМУ з
+  // CH-15 (scale-to-fit): "бажаний" розмір сітки -- порахований НАПРЯМУ з
   // кількості карток (не виміряний DOM), тож завжди відомий синхронно, без
   // зайвого тіку рендеру. rows -- скільки рядків дає ARCHIVE_GRID_COLUMNS.
   const rows = Math.max(1, Math.ceil(items.length / ARCHIVE_GRID_COLUMNS));
@@ -313,7 +313,7 @@ export function ArchiveScreen({
       <h1 className="font-display text-xl font-bold leading-relaxed text-ink">Архів карток</h1>
       {/* CH-09 (сітка, не колода DeckGrid -- усі картки архіву видно
           одразу, той самий принцип, що базове розташування нових карток на
-          Схемі) + CH-16 (docs/features/life-area-card/changes.md, живе
+          Схемі) + CH-15 (docs/features/life-area-card/changes.md, живе
           тестування, Андрій): "Картки масштабуй завжди до
           такого розміру щоб вони всі влазили в екран розкладки" -- сітка з
           ФІКСОВАНИМ розміром картки (не responsive breakpoints, як було)
@@ -332,7 +332,7 @@ export function ArchiveScreen({
           }}
         >
           {items.map((item) => (
-            // CH-16: не <button> -- усередині є ще одна інтерактивна кнопка
+            // CH-15: не <button> -- усередині є ще одна інтерактивна кнопка
             // "Видалити" (вкладені <button> заборонені в HTML), тож ціла
             // картка -- div з role="button"/tabIndex/onKeyDown (Enter/Space),
             // той самий доступний контракт, що справжня кнопка.
@@ -348,7 +348,14 @@ export function ArchiveScreen({
                 }
               }}
               style={{ width: ARCHIVE_CARD_SIZE, height: ARCHIVE_CARD_SIZE }}
-              className="relative flex cursor-pointer flex-col items-start overflow-hidden rounded-card border border-border bg-surface-solid p-3.5 text-left shadow-soft transition-transform hover:-translate-y-0.5"
+              // Bug fix 2026-09-21 (живе тестування, Андрій зі скріншотом):
+              // "корзинка десь не там де треба" -- overflow-hidden тут (з
+              // початкового aspect-square-кнопки, де він захищав ДОВГІ
+              // назви) обрізав кнопку "Видалити" нижче, бо та навмисно
+              // трохи виступає за край картки (-right-1.5/-top-1.5, той
+              // самий прийом, що MetricBlockCard.tsx). Прибрано -- довгі
+              // назви й так переносяться (break-words нижче).
+              className="relative flex cursor-pointer flex-col items-start rounded-card border border-border bg-surface-solid p-3.5 text-left shadow-soft transition-transform hover:-translate-y-0.5"
             >
               {/* "Назви мають бути там де в колоді з ліва з верху" (Андрій)
                   -- items-start на батькові вище + text-left тут: назва

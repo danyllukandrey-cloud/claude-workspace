@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { CardBack } from './CardBack';
 import type { CardBackData, EntryViewModel } from './types';
 import type { MetricBlockFormValues } from './MetricBlockForm';
@@ -1043,7 +1043,7 @@ test('CH-03: без transferTargetCards секція перенесення не
   await screen.findByText('Тренування');
   fireEvent.click(screen.getByRole('button', { name: 'Редагувати метрику «Тренування»' }));
 
-  expect(screen.queryByText('Перенести на іншу картку')).toBeNull();
+  expect(screen.queryByText('Перенести метрику на іншу картку')).toBeNull();
 });
 
 test('CH-03: обрання картки-цілі й "Перенести" викликає onTransferMetricBlock(blockId, targetCardId)', async () => {
@@ -1062,7 +1062,7 @@ test('CH-03: обрання картки-цілі й "Перенести" вик
 
   await screen.findByText('Тренування');
   fireEvent.click(screen.getByRole('button', { name: 'Редагувати метрику «Тренування»' }));
-  fireEvent.change(screen.getByLabelText('Перенести на іншу картку'), { target: { value: 'card-2' } });
+  fireEvent.change(screen.getByLabelText('Перенести метрику на іншу картку'), { target: { value: 'card-2' } });
   fireEvent.click(screen.getByRole('button', { name: 'Перенести' }));
 
   await vi.waitFor(() => expect(onTransferMetricBlock).toHaveBeenCalledWith('mb1', 'card-2'));
@@ -1101,6 +1101,119 @@ test('CH-03: "Закрити редагування" ховає панель р�
 
   expect(screen.queryByText('Редагування «Тренування»')).toBeNull();
   expect(onUpdateMetricBlock).not.toHaveBeenCalled();
+});
+
+// Bug fix 2026-09-21 (живе тестування, Андрій): повторний клік на той самий
+// олівець, поки панель редагування вже відкрита, має згортати її -- той
+// самий перемикач (toggle), що кнопка "Закрити редагування".
+test('bug fix: повторний клік на олівець того самого блоку згортає панель редагування (toggle)', async () => {
+  const data: CardBackData = { metricBlocks: [metricBlock()], aggregateProgress: 0.5, entries: [] };
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onUpdateMetricBlock={vi.fn()} />);
+
+  await screen.findByText('Тренування');
+  const editButton = screen.getByRole('button', { name: 'Редагувати метрику «Тренування»' });
+  fireEvent.click(editButton);
+  expect(screen.getByText('Редагування «Тренування»')).toBeTruthy();
+
+  fireEvent.click(editButton);
+  expect(screen.queryByText('Редагування «Тренування»')).toBeNull();
+});
+
+// CH-16 (docs/features/life-area-card/changes.md): "+" по центру блоку --
+// швидкий запис (додати/відняти) без участі агента-чату.
+
+test('CH-16: без injected onCreateEntry кнопка "+" не рендериться взагалі', async () => {
+  const data: CardBackData = { metricBlocks: [metricBlock()], aggregateProgress: 0.5, entries: [] };
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} />);
+
+  await screen.findByText('Тренування');
+  expect(screen.queryByRole('button', { name: /Додати або відняти показник/ })).toBeNull();
+});
+
+test('CH-16: клік на "+" розгортає форму "Додати/відняти", повторний клік згортає (toggle)', async () => {
+  const data: CardBackData = { metricBlocks: [metricBlock()], aggregateProgress: 0.5, entries: [] };
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateEntry={vi.fn()} />);
+
+  await screen.findByText('Тренування');
+  const quickAdjustButton = screen.getByRole('button', { name: 'Додати або відняти показник «Тренування»' });
+  fireEvent.click(quickAdjustButton);
+  expect(screen.getByText('Додати/відняти «Тренування»')).toBeTruthy();
+
+  fireEvent.click(quickAdjustButton);
+  expect(screen.queryByText('Додати/відняти «Тренування»')).toBeNull();
+});
+
+test('CH-16: "Додати" викликає onCreateEntry(metricBlockId, +число), форма закривається', async () => {
+  const data: CardBackData = { metricBlocks: [metricBlock()], aggregateProgress: 0.5, entries: [] };
+  const onCreateEntry = vi.fn().mockResolvedValue(undefined);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateEntry={onCreateEntry} />);
+
+  await screen.findByText('Тренування');
+  fireEvent.click(screen.getByRole('button', { name: 'Додати або відняти показник «Тренування»' }));
+  fireEvent.change(screen.getByLabelText('Число'), { target: { value: '5' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Додати' }));
+
+  expect(onCreateEntry).toHaveBeenCalledWith('mb1', 5);
+  await waitFor(() => expect(screen.queryByText('Додати/відняти «Тренування»')).toBeNull());
+});
+
+test('CH-16: "Відняти" викликає onCreateEntry(metricBlockId, -число)', async () => {
+  const data: CardBackData = { metricBlocks: [metricBlock()], aggregateProgress: 0.5, entries: [] };
+  const onCreateEntry = vi.fn().mockResolvedValue(undefined);
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateEntry={onCreateEntry} />);
+
+  await screen.findByText('Тренування');
+  fireEvent.click(screen.getByRole('button', { name: 'Додати або відняти показник «Тренування»' }));
+  fireEvent.change(screen.getByLabelText('Число'), { target: { value: '3' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Відняти' }));
+
+  expect(onCreateEntry).toHaveBeenCalledWith('mb1', -3);
+});
+
+test('CH-16: "Додати" без введеного числа показує помилку валідації, onCreateEntry не викликається', async () => {
+  const data: CardBackData = { metricBlocks: [metricBlock()], aggregateProgress: 0.5, entries: [] };
+  const onCreateEntry = vi.fn();
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateEntry={onCreateEntry} />);
+
+  await screen.findByText('Тренування');
+  fireEvent.click(screen.getByRole('button', { name: 'Додати або відняти показник «Тренування»' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Додати' }));
+
+  expect(onCreateEntry).not.toHaveBeenCalled();
+  expect(screen.getByText('Вкажіть число більше нуля')).toBeTruthy();
+});
+
+test('CH-16: провал onCreateEntry показує повідомлення про помилку, форма лишається відкритою', async () => {
+  const data: CardBackData = { metricBlocks: [metricBlock()], aggregateProgress: 0.5, entries: [] };
+  const onCreateEntry = vi.fn().mockRejectedValue(new Error('Мережа недоступна'));
+  render(<CardBack cardName="Картка" loadBack={() => Promise.resolve(data)} onFlip={vi.fn()} onCreateEntry={onCreateEntry} />);
+
+  await screen.findByText('Тренування');
+  fireEvent.click(screen.getByRole('button', { name: 'Додати або відняти показник «Тренування»' }));
+  fireEvent.change(screen.getByLabelText('Число'), { target: { value: '5' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Додати' }));
+
+  expect(await screen.findByText('Мережа недоступна')).toBeTruthy();
+  expect(screen.getByText('Додати/відняти «Тренування»')).toBeTruthy();
+});
+
+test('CH-16: "+" закріплена біля "..." (завжди в DOM разом), не всередині форми створення блоку', async () => {
+  const data: CardBackData = { metricBlocks: [metricBlock()], aggregateProgress: 0.5, entries: [] };
+  render(
+    <CardBack
+      cardName="Картка"
+      loadBack={() => Promise.resolve(data)}
+      onFlip={vi.fn()}
+      onCreateEntry={vi.fn()}
+      onCreateMetricBlock={vi.fn()}
+    />,
+  );
+
+  await screen.findByText('Тренування');
+  // "Меню картки" -- те саме "..." -- і "+ Додати блок-метрику" мають бути
+  // видимі ОДНОЧАСНО (той самий закріплений рядок), не одне замість іншого.
+  expect(screen.getByRole('button', { name: 'Меню картки' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '+ Додати блок-метрику' })).toBeTruthy();
 });
 
 test('CH-02: помилка збереження режиму показує Banner і не змінює поточний вибір', async () => {
