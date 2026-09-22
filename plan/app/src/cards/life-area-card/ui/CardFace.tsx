@@ -329,11 +329,6 @@ export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived, on
           </>
         )}
 
-        {/* AC-10: непорозв'язана суперечність у даних -- показуємо, не блокуючи
-            решту картки. 'info', не 'error' -- агент лише пропонує розібратись
-            разом, тон без вердикту (design-system.md, D-42/D-60). */}
-        {data.dataWarning && <Banner variant="info" text={data.dataWarning} />}
-
         {!isEditing &&
           (hasDescription ? (
             <p
@@ -350,6 +345,12 @@ export function CardFace({ loadCard, onFlip, onRename, onArchive, onArchived, on
               Опис ще не заповнено
             </p>
           ))}
+
+        {/* AC-10: непорозв'язана суперечність у даних -- показуємо, не блокуючи
+            решту картки. 'info', не 'error' -- агент лише пропонує розібратись
+            разом, тон без вердикту (design-system.md, D-42/D-60). CH-17: під
+            Описом, не над ним -- Опис лишається головним змістом картки. */}
+        {data.dataWarning && <Banner variant="info" text={data.dataWarning} />}
       </div>
 
       {!isEditing && (
