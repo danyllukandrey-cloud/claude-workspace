@@ -3,7 +3,7 @@ slug: agent
 date: 2026-09-22
 triage: gap
 acs: [AC-22]
-commit: <filled after commit>
+commit: 279f0e3
 recurrence_of: none
 ---
 
