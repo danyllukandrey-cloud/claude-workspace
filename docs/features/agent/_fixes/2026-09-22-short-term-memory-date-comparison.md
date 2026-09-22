@@ -3,7 +3,7 @@ slug: agent
 date: 2026-09-22
 triage: regression
 acs: [AC-15]
-commit: <заповнити після коміту>
+commit: ab84729
 recurrence_of: none
 ---
 
