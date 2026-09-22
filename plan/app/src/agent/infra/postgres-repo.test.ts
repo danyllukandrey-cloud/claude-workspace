@@ -399,6 +399,23 @@ describe('insertChatMessage + listMessagesForSession -- AC-15 same-session short
 
     await expect(listMessagesForSession(db, 'someone-elses-user-id', '2026-01-01')).resolves.toEqual([]);
   });
+
+  // Fix 2026-09-22: node-pg parses a DATE column (session_date) into a JS
+  // Date object by default, not a string -- rawChatMessageRow() above stubs
+  // it as a string, which is why this class of bug survived every existing
+  // unit test. getShortTermWindow (domain/memory.ts) compares
+  // `message.sessionDate === sessionDate` -- a Date-vs-string comparison is
+  // always false, so the short-term window was silently empty in prod.
+  it('normalizes a session_date returned as a real Date object (actual node-pg driver behaviour) to a plain YYYY-MM-DD string', async () => {
+    const query = vi.fn().mockResolvedValue({
+      rows: [rawChatMessageRow({ session_date: new Date('2026-01-01T00:00:00Z') })],
+    });
+    const db: Db = { query };
+
+    const messages = await listMessagesForSession(db, 'user-1', '2026-01-01');
+
+    expect(messages[0].sessionDate).toBe('2026-01-01');
+  });
 });
 
 // T24 -- hasAnyChatMessage: чи для user_id уже є хоч ОДИН chat_message,
