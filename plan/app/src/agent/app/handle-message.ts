@@ -245,6 +245,20 @@ function safeProposedRule(value: unknown): AgentDecision['proposedRule'] {
 }
 
 /**
+ * Модель інколи обгортає строго-JSON відповідь у markdown code fence
+ * (```json ... ``` чи просто ``` ... ```), попри пряму інструкцію в
+ * RESPONSE_FORMAT_INSTRUCTION відповідати БЕЗ жодного тексту поза JSON --
+ * знято живим тестуванням 2026-09-22 (fix -- agent gap). Знімає обгортку,
+ * якщо вона є; на звичайний "чистий" JSON не впливає (regex не знаходить
+ * збігу -- рядок повертається як є).
+ */
+function stripMarkdownCodeFence(raw: string): string {
+  const trimmed = raw.trim();
+  const match = /^```(?:json)?\s*([\s\S]*?)\s*```$/.exec(trimmed);
+  return match ? match[1] : trimmed;
+}
+
+/**
  * Розбирає `askAgent`'s `reply` як JSON-конверт (`AgentDecision`). Будь-яка
  * невідповідність формату (не-JSON, відсутній `reply`) НЕ вгадує пропозицію
  * -- fail-safe у звичайне уточнення з вихідним текстом як відповіддю
@@ -252,7 +266,7 @@ function safeProposedRule(value: unknown): AgentDecision['proposedRule'] {
  */
 function parseAgentDecision(raw: string): AgentDecision {
   try {
-    const parsed = JSON.parse(raw) as Partial<Record<keyof AgentDecision, unknown>>;
+    const parsed = JSON.parse(stripMarkdownCodeFence(raw)) as Partial<Record<keyof AgentDecision, unknown>>;
     const reply = safeString(parsed.reply);
     if (reply === null) {
       throw new Error('missing reply field');

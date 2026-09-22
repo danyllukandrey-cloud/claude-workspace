@@ -240,6 +240,18 @@ describe('handleMessage -- Flow 1 (AC-01): text -> proposal', () => {
     expect(auditCall![1]).toEqual(expect.arrayContaining(['proposal_created', 'proposal']));
   });
 
+  it('parses the decision even when Claude wraps it in a markdown code fence (```json ... ```) -- fix 2026-09-22, gap: раніше падало в аварійний план і показувало користувачу сирий JSON-конверт замість reply', async () => {
+    const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()] });
+    const fenced = '```json\n' + decisionJson() + '\n```';
+    const askClaude = vi.fn<AskClaude>().mockResolvedValue(okClaude(fenced));
+
+    const result = await handleMessage(db, askClaude, { userId: USER_ID, text: 'пробіг 5 км' });
+
+    expect(result.reply).toBe('Записав 5 км бігу.');
+    expect(result.proposal).not.toBeNull();
+    expect(result.proposal?.cardId).toBe('card-1');
+  });
+
   it("passes the user's own active cards and their metric blocks into Claude's system prompt", async () => {
     const db = fakeDb({ cards: [cardRow()], metricBlocks: [metricBlockRow()] });
     const askClaude = vi.fn<AskClaude>().mockResolvedValue(okClaude(decisionJson()));
