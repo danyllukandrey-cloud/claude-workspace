@@ -448,7 +448,10 @@ interface RawChatMessageRow extends QueryResultRow {
   user_id: string;
   role: ChatRoleRow;
   content: string;
-  session_date: string;
+  // node-pg parses a DATE column into a JS Date object by default (no
+  // `pg.types.setTypeParser` configured) -- the type here reflects that
+  // runtime reality, not the wished-for string.
+  session_date: string | Date;
   created_at: Date;
 }
 
@@ -458,7 +461,12 @@ function toChatMessageRecord(row: RawChatMessageRow): ChatMessageRecord {
     userId: row.user_id,
     role: row.role,
     content: row.content,
-    sessionDate: row.session_date,
+    // Fix 2026-09-22: node-pg parses a DATE column into a JS Date object by
+    // default (no `pg.types.setTypeParser`), even though RawChatMessageRow
+    // declares it `string` -- normalize here so domain's `sessionDate ===`
+    // comparisons (AC-15 short-term window) don't silently always fail.
+    sessionDate:
+      row.session_date instanceof Date ? row.session_date.toISOString().slice(0, 10) : row.session_date,
     createdAt: row.created_at,
   };
 }
